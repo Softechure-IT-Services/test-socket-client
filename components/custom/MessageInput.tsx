@@ -39,7 +39,7 @@ export default function MessageInput({ onSend }: MessageInputProps) {
   };
 
   return (
-    <div className="flex flex-col gap-2 w-full">
+    <div className="flex flex-col gap-2 w-full message-box">
       {/* Toolbar */}
       <div className="flex items-center gap-2 mb-2">
         <Button size="sm" onClick={() => editor?.chain().focus().toggleBold().run()}>B</Button>

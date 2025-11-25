@@ -52,7 +52,7 @@ const data = {
   ],
   navMain: [
     {
-      title: "Playground",
+      title: "Channels",
       url: "#",
       icon: SquareTerminal,
       isActive: true,
@@ -72,7 +72,7 @@ const data = {
       ],
     },
     {
-      title: "Models",
+      title: "Direct Messages",
       url: "#",
       icon: Bot,
       items: [
@@ -91,7 +91,7 @@ const data = {
       ],
     },
     {
-      title: "Documentation",
+      title: "Apps & Docs",
       url: "#",
       icon: BookOpen,
       items: [
@@ -112,44 +112,21 @@ const data = {
           url: "#",
         },
       ],
-    },
-    {
-      title: "Settings",
-      url: "#",
-      icon: Settings2,
-      items: [
-        {
-          title: "General",
-          url: "#",
-        },
-        {
-          title: "Team",
-          url: "#",
-        },
-        {
-          title: "Billing",
-          url: "#",
-        },
-        {
-          title: "Limits",
-          url: "#",
-        },
-      ],
-    },
+    }
   ],
   projects: [
     {
-      name: "Design Engineering",
+      name: "Threads",
       url: "#",
       icon: Frame,
     },
     {
-      name: "Sales & Marketing",
+      name: "Calls",
       url: "#",
       icon: PieChart,
     },
     {
-      name: "Travel",
+      name: "Drafts",
       url: "#",
       icon: Map,
     },
@@ -163,8 +140,8 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         <TeamSwitcher teams={data.teams} />
       </SidebarHeader>
       <SidebarContent>
-        <NavMain items={data.navMain} />
         <NavProjects projects={data.projects} />
+        <NavMain items={data.navMain} />
       </SidebarContent>
       <SidebarFooter>
         <NavUser user={data.user} />

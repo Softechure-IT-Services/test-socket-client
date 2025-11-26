@@ -21,7 +21,7 @@ export default function Home() {
   const socketRef = useRef<Socket | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
 
-  const SERVER_URL = process.env.SERVER_URL ?? "http://192.168.1.14:5000";
+  const SERVER_URL = process.env.NEXT_PUBLIC_SERVER_URL ?? "http://192.168.1.14:5000";
 
   // Create socket after userId is set (so we can pass userId in auth)
   useEffect(() => {
@@ -176,7 +176,7 @@ export default function Home() {
   return (
     <div className="flex min-h-[100%] dark:bg-black">
       <main className="flex flex-col flex-1">
-        <div className="flex items-center justify-between px-6 py-4 border-b sticky top-0 right-0 bg-white dark:bg-zinc-900 z-10">
+        <div className="flex items-center justify-between px-6 py-4 border-y sticky top-[56px] right-0  bg-[var(--background)] text-[var(--foreground)] z-10">
           <h2>{userId}</h2>
           <span>{connected ? "Online" : "Connecting..."}</span>
         </div>

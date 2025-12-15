@@ -5,13 +5,11 @@ import { io, Socket } from "socket.io-client";
 import MessageInput from "@/components/custom/MessageInput";
 import ChatHover from "@/components/chat-hover";
 import DOMPurify from "dompurify";
-import MainHeader from "./shared/ui/MainHeader";
-import  FileBg from "@/components/ui/file-bg";
-import FileUploadToggle from "@/components/ui/file-upload";
+import MyTabs from "@/components/ui/mytab";
 import {
   Popover,
   PopoverContent,
-  PopoverTrigger, 
+  PopoverTrigger,
 } from "@/components/ui/popover";
 import { Button } from "@/components/ui/button";
 import Picker from "@emoji-mart/react";
@@ -31,7 +29,6 @@ type ChatMessage = {
   reactions?: Reaction[];
 };
 
-
 export default function Home() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [userId, setUserId] = useState<string>("");
@@ -40,52 +37,18 @@ export default function Home() {
   const socketRef = useRef<Socket | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [hoveredId, setHoveredId] = useState<string | number | null>(null);
+
   const SERVER_URL =
     process.env.NEXT_PUBLIC_SERVER_URL ?? "http://192.168.1.14:5000";
 
   // EDIT state (we'll load content into the MessageInput when editing)
   const [editMessageId, setEditMessageId] = useState<string | null>(null);
   const [editContent, setEditContent] = useState<string>("");
+
   const [showEmojiPickerFor, setShowEmojiPickerFor] = useState<string | null>(
     null
   );
 
-
-  // for drag and drop file 
-     const [dragging, setDragging] = useState(false);
-  const dragCounter = useRef(0);
-
-  const handleDragEnter = (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    dragCounter.current += 1;
-    setDragging(true);
-  };
-
-  const handleDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    dragCounter.current -= 1;
-    if (dragCounter.current === 0) {
-      setDragging(false);
-    }
-  };
-
-  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault(); // important to allow drop
-  };
-
-  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    dragCounter.current = 0;
-    setDragging(false);
-
-    const files = e.dataTransfer.files;
-    if (files.length) {
-      console.log("Dropped files:", files);
-      // Handle files here
-    }
-  };
-
-  // end the drag and drop file 
   useEffect(() => {
     if (!userId) return;
     const s = io(SERVER_URL, {
@@ -250,7 +213,6 @@ export default function Home() {
     if (!tempUserId.trim()) return alert("Please enter a valid ID");
     setUserId(tempUserId.trim());
   };
-
 
   // Edit flow: when user clicks edit, we load content into MessageInput
   function enableEditMode(messageId: string | number) {
@@ -423,18 +385,16 @@ function handleSaveEdit(
 
 
   return (
-    <div className="flex min-h-[100%] dark:bg-black  "  onDragEnter={handleDragEnter}
-      onDragOver={handleDragOver}
-      onDragLeave={handleDragLeave}
-      onDrop={handleDrop}>
-
-       {dragging && (
-  <div className="absolute top-0 left-0 w-full h-full bg-black bg-opacity-50 flex items-center justify-center z-50 transition-opacity duration-300">
-    <FileBg />
-  </div>
-)}
+    <div className="flex min-h-[100%] dark:bg-black">
       <main className="flex flex-col flex-1">
-       <MainHeader/>
+        <div className="flex items-center justify-between px-6 py-4 border-y sticky top-[56px] right-0 bg-[var(--background)] text-[var(--foreground)] z-10">
+          
+          <div>
+            <h2>{userId}</h2>
+          <MyTabs />
+          </div>
+          <span>{connected ? "Online" : "Connecting..."}</span>
+        </div>
 
         <div
           ref={containerRef}
@@ -566,11 +526,9 @@ function handleSaveEdit(
             );
           })}
         </div>
-        <div className="p-4 relative sticky bottom-0 right-0 bg-white dark:bg-zinc-900 border-t">
+        <div className="p-4 sticky bottom-0 right-0 bg-white dark:bg-zinc-900 border-t">
           {/* Pass edit state into MessageInput. When user clicks edit, MessageInput will show Update/Cancel and call onSaveEdit/onCancelEdit */}
-          <div>
-          <FileUploadToggle />
-          </div>
+          
           <MessageInput
             onSend={handleSendMessage}
             editingMessageId={editMessageId}

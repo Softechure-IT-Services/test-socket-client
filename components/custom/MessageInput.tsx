@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import Picker from "@emoji-mart/react";
 import { FaListUl, FaListOl } from "react-icons/fa6";
+import MentionDropdown from "@/components/ui/mention";
 
 interface MessageInputProps {
   onSend: (content: string, files?: File[]) => void;
@@ -31,6 +32,38 @@ export default function MessageInput({ onSend, editingMessageId = null, editingI
   const [attachedFiles, setAttachedFiles] = useState<File[]>([]);
   const editorRef = useRef<HTMLDivElement>(null);
 
+
+  //mention 
+  const [mentionOpen, setMentionOpen] = useState(false);
+  const [mentionPosition, setMentionPosition] = useState({ bottom: 0, left: 1 });
+
+  useEffect(() => {
+  const handleKey = (e: KeyboardEvent) => {
+    if (e.key === "@" || e.key === "2") {
+      const selection = window.getSelection();
+      if (!selection?.rangeCount) return;
+
+      const range = selection.getRangeAt(0);
+      const rect = range.getBoundingClientRect();
+
+      setMentionPosition({
+        bottom: rect.bottom + 6,
+        left: rect.left,
+      });
+
+      setMentionOpen(true);
+    }
+  };
+
+  window.addEventListener("keyup", handleKey);
+  return () => window.removeEventListener("keyup", handleKey);
+}, []);
+
+  const handleMentionSelect = (name: string) => {
+  editor?.chain().focus().insertContent(`${name} `).run();
+  setMentionOpen(false);
+};
+  //mention end
   const editor = useEditor({
     extensions: [StarterKit, Underline, Link.configure({ openOnClick: false }), Image, Highlight, Color, CharacterCount.configure({ limit: 5000 }), Placeholder.configure({ placeholder: "Write a message..." })],
     content: "",
@@ -146,10 +179,10 @@ export default function MessageInput({ onSend, editingMessageId = null, editingI
         </Popover>
 
         <input type="file" multiple id="file-upload" className="hidden" onChange={handleFileChange} />
-        <label htmlFor="file-upload">
+        {/* <label htmlFor="file-upload">
           <Button size="sm">📎</Button>
-        </label>
-
+        </label> */}
+        <ToolbarButton editor={editor} command="toggleFileUpload" label="📎" className="bg-red-500" />
         {/* When editing, show Update and Cancel buttons — otherwise show Send */}
         {editingMessageId ? (
           <div className="flex gap-2">
@@ -163,9 +196,26 @@ export default function MessageInput({ onSend, editingMessageId = null, editingI
         )}
       </div>
 
-      <div className="border rounded-xl p-2 bg-white dark:bg-zinc-900 max-h-[200px] overflow-y-auto" ref={editorRef}>
-        <EditorContent editor={editor} />
-      </div>
+    <div className="border rounded-xl p-2 bg-white dark:bg-zinc-900 relative" ref={editorRef}>
+  <div className="max-h-[200px] overflow-y-auto">
+    <EditorContent editor={editor} />
+  </div>
+
+  {/* FLOATING DROPDOWN — not clipped anymore */}
+  <MentionDropdown
+    open={mentionOpen}
+    onOpenChange={setMentionOpen}
+    users={[
+      { name: "Ayush Kumar", status: "offline" },
+      { name: "Satyam Shukla", status: "offline" },
+      { name: "Euachak Singh", status: "offline" },
+      { name: "Sagar Johari", status: "online" },
+    ]}
+    position={mentionPosition}
+    onSelect={handleMentionSelect}
+  />
+</div>
+
 
       {attachedFiles.length > 0 && (
         <div className="flex flex-wrap gap-2 mt-2">
@@ -186,11 +236,29 @@ export default function MessageInput({ onSend, editingMessageId = null, editingI
 
 function ToolbarButton({ editor, command, label }: any) {
   if (!editor) return null;
+
   const isActive = editor.isActive(command.replace("toggle", "").toLowerCase());
-  const run = () => editor.chain().focus()[command]().run();
+
+  const run = () => {
+    if (command === "toggleFileUpload") {
+      window.dispatchEvent(new CustomEvent("toggleFileUpload"));
+      return; // do not run editor command
+    }
+
+    editor.chain().focus()[command]().run();
+  };
+
   return (
-    <Button size="sm" variant={isActive ? "default" : "secondary"} onClick={run} className={`${isActive ? "bg-primary text-white" : ""}`}>
+    <Button
+      size="sm"
+      variant={isActive ? "default" : "secondary"}
+      onClick={run}
+      className={isActive ? "bg-black text-white" : ""}
+    >
       {label}
     </Button>
   );
 }
+
+
+

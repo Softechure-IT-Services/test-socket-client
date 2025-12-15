@@ -1,5 +1,7 @@
+  import { AuthProvider } from "@/components/context/userId_and_connection/provider"
   import { AppSidebar } from "@/components/app-sidebar"
   import AppNavbar from "@/components/app-navbar"
+  import ButtonGroup from "@/components/ui/button-group";
   import {
     SidebarInset,
     SidebarProvider
@@ -37,14 +39,17 @@
     return (
        <html lang="en">
   <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
-    <Toaster />
+    <AuthProvider>
 
+   
+    <Toaster />
     {/* LEFT SIDEBAR PROVIDER */}
     <SidebarProvider defaultOpen={true}>
       <AppSidebar />
     <AppNavbar />
 
     <SidebarInset>
+
       <div className="flex flex-1 flex-col gap-4 p-0 pt-0">
         {children}
       </div>
@@ -52,7 +57,7 @@
 
       <UtilitySidebar />
     </SidebarProvider>
-    
+       </AuthProvider>
   </body>
 </html>
 

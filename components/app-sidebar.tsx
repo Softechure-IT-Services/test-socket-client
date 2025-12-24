@@ -25,12 +25,17 @@ import {
   SidebarHeader,
   SidebarRail,
 } from "@/components/ui/sidebar";
+import CreateModal from "@/components/modals/CreateNew";
 
 // const API_URL = process.env.NEXT_PUBLIC_SERVER_URL;
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const [channels, setChannels] = React.useState<any[]>([]);
   const [users, setUsers] = React.useState<any[]>([]);
+
+  const [modalOpen, setModalOpen] = React.useState(false);
+const [modalType, setModalType] = React.useState<"channel" | "dm">("channel");
+
 
   React.useEffect(() => {
     const fetchData = async () => {
@@ -42,11 +47,12 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
             withCredentials: true,
           }
         );
-
         setChannels(
           ch.data.map((c: any) => ({
             title: c.name,
             url: `/channel/${c.id}`,
+            is_private: c.is_private,
+            is_dm: c.is_dm,
           }))
         );
 
@@ -74,13 +80,16 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
     fetchData();
   }, []);
 
-  const handleAddChannel = () => {
-alert("Open channel creation modal");
-}
+
+const handleAddChannel = () => {
+  setModalType("channel");
+  setModalOpen(true);
+};
 
 const handleAddDM = () => {
-  alert("Open direct message creation modal");
-}
+  setModalType("dm");
+  setModalOpen(true);
+};
 
   const data = {
     user: {
@@ -97,6 +106,7 @@ const handleAddDM = () => {
       {
         title: "Channels",
         url: "#",
+        type: "channel",
         icon: SquareTerminal,
         isActive: true,
         items: channels,
@@ -105,6 +115,7 @@ const handleAddDM = () => {
       {
         title: "Direct Messages",
         url: "#",
+        type: "dm",
         icon: Bot,
         items: users,
         onAdd: handleAddDM,
@@ -142,6 +153,12 @@ const handleAddDM = () => {
       </SidebarFooter>
 
       <SidebarRail />
+      <CreateModal
+  open={modalOpen}
+  type={modalType}
+  onClose={() => setModalOpen(false)}
+/>
+
     </Sidebar>
   );
 }

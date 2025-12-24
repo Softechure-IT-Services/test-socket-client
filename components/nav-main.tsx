@@ -19,15 +19,22 @@ import {
   SidebarMenuSubItem,
 } from "@/components/ui/sidebar"
 
+import { FaLock } from "react-icons/fa";
+import { FaHashtag } from "react-icons/fa";
+
 
 type NavItem = {
   title: string
   icon?: LucideIcon
+  type?: string
   isActive?: boolean
   onAdd?: () => void
   items?: {
     title: string
     url: string
+    is_private: Boolean
+    is_dm: Boolean
+    avatar_url?: string
   }[]
 }
 
@@ -49,6 +56,7 @@ export function NavMain({ items }: { items: NavItem[] }) {
               <SidebarGroupAction
                 onClick={item.onAdd}
                 aria-label={`Add ${item.title}`}
+                tooltip={`Add ${item.title}`}
               >
                 <Plus />
               </SidebarGroupAction>
@@ -69,7 +77,16 @@ export function NavMain({ items }: { items: NavItem[] }) {
               <CollapsibleContent>
                 <SidebarMenuSub>
                   {item.items?.map((sub) => (
-                    <SidebarMenuSubItem key={sub.title}>
+                    <SidebarMenuSubItem key={sub.title} >
+                      { sub.is_dm == false ? (
+                         sub.is_private == true ? (
+                         <FaLock className="h-2.5 w-2.5 channel_privacy_icon" />
+                         ) : (
+                         <FaHashtag className="h-2.5 w-2.5 channel_privacy_icon" />
+                         )
+                      ) : 
+                      null
+                      }
                       <SidebarMenuSubButton asChild>
                         <a href={sub.url}>{sub.title}</a>
                       </SidebarMenuSubButton>

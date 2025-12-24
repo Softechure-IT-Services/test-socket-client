@@ -39,7 +39,7 @@ export default function MessageInput({ onSend, editingMessageId = null, editingI
 
   useEffect(() => {
   const handleKey = (e: KeyboardEvent) => {
-    if (e.key === "@" || e.key === "2") {
+    if (e.key === "@") {
       const selection = window.getSelection();
       if (!selection?.rangeCount) return;
 

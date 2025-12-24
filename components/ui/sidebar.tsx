@@ -559,25 +559,50 @@ function SidebarGroupLabel({
 function SidebarGroupAction({
   className,
   asChild = false,
+  tooltip,
   ...props
-}: React.ComponentProps<"button"> & { asChild?: boolean }) {
+}: React.ComponentProps<"button"> & {
+  asChild?: boolean
+  tooltip?: string | React.ComponentProps<typeof TooltipContent>
+}) {
   const Comp = asChild ? Slot : "button"
+  const { isMobile, state } = useSidebar()
 
-  return (
+  const action = (
     <Comp
       data-slot="sidebar-group-action"
       data-sidebar="group-action"
       className={cn(
         "text-sidebar-foreground ring-sidebar-ring hover:bg-sidebar-accent hover:text-sidebar-accent-foreground absolute top-2 right-3 flex aspect-square w-5 items-center justify-center rounded-md p-0 outline-hidden transition-transform focus-visible:ring-2 [&>svg]:size-4 [&>svg]:shrink-0",
-        // Increases the hit area of the button on mobile.
         "after:absolute after:-inset-2 md:after:hidden",
-        "group-data-[collapsible=icon]:hidden",
+        "group-data-[collapsible=icon]:opacity-0 group-data-[collapsible=icon]:pointer-events-auto",
         className
       )}
       {...props}
     />
   )
+
+  // if (!tooltip) {
+  //   return action
+  // }
+
+  // if (typeof tooltip === "string") {
+  //   tooltip = { children: tooltip }
+  // }
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{action}</TooltipTrigger>
+      <TooltipContent
+        side="left"
+        align="center"
+        hidden={state !== "collapsed" || isMobile}
+        {...tooltip}
+      />
+    </Tooltip>
+  )
 }
+
 
 function SidebarGroupContent({
   className,

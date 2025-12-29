@@ -5,8 +5,8 @@ import ButtonGroup from "@/components/ui/button-group";
 import { useEffect, useState } from "react";
 
 interface MainHeaderProps {
-  id: string; // channelId or dmId
-  type: "channel" | "dm";
+  id?: string; // channelId or dmId
+  type?: "channel" | "dm";
 }
 
 interface Channel {

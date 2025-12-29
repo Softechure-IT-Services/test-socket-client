@@ -32,8 +32,8 @@ type NavItem = {
   items?: {
     title: string
     url: string
-    is_private: Boolean
-    is_dm: Boolean
+    is_private?: Boolean
+    is_dm?: Boolean
     avatar_url?: string
   }[]
 }

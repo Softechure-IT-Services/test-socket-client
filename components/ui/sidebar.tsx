@@ -597,7 +597,7 @@ function SidebarGroupAction({
         side="left"
         align="center"
         hidden={state !== "collapsed" || isMobile}
-        {...tooltip}
+  {...(typeof tooltip === "object" && tooltip ? tooltip : {})}
       />
     </Tooltip>
   )

@@ -28,10 +28,12 @@ type ChatMessage = {
   created_at?: string | null;
   updated_at?: string | null;
   reactions?: Reaction[];
+  avatar_url?: string | null;
 };
 type ChannelChatProps = {
   channelId: string;
 };
+
 
 
 export default function ChannelChat({ channelId }: ChannelChatProps) {
@@ -95,20 +97,30 @@ useEffect(() => {
   socket.emit("joinChannel", { channelId: Number(channelId) });
 
   return () => {
-    socket.emit("leaveChannel", { channelId: Number(channelId) });
+    if (socket) {
+      socket.emit("leaveChannel", { channelId: Number(channelId) });
+    }
   };
 }, [socket, channelId]);
+
+
 
 useEffect(() => {
   if (!socket) return;
 
   const handleDelete = ({ id }: any) => {
-    setMessages(prev => prev.filter(m => String(m.id) !== String(id)));
+    setMessages(prev =>
+      prev.filter(m => String(m.id) !== String(id))
+    );
   };
 
   socket.on("messageDeleted", handleDelete);
-  return () => socket.off("messageDeleted", handleDelete);
+
+  return () => {
+    socket.off("messageDeleted", handleDelete);
+  };
 }, [socket]);
+
 
 
 useEffect(() => {
@@ -126,6 +138,7 @@ useEffect(() => {
       content: msg.content,
       self: String(msg.sender_id) === String(userId),
       created_at: createdAt,
+      avatar_url: msg.avatar_url ?? null,
     };
     setMessages((prev) => {
       if (
@@ -152,6 +165,7 @@ useEffect(() => {
       content: msg.content,
       self: true,
       created_at: createdAt,
+      avatar_url: user?.avatar_url ?? null,
     };
     setMessages((prev) => {
       if (
@@ -231,6 +245,7 @@ useEffect(() => {
               created_at: createdAt,
               updated_at: msg.updated_at ?? null,
               reactions,
+              avatar_url: msg.avatar_url ?? null,
             };
           })
           .sort((a, b) => {
@@ -306,94 +321,157 @@ function handleSaveEdit(
     setShowEmojiPickerFor(messageId);
   }
 
-  function addEmojiToMessage(messageId: string | number, emoji: any) {
-    //const socket = socketRef.current;
-    if (!socket) return setShowEmojiPickerFor(null);
-    const selectedEmoji = emoji.native ?? emoji.colons ?? String(emoji);
-    setMessages((prev) =>
-      prev.map((msg) => {
-        if (String(msg.id) !== String(messageId)) return msg;
-        const reactions = msg.reactions
-          ? msg.reactions.map((r) => ({
-              ...r,
-              users: Array.isArray(r.users) ? r.users : [],
-            }))
-          : [];
-        const existing = reactions.find((r) => r.emoji === selectedEmoji);
-        if (existing) {
-          if (!existing.users.includes(userId)) {
-            existing.users.push(userId);
-            existing.count = existing.users.length;
-          }
-        } else {
-          reactions.push({ emoji: selectedEmoji, count: 1, users: [userId] });
-        }
-        return { ...msg, reactions };
-      })
-    );
-    socket.emit("reactMessage", {
-      messageId,
-      emoji: selectedEmoji,
-    });
+ function addEmojiToMessage(messageId: string | number, emoji: any) {
+  if (!socket || !userId) {
     setShowEmojiPickerFor(null);
+    return;
   }
 
+  const selectedEmoji = emoji.native ?? emoji.colons ?? String(emoji);
+
+  setMessages((prev) =>
+    prev.map((msg) => {
+      if (String(msg.id) !== String(messageId)) return msg;
+
+      const reactions = msg.reactions
+        ? msg.reactions.map((r) => ({
+            ...r,
+            users: Array.isArray(r.users) ? r.users : [],
+          }))
+        : [];
+
+      const existing = reactions.find((r) => r.emoji === selectedEmoji);
+
+      if (existing) {
+        if (!existing.users.includes(userId)) {
+          existing.users.push(userId);
+          existing.count = existing.users.length;
+        }
+      } else {
+        reactions.push({
+          emoji: selectedEmoji,
+          count: 1,
+          users: [userId],
+        });
+      }
+
+      return { ...msg, reactions };
+    })
+  );
+
+  socket.emit("reactMessage", { messageId, emoji: selectedEmoji });
+  setShowEmojiPickerFor(null);
+}
+
+
+  // function toggleReaction(messageId: string | number, emoji: string) {
+  //   //const socket = socketRef.current;
+  //   if (!socket) return;
+
+  //   setMessages((prev) =>
+  //     prev.map((msg) => {
+  //       if (String(msg.id) !== String(messageId)) return msg;
+
+  //       const reactions = msg.reactions
+  //         ? msg.reactions.map((r) => ({
+  //             ...r,
+  //             users: Array.isArray(r.users) ? r.users : [],
+  //           }))
+  //         : [];
+
+  //       const idx = reactions.findIndex((r) => r.emoji === emoji);
+
+  //       if (idx === -1) {
+  //         // User adds reaction
+  //         reactions.push({ emoji, count: 1, users: [userId] });
+  //       } else {
+  //         const entry = reactions[idx];
+  //         const hasReacted = entry.users.includes(userId);
+
+  //         if (!hasReacted) {
+  //           // User adds reaction (other users already reacted)
+  //           const newUsers = [...entry.users, userId];
+  //           reactions[idx] = {
+  //             ...entry,
+  //             users: newUsers,
+  //             count: newUsers.length,
+  //           };
+  //         } else {
+  //           // User can ONLY remove THEIR OWN reaction, not others
+  //           const newUsers = entry.users.filter((u) => u !== userId);
+
+  //           // If after removing yourself, others still reacted → keep reaction
+  //           if (newUsers.length > 0) {
+  //             reactions[idx] = {
+  //               ...entry,
+  //               users: newUsers,
+  //               count: newUsers.length,
+  //             };
+  //           } else {
+  //             // If no one else reacted → remove reaction entirely
+  //             reactions.splice(idx, 1);
+  //           }
+  //         }
+  //       }
+
+  //       return { ...msg, reactions };
+  //     })
+  //   );
+
+  //   socket.emit("reactMessage", { messageId, emoji });
+  // }
+
   function toggleReaction(messageId: string | number, emoji: string) {
-    //const socket = socketRef.current;
-    if (!socket) return;
+  if (!socket || !userId) return;
 
-    setMessages((prev) =>
-      prev.map((msg) => {
-        if (String(msg.id) !== String(messageId)) return msg;
+  setMessages((prev) =>
+    prev.map((msg) => {
+      if (String(msg.id) !== String(messageId)) return msg;
 
-        const reactions = msg.reactions
-          ? msg.reactions.map((r) => ({
-              ...r,
-              users: Array.isArray(r.users) ? r.users : [],
-            }))
-          : [];
+      const reactions = msg.reactions
+        ? msg.reactions.map((r) => ({
+            ...r,
+            users: Array.isArray(r.users) ? r.users : [],
+          }))
+        : [];
 
-        const idx = reactions.findIndex((r) => r.emoji === emoji);
+      const idx = reactions.findIndex((r) => r.emoji === emoji);
 
-        if (idx === -1) {
-          // User adds reaction
-          reactions.push({ emoji, count: 1, users: [userId] });
+      if (idx === -1) {
+        reactions.push({ emoji, count: 1, users: [userId] });
+      } else {
+        const entry = reactions[idx];
+        const hasReacted = entry.users.includes(userId);
+
+        if (!hasReacted) {
+          const newUsers = [...entry.users, userId];
+          reactions[idx] = {
+            ...entry,
+            users: newUsers,
+            count: newUsers.length,
+          };
         } else {
-          const entry = reactions[idx];
-          const hasReacted = entry.users.includes(userId);
+          const newUsers = entry.users.filter((u) => u !== userId);
 
-          if (!hasReacted) {
-            // User adds reaction (other users already reacted)
-            const newUsers = [...entry.users, userId];
+          if (newUsers.length > 0) {
             reactions[idx] = {
               ...entry,
               users: newUsers,
               count: newUsers.length,
             };
           } else {
-            // User can ONLY remove THEIR OWN reaction, not others
-            const newUsers = entry.users.filter((u) => u !== userId);
-
-            // If after removing yourself, others still reacted → keep reaction
-            if (newUsers.length > 0) {
-              reactions[idx] = {
-                ...entry,
-                users: newUsers,
-                count: newUsers.length,
-              };
-            } else {
-              // If no one else reacted → remove reaction entirely
-              reactions.splice(idx, 1);
-            }
+            reactions.splice(idx, 1);
           }
         }
+      }
 
-        return { ...msg, reactions };
-      })
-    );
+      return { ...msg, reactions };
+    })
+  );
 
-    socket.emit("reactMessage", { messageId, emoji });
-  }
+  socket.emit("reactMessage", { messageId, emoji });
+}
+
 
   function handleChatAction(action: string, messageId: string) {
     switch (action) {
@@ -451,8 +529,12 @@ useEffect(() => {
           className="flex-1 overflow-y-auto py-6 !px-[3rem] "
           style={{ scrollbarGutter: "stable" }}
         >
-          {messages.map((msg) => {
+          {messages.map((msg, index) => {
             const msgId = String(msg.id);
+            const prev = messages[index - 1];
+            const showAvatar =
+              !prev || prev.sender_id !== msg.sender_id;
+
             return (
               <div
                 key={msgId}
@@ -471,6 +553,13 @@ useEffect(() => {
                     msg.self ? "flex-row-reverse" : "flex-row"
                   }  gap-2 items-center relative `}
                 >
+                   {!msg.self && showAvatar && (
+                    <img
+                      src={msg.avatar_url != null ? `/avatar/${msg.avatar_url}` : "/avatar/avatar-placeholder.png"}
+                      alt="avatar"
+                      className="w-8 h-8 rounded-full object-cover"
+                    />
+                  )}
                   <div className="relative">
                     <div
                       className={`rounded-md p-2 break-words w-fit ${
@@ -493,7 +582,10 @@ useEffect(() => {
                           {msg.reactions.map((r, idx) => (
                             <span
                               key={idx}
-                              onClick={() => toggleReaction(msg.id, r.emoji)}
+                              onClick={() => {
+                                  if (msg.id == null) return;
+                                  toggleReaction(msg.id, r.emoji);
+                              }}
                               className="text-sm px-2 leading-none py-1 bg-gray-200 rounded-full flex items-center gap-1 border border-black"
                             >
                               {r.emoji} {r.count <= 1 ? "" : r.count}
@@ -511,7 +603,7 @@ useEffect(() => {
                           <div key={i} className="mb-1 col-span-1">
                             <strong>{r.emoji}</strong>
                             <div className="ml-2 ">
-                              {r.users.map((uid, j) => (
+                             {(r.users ?? []).map((uid, j) => (
                                 <div key={j}>User {uid}</div>
                               ))}
                             </div>
@@ -561,7 +653,7 @@ useEffect(() => {
                     </PopoverTrigger>
                     <PopoverContent className="w-80 z-[99999]">
                       <Picker
-                        onEmojiSelect={(emoji) =>
+                        onEmojiSelect={(emoji:any) =>
                           addEmojiToMessage(msgId, emoji)
                         }
                       />

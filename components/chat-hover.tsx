@@ -6,8 +6,12 @@ import { IoPinSharp } from "react-icons/io5";
 import { FaRegEdit } from "react-icons/fa";
 import { MdDeleteForever } from "react-icons/md";
 import { RiShareForwardFill, RiReplyFill } from "react-icons/ri";
+type ChatHoverProps = {
+  messageId: string; // whatever your message IDs are
+  onAction: (action: string, messageId: string ) => void;
+};
 
-export default function ChatHover({ messageId, onAction }) {
+export default function ChatHover({ messageId, onAction }: ChatHoverProps) {
   const items = [
     { type: "reaction", icon: <MdAddReaction />, label: "Reaction" },
     { type: "reply", icon: <RiReplyFill />, label: "Reply" },

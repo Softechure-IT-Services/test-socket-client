@@ -388,6 +388,7 @@ function handleSaveEdit(
     //const socket = socketRef.current;
     if (!socket) return setShowEmojiPickerFor(null);
     const selectedEmoji = emoji.native ?? emoji.colons ?? String(emoji);
+    if (!userId) return;
     setMessages((prev) =>
       prev.map((msg) => {
         if (String(msg.id) !== String(messageId)) return msg;
@@ -404,7 +405,7 @@ function handleSaveEdit(
             existing.count = existing.users.length;
           }
         } else {
-          reactions.push({ emoji: selectedEmoji, count: 1, users: [userId] });
+          reactions.push({ emoji: selectedEmoji, count: 1, users: [userId!] });
         }
         return { ...msg, reactions };
       })
@@ -436,14 +437,14 @@ function handleSaveEdit(
 
         if (idx === -1) {
           // User adds reaction
-          reactions.push({ emoji, count: 1, users: [userId] });
+          reactions.push({ emoji, count: 1, users: [userId!] });
         } else {
           const entry = reactions[idx];
-          const hasReacted = entry.users.includes(userId);
+          const hasReacted = userId != null && entry.users?.includes(userId);
 
           if (!hasReacted) {
             // User adds reaction (other users already reacted)
-            const newUsers = [...entry.users, userId];
+const newUsers = entry.users.filter((u): u is string => u != null && u !== userId);
             reactions[idx] = {
               ...entry,
               users: newUsers,
@@ -570,7 +571,7 @@ function handleSaveEdit(
                           {msg.reactions.map((r, idx) => (
                             <span
                               key={idx}
-                              onClick={() => toggleReaction(msg.id, r.emoji)}
+                              onClick={() =>  msg.id != null && toggleReaction(msg.id, r.emoji)}
                               className="text-sm px-2 leading-none py-1 bg-gray-200 rounded-full flex items-center gap-1 border border-black"
                             >
                               {r.emoji} {r.count <= 1 ? "" : r.count}
@@ -588,7 +589,7 @@ function handleSaveEdit(
                           <div key={i} className="mb-1 col-span-1">
                             <strong>{r.emoji}</strong>
                             <div className="ml-2 ">
-                              {r.users.map((uid, j) => (
+                              {(r.users ?? []).map((uid, j) => (
                                 <div key={j}>User {uid}</div>
                               ))}
                             </div>
@@ -638,7 +639,7 @@ function handleSaveEdit(
                     </PopoverTrigger>
                     <PopoverContent className="w-80 z-[99999]">
                       <Picker
-                        onEmojiSelect={(emoji) =>
+                        onEmojiSelect={(emoji:any) =>
                           addEmojiToMessage(msgId, emoji)
                         }
                       />

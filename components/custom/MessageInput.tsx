@@ -35,7 +35,7 @@ export default function MessageInput({ onSend, editingMessageId = null, editingI
 
   //mention 
   const [mentionOpen, setMentionOpen] = useState(false);
-  const [mentionPosition, setMentionPosition] = useState({ bottom: 0, left: 1 });
+  const [mentionPosition, setMentionPosition] = useState({ top: 0, left: 1 });
 
   useEffect(() => {
   const handleKey = (e: KeyboardEvent) => {
@@ -47,7 +47,7 @@ export default function MessageInput({ onSend, editingMessageId = null, editingI
       const rect = range.getBoundingClientRect();
 
       setMentionPosition({
-        bottom: rect.bottom + 6,
+        top: rect.top + 6,
         left: rect.left,
       });
 
@@ -132,11 +132,14 @@ export default function MessageInput({ onSend, editingMessageId = null, editingI
   const addEmoji = (emoji: any) => {
     editor?.chain().focus().insertContent(emoji.native).run();
   };
+  
+const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const files = e.target.files;
+  if (!files) return;
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!e.target.files) return;
-    setAttachedFiles((prev) => [...prev, ...Array.from(e.target.files)]);
-  };
+  setAttachedFiles((prev) => [...prev, ...Array.from(files)]);
+};
+
 
   const removeFile = (index: number) => {
     setAttachedFiles((prev) => prev.filter((_, i) => i !== index));

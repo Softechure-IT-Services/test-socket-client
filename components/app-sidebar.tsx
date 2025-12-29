@@ -28,7 +28,7 @@ import {
 import CreateModal from "@/components/modals/CreateNew";
 import { useAuth } from "@/components/context/userId_and_connection/provider";
 // const API_URL = process.env.NEXT_PUBLIC_SERVER_URL;
-
+import { UserType } from "@/components/context/userId_and_connection/provider";
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const [channels, setChannels] = React.useState<any[]>([]);
   const [users, setUsers] = React.useState<any[]>([]);
@@ -145,7 +145,7 @@ const handleAddDM = () => {
       </SidebarContent>
 
       <SidebarFooter>
-        { user && <NavUser user={data.user} />}
+{user && <NavUser user={data.user as UserType} />}
       </SidebarFooter>
 
       <SidebarRail />

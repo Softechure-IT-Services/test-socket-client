@@ -61,7 +61,7 @@ export function RightSidebar() {
       </SidebarContent>
 
       <SidebarFooter>
-        <div className="px-3 py-2 text-xs text-muted-foreground">v1.0.0</div>
+        <div className=" py-2 text-xs text-muted-foreground">v1.0.0</div>
       </SidebarFooter>
 
       <SidebarRail />

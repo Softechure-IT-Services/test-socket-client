@@ -137,6 +137,15 @@
     }
   }
 
+  ul {
+  list-style: disc !important;
+  padding-left: 1.25rem;
+}
+
+ol {
+  list-style: decimal !important;
+  padding-left: 1.25rem;
+}
   /* Heading styles */
   h1,
   h2,
@@ -225,4 +234,21 @@
   display: flex;
   align-items: center;
   gap: 2px;
+}
+
+
+.is-empty[data-placeholder]:before {
+  content: attr(data-placeholder); 
+  color: gray;                   
+  pointer-events: none;           
+  display: block;
+  position: absolute;             
+  left: 0;
+  top: 0;
+  opacity: 0.5;                    
+}
+
+
+.ProseMirror {
+  position: relative;
 }

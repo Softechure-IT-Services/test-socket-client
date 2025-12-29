@@ -1,9 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { CiViewList } from "react-icons/ci";
+import { CiViewList, CiTextAlignJustify } from "react-icons/ci";
 import { FaFileAlt } from "react-icons/fa";
-import { CiTextAlignJustify } from "react-icons/ci";
 import { GoWorkflow } from "react-icons/go";
 import { FaComputer } from "react-icons/fa6";
 
@@ -12,7 +11,6 @@ export default function FileUploadToggle() {
 
   useEffect(() => {
     const handler = () => setOpen(prev => !prev);
-
     window.addEventListener("toggleFileUpload", handler);
 
     return () => window.removeEventListener("toggleFileUpload", handler);
@@ -23,11 +21,40 @@ export default function FileUploadToggle() {
   return (
     <div className="absolute bottom-35 left-100 z-50 rounded-xl text-gray-500 py-1 px-3 bg-white">
       <div className="border border-gray-200 shadow-md py-3 px-7 w-90 rounded-lg gap-3">
-        <p className="flex col-flex text-black text-md items-center gap-3 mt-2"><CiViewList size={20}/> <span className="text-md">List</span></p>
-        <p className="flex col-flex text-black text-md items-center gap-3 mt-2"><FaFileAlt size={20}/><span className="text-md">Recent file</span></p>
-        <p className="flex col-flex text-black text-md items-center gap-3 mt-2"><CiTextAlignJustify size={20}/> <span className="text-md">Text snippet</span></p>
-        <p className="flex col-flex text-black text-md items-center gap-3 mt-2"><GoWorkflow size={20}/> <span className="text-md">Workflow</span></p>
-        <p className="flex col-flex text-black text-md items-center gap-3 mt-2"><FaComputer size={20}/><span className="text-md">Upload from computer</span></p>
+        <p className="flex col-flex text-black text-md items-center gap-3 mt-2">
+          <CiViewList size={20} />
+          <span className="text-md">List</span>
+        </p>
+
+        <p className="flex col-flex text-black text-md items-center gap-3 mt-2">
+          <FaFileAlt size={20} />
+          <span className="text-md">Recent file</span>
+        </p>
+
+        <p className="flex col-flex text-black text-md items-center gap-3 mt-2">
+          <CiTextAlignJustify size={20} />
+          <span className="text-md">Text snippet</span>
+        </p>
+
+        <p className="flex col-flex text-black text-md items-center gap-3 mt-2">
+          <GoWorkflow size={20} />
+          <span className="text-md">Workflow</span>
+        </p>
+
+        {/* ✅ THIS IS THE ONLY FUNCTIONAL LINE */}
+        <p
+          onClick={() => {
+            const input = document.getElementById(
+              "file-upload"
+            ) as HTMLInputElement | null;
+
+            input?.click();
+          }}
+          className="flex col-flex text-black text-md items-center gap-3 mt-2 cursor-pointer"
+        >
+          <FaComputer size={20} />
+          <span className="text-md">Upload from computer</span>
+        </p>
       </div>
     </div>
   );

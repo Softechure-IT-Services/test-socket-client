@@ -17,6 +17,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import Picker from "@emoji-mart/react";
 import { FaListUl, FaListOl } from "react-icons/fa6";
 import MentionDropdown from "@/components/ui/mention";
+import { IoMdSend } from "react-icons/io";
 
 interface MessageInputProps {
   onSend: (content: string, files?: File[]) => void;
@@ -32,6 +33,75 @@ export default function MessageInput({ onSend, editingMessageId = null, editingI
   const [attachedFiles, setAttachedFiles] = useState<File[]>([]);
   const editorRef = useRef<HTMLDivElement>(null);
 
+  // file upload and delete
+
+  const [uploadedFiles, setUploadedFiles] = useState<
+  { name: string; url: string; type: string }[]
+>([]);
+
+   const insertImageFile = async (file: File) => {
+  // Upload to server
+  const formData = new FormData();
+  formData.append("file", file);
+
+  const res = await fetch("/api/upload", { method: "POST", body: formData });
+  const data = await res.json();
+
+  if (data.url) {
+    // Add to uploadedFiles state
+    setUploadedFiles(prev => [...prev, { name: file.name, url: data.url, type: file.type }]);
+
+    // Insert into TipTap editor
+    editor?.chain().focus().setImage({ src: data.url }).run();
+  }
+};
+const removeImageFromEditor = (src) => {
+  if (!editor) return;
+
+  const { state, view } = editor;
+  const { doc, tr } = state;
+
+  // Find the image node with matching src
+  let pos = null;
+  doc.descendants((node, posInDoc) => {
+    if (node.type.name === "image" && node.attrs.src === src) {
+      pos = posInDoc;
+      return false; // stop iteration
+    }
+  });
+
+  if (pos !== null) {
+    // Delete the image node
+    editor.chain().focus().deleteRange({ from: pos, to: pos + 1 }).run();
+  }
+};
+
+const deleteUploadedFile = async (index) => {
+  const file = uploadedFiles[index];
+  if (!file) return;
+
+  try {
+    const res = await fetch("/api/delete-file", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ path: file.url.replace(/^\/?/, "") }),
+    });
+
+    const data = await res.json();
+
+    if (data.success) {
+      setUploadedFiles(prev => prev.filter((_, i) => i !== index));
+
+      // Remove image from editor
+      removeImageFromEditor(file.url);
+    } else {
+      alert(data.message || "Failed to delete file");
+    }
+  } catch (err) {
+    console.error(err);
+    alert("Error deleting file");
+  }
+};
 
   //mention 
   const [mentionOpen, setMentionOpen] = useState(false);
@@ -64,31 +134,46 @@ export default function MessageInput({ onSend, editingMessageId = null, editingI
   setMentionOpen(false);
 };
   //mention end
-  const editor = useEditor({
-    extensions: [StarterKit, Underline, Link.configure({ openOnClick: false }), Image, Highlight, Color, CharacterCount.configure({ limit: 5000 }), Placeholder.configure({ placeholder: "Write a message..." })],
-    content: "",
-    editorProps: {
-      attributes: { class: "prose prose-sm dark:prose-invert focus:outline-none max-w-none min-h-[40px]" },
-      handlePaste: (view, event) => {
-        const items = event.clipboardData?.items;
-        if (!items) return false;
-        for (const item of items) {
-          if (item.type.startsWith("image/")) {
-            const file = item.getAsFile();
-            if (file) insertImage(file);
-            return true;
-          }
-        }
-        return false;
-      },
-      handleDrop: (view, event) => {
-        event.preventDefault();
-        const files = Array.from(event.dataTransfer?.files || []);
-        files.forEach((file) => insertImage(file));
-      },
+const editor = useEditor({
+  extensions: [
+    StarterKit,
+    Underline,
+    Link.configure({ openOnClick: false }),
+    Image,
+    Highlight,
+    Color,
+    CharacterCount.configure({ limit: 5000 }),
+    Placeholder.configure({ placeholder: "Write a message..." }),
+  ],
+  content: "",
+  editorProps: {
+    attributes: {
+      class: "prose prose-sm dark:prose-invert focus:outline-none max-w-none min-h-[40px]"
+     
     },
-    immediatelyRender: false,
-  });
+    handlePaste: (view, event) => {
+      const items = event.clipboardData?.items;
+      if (!items) return false;
+
+      for (const item of items) {
+        if (item.type.startsWith("image/")) {
+          const file = item.getAsFile();
+          if (file) insertImageFile(file); // make sure this function is defined
+          return true;
+        }
+      }
+
+      return false;
+    },
+    handleDrop: (view, event) => {
+      event.preventDefault();
+      const files = Array.from(event.dataTransfer?.files || []);
+      files.forEach((file) => insertImageFile(file));
+    },
+  },
+  immediatelyRender: false,
+});
+
 
   // When editingInitialContent changes (i.e. user clicked Edit), load it into the editor
   useEffect(() => {
@@ -132,12 +217,35 @@ export default function MessageInput({ onSend, editingMessageId = null, editingI
   const addEmoji = (emoji: any) => {
     editor?.chain().focus().insertContent(emoji.native).run();
   };
-  
-const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-  const files = e.target.files;
-  if (!files) return;
 
-  setAttachedFiles((prev) => [...prev, ...Array.from(files)]);
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  if (!e.target.files) return;
+
+  const files = Array.from(e.target.files);
+
+  for (const file of files) {
+    const formData = new FormData();
+    formData.append("file", file);
+
+    const res = await fetch("/api/upload", {
+      method: "POST",
+      body: formData,
+    });
+
+    const data = await res.json();
+
+    setUploadedFiles((prev) => [
+      ...prev,
+      {
+        name: data.name,
+        url: data.url,
+        type: file.type,
+      },
+    ]);
+  }
+
+  // reset input
+  e.target.value = "";
 };
 
 
@@ -181,27 +289,64 @@ const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
           </PopoverContent>
         </Popover>
 
-        <input type="file" multiple id="file-upload" className="hidden" onChange={handleFileChange} />
+        <input type="file" multiple  id="file-upload" className="hidden" onChange={handleFileChange} />
         {/* <label htmlFor="file-upload">
           <Button size="sm">📎</Button>
         </label> */}
         <ToolbarButton editor={editor} command="toggleFileUpload" label="📎" className="bg-red-500" />
         {/* When editing, show Update and Cancel buttons — otherwise show Send */}
-        {editingMessageId ? (
-          <div className="flex gap-2">
-            <Button size="sm" onClick={handleSend}>Update</Button>
-            <Button size="sm" variant="secondary" onClick={() => { onCancelEdit?.(); editor?.commands.clearContent(); setAttachedFiles([]); }}>
-              Cancel
-            </Button>
-          </div>
-        ) : (
-          <Button size="sm" variant="default" onClick={handleSend}>Send</Button>
-        )}
+        
       </div>
 
-    <div className="border rounded-xl p-2 bg-white dark:bg-zinc-900 relative" ref={editorRef}>
-  <div className="max-h-[200px] overflow-y-auto">
+    <div className="border rounded-xl p-2 bg-white  dark:bg-zinc-900 relative" ref={editorRef}>
+  <div className="max-h-[200px] overflow-y-auto break-all">
     <EditorContent editor={editor} />
+        {uploadedFiles.length > 0 && (
+  <div className="flex flex-wrap gap-4 mt-2 w-fit">
+    {uploadedFiles.map((file, i) => (
+      <div key={i} className="relative flex flex-col items-center  px-2 py-2 rounded-lg w-36 ">
+        <button
+          onClick={() => deleteUploadedFile(i)}
+          className="absolute top-0 right-4 bg-gray-300 hover:bg-red-500 w-6 h-6 rounded-full text-white flex items-center justify-center text-sm"
+        >
+          ×
+        </button>
+
+        {file.type.startsWith("image/") ? (
+          <img src={file.url} alt={file.name} className="w-22 h-22 object-cover rounded-md border-1 border-black" />
+        ) : (
+          <span className="truncate max-w-full text-xs">{file.name}</span>
+        )}
+      </div>
+    ))}
+  </div>
+)}
+
+
+<div className="flex justify-end mt-2 sticky bottom-0">
+  {editingMessageId ? (
+    <div className="flex gap-2">
+      <Button size="sm" onClick={handleSend}>
+        Update
+      </Button>
+      <Button
+        size="sm"
+        variant="secondary"
+        onClick={() => {
+          onCancelEdit?.();
+          editor?.commands.clearContent();
+          setAttachedFiles([]);
+        }}
+      >
+        Cancel
+      </Button>
+    </div>
+  ) : (
+    <Button size="sm" variant="default" onClick={handleSend}>
+      <IoMdSend />
+    </Button>
+  )}
+</div>
   </div>
 
   {/* FLOATING DROPDOWN — not clipped anymore */}
@@ -219,8 +364,7 @@ const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
   />
 </div>
 
-
-      {attachedFiles.length > 0 && (
+  {/* {attachedFiles.length > 0 && (
         <div className="flex flex-wrap gap-2 mt-2">
           {attachedFiles.map((file, i) => (
             <div key={i} className="flex items-center gap-2 bg-gray-100 px-2 py-1 rounded-lg dark:bg-zinc-800">
@@ -232,7 +376,9 @@ const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
             </div>
           ))}
         </div>
-      )}
+      )} */}
+
+      
     </div>
   );
 }

@@ -14,7 +14,10 @@ const nextConfig: NextConfig = {
     return [
       {
         source: "/api/:path*",
-        destination: "http://localhost:5000/:path*",
+        destination:
+        process.env.NODE_ENV === "development"
+          ? "http://localhost:5000/:path*"
+          : `${process.env.NEXT_PUBLIC_SERVER_URL}/:path*`,
       },
     ];
   },

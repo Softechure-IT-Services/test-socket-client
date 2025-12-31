@@ -47,7 +47,7 @@ const userId = user?.id;
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [hoveredId, setHoveredId] = useState<string | number | null>(null);
   const SERVER_URL =
-    process.env.NEXT_PUBLIC_SERVER_URL ?? "http://192.168.1.14:5000";
+    process.env.NEXT_PUBLIC_SERVER_URL ?? "http://192.168.0.113:5000";
 
   // EDIT state (we'll load content into the MessageInput when editing)
   const [editMessageId, setEditMessageId] = useState<string | null>(null);
@@ -98,7 +98,7 @@ useEffect(() => {
 
   return () => {
     if (socket) {
-      socket.emit("leaveChannel", { channelId: Number(channelId) });
+      socket.emit("leaveChannel", { channel_id: Number(channelId) });
     }
   };
 }, [socket, channelId]);
@@ -212,8 +212,11 @@ useEffect(() => {
 }, [socket, userId]);
 
   useEffect(() => {
+    console.log('messages api call');
     if (!userId || !channelId) return;
-    fetch(`${SERVER_URL}/channels/${channelId}/messages`)
+fetch(`${SERVER_URL}/channels/${channelId}/messages`, {
+  credentials: "include", // ✅ REQUIRED
+})
       .then((res) => res.json())
       .then((data: any[]) => {
         const mapped: ChatMessage[] = data
@@ -506,9 +509,9 @@ function handleSaveEdit(
     );
   }
 
-useEffect(() => {
-  setMessages([]);
-}, [channelId]);
+// useEffect(() => {
+//   setMessages([]);
+// }, [channelId]);
 
   return (
     <div className="flex min-h-[100%] dark:bg-black  "  onDragEnter={handleDragEnter}

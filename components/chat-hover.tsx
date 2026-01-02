@@ -2,20 +2,26 @@
 
 import React from "react";
 import { MdAddReaction } from "react-icons/md";
-import { IoPinSharp } from "react-icons/io5";
+import { RiUnpinFill } from "react-icons/ri";
+import { GrPin } from "react-icons/gr";
 import { FaRegEdit } from "react-icons/fa";
 import { MdDeleteForever } from "react-icons/md";
 import { RiShareForwardFill, RiReplyFill } from "react-icons/ri";
 type ChatHoverProps = {
   messageId: string; // whatever your message IDs are
+  pinned?: boolean;
   onAction: (action: string, messageId: string ) => void;
 };
 
-export default function ChatHover({ messageId, onAction }: ChatHoverProps) {
+export default function ChatHover({ messageId, pinned, onAction }: ChatHoverProps) {
   const items = [
     { type: "reaction", icon: <MdAddReaction />, label: "Reaction" },
     { type: "reply", icon: <RiReplyFill />, label: "Reply" },
-    { type: "pin", icon: <IoPinSharp />, label: "Pin" },
+    { 
+      type: "pin", 
+      icon: pinned ? <RiUnpinFill /> : <GrPin />, 
+      label: pinned ? "Unpin" : "Pin" // ✅ dynamic tooltip
+    },
     { type: "forward", icon: <RiShareForwardFill />, label: "Forward" },
     { type: "edit", icon: <FaRegEdit />, label: "Edit" },
     { type: "delete", icon: <MdDeleteForever />, label: "Delete" },

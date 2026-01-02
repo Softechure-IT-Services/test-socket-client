@@ -46,7 +46,7 @@ export function NavUser({  user}: {  user: UserType }) {
               <Avatar className="h-8 w-8 rounded-lg">
               <AvatarImage src={user.avatar_url ?? ""} alt={user.name} />
               <AvatarFallback className="rounded-lg">
-                {user.name.charAt(0).toUpperCase()}
+                {(user.name?.charAt(0) ?? "?").toUpperCase()}
               </AvatarFallback>
               </Avatar>
               <div className="grid flex-1 text-left text-sm leading-tight">

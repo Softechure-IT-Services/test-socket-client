@@ -23,12 +23,13 @@ type Reaction = { emoji: string; count: number; users?: string[] };
 type ChatMessage = {
   id?: number | string;
   sender_id: string;
+  sender_name?: string;
+  avatar_url?: string | null;
   content: string;
   self: boolean;
   created_at?: string | null;
   updated_at?: string | null;
   reactions?: Reaction[];
-  avatar_url?: string | null;
 };
 type ChannelChatProps = {
   channelId: string;
@@ -243,6 +244,7 @@ fetch(`${SERVER_URL}/channels/${channelId}/messages`, {
             return {
               id: stableId,
               sender_id: String(msg.sender_id),
+              sender_name: msg.sender_name,
               content: msg.content,
               self: String(msg.sender_id) === String(userId),
               created_at: createdAt,
@@ -553,17 +555,26 @@ function handleSaveEdit(
 
                 <div
                   className={`p-1 rounded-xl break-words flex  ${
-                    msg.self ? "flex-row-reverse" : "flex-row"
-                  }  gap-2 items-center relative `}
+                    msg.self ? "items-end flex-row-reverse" : "flex-col items-start"
+                  }  gap-2 relative `}
                 >
                    {!msg.self && showAvatar && (
-                    <img
-                      src={msg.avatar_url != null ? `/avatar/${msg.avatar_url}` : "/avatar/avatar-placeholder.png"}
+                    <div className="flex flex-row gap-2">
+                      <img
+                      src={msg.avatar_url != null ? `/avatar/${msg.avatar_url}` : "/avatar/fallback.webp"}
                       alt="avatar"
-                      className="w-8 h-8 rounded-full object-cover"
+                      className="w-8 h-8 rounded-full object-cover shrink-0"
                     />
-                  )}
-                  <div className="relative">
+                    {msg.sender_name && (
+                      <span className="text-sm font-medium self-center">
+                        {msg.sender_name}
+                      </span>
+                    )}
+
+                    </div>
+                  )
+                  }
+                 <div className="relative">
                     <div
                       className={`rounded-md p-2 break-words w-fit ${
                         msg.self ? "bg-black text-white" : "bg-zinc-200"
@@ -618,7 +629,7 @@ function handleSaveEdit(
 
                   {msg.created_at && (
                     <div
-                      className={`text-[10px] top-[50%] translate-y-[-50%] opacity-60 absolute flex-col ${
+                      className={`text-[10px] top-[20px] translate-y-[-50%] opacity-60 absolute flex-col ${
                         msg.self
                           ? "right-0 translate-x-[calc(100%+4px)]"
                           : "left-0 -translate-x-[calc(100%+4px)]"

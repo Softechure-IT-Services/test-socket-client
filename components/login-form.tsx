@@ -55,7 +55,7 @@ export function LoginForm({ className, ...props }: React.ComponentProps<"div">) 
       duration: 2000,
       onAutoClose: () => {
         // Redirect only AFTER toast disappears
-        window.location.href = "/chat";
+        window.location.href = "/";
       },
     });
 

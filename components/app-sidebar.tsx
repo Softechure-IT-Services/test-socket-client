@@ -42,7 +42,7 @@ const [modalType, setModalType] = React.useState<"channel" | "dm">("channel");
       try {
         // ✅ Channels
         const ch = await axios.get(
-          `${process.env.NEXT_PUBLIC_SERVER_URL}/channels`,
+          `/api/channels`,
           {
             withCredentials: true,
           }

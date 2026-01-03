@@ -19,17 +19,25 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { TbPinFilled } from "react-icons/tb";
+
 type Reaction = { emoji: string; count: number; users?: string[] };
 type ChatMessage = {
   id?: number | string;
   sender_id: string;
+  sender_name?: string;
+  avatar_url?: string | null;
   content: string;
   self: boolean;
   created_at?: string | null;
   updated_at?: string | null;
   reactions?: Reaction[];
-  avatar_url?: string | null;
+  pinned?: boolean;
+  pinned_by?: string; // userId
+  pinner_name?: string;
+  pinned_at?: string | null;
 };
+
 type ChannelChatProps = {
   channelId: string;
 };
@@ -47,7 +55,7 @@ const userId = user?.id;
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [hoveredId, setHoveredId] = useState<string | number | null>(null);
   const SERVER_URL =
-    process.env.NEXT_PUBLIC_SERVER_URL ?? "http://192.168.1.14:5000";
+    process.env.NEXT_PUBLIC_SERVER_URL ?? "http://192.168.0.113:5000";
 
   // EDIT state (we'll load content into the MessageInput when editing)
   const [editMessageId, setEditMessageId] = useState<string | null>(null);
@@ -98,7 +106,7 @@ useEffect(() => {
 
   return () => {
     if (socket) {
-      socket.emit("leaveChannel", { channelId: Number(channelId) });
+      socket.emit("leaveChannel", { channel_id: Number(channelId) });
     }
   };
 }, [socket, channelId]);
@@ -212,8 +220,11 @@ useEffect(() => {
 }, [socket, userId]);
 
   useEffect(() => {
+    console.log('messages api call');
     if (!userId || !channelId) return;
-    fetch(`${SERVER_URL}/channels/${channelId}/messages`)
+fetch(`${SERVER_URL}/channels/${channelId}/messages`, {
+  credentials: "include", // ✅ REQUIRED
+})
       .then((res) => res.json())
       .then((data: any[]) => {
         const mapped: ChatMessage[] = data
@@ -240,12 +251,17 @@ useEffect(() => {
             return {
               id: stableId,
               sender_id: String(msg.sender_id),
+              sender_name: msg.sender_name,
               content: msg.content,
               self: String(msg.sender_id) === String(userId),
               created_at: createdAt,
               updated_at: msg.updated_at ?? null,
               reactions,
               avatar_url: msg.avatar_url ?? null,
+              pinned: msg.pinned === 1 || msg.pinned === true,
+              pinned_by: msg.pinned_by,
+              pinner_name: msg.pinner_name,
+              pinned_at: msg.pinned_at,
             };
           })
           .sort((a, b) => {
@@ -259,6 +275,39 @@ useEffect(() => {
         console.error("Failed to fetch messages:", err);
       });
   }, [channelId, userId]);
+
+useEffect(() => {
+  if (!socket) return;
+
+  const handlePinned = ({ messageId, pinned_by, pinner_name, pinned_at }: any) => {
+    setMessages(prev =>
+      prev.map(msg =>
+        String(msg.id) === String(messageId)
+          ? { ...msg, pinned: true, pinned_by, pinner_name, pinned_at }
+          : msg
+      )
+    );
+  };
+
+  const handleUnpinned = ({ messageId }: any) => {
+    setMessages(prev =>
+      prev.map(msg =>
+        String(msg.id) === String(messageId)
+          ? { ...msg, pinned: false, pinned_by: undefined, pinner_name: undefined, pinned_at: undefined }
+          : msg
+      )
+    );
+  };
+
+  socket.on("messagePinned", handlePinned);
+  socket.on("messageUnpinned", handleUnpinned);
+
+  return () => {
+    socket.off("messagePinned", handlePinned);
+    socket.off("messageUnpinned", handleUnpinned);
+  };
+}, [socket]);
+
 
   useEffect(() => {
     const el = containerRef.current;
@@ -274,6 +323,31 @@ useEffect(() => {
     if (!socket || !socket.connected) return alert("Socket not connected yet.");
     socket.emit("sendMessage", { content, channel_id: Number(channelId) });
   };
+  
+function pinMessage(messageId: string | number) {
+  setMessages(prev =>
+    prev.map(msg =>
+      String(msg.id) === String(messageId)
+        ? { ...msg, pinned: true }
+        : msg
+    )
+  );
+  if (!socket) return;
+  socket.emit("pinMessage", { messageId, channel_id: Number(channelId) });
+}
+
+function unpinMessage(messageId: string | number) {
+  setMessages(prev =>
+    prev.map(msg =>
+      String(msg.id) === String(messageId)
+        ? { ...msg, pinned: false }
+        : msg
+    )
+  );
+  if (!socket) return;
+  socket.emit("unpinMessage", { messageId, channel_id: Number(channelId) });
+}
+
 
 
   // Edit flow: when user clicks edit, we load content into MessageInput
@@ -473,28 +547,32 @@ function handleSaveEdit(
 }
 
 
-  function handleChatAction(action: string, messageId: string) {
-    switch (action) {
-      case "reaction":
-        openEmojiPicker(messageId);
-        break;
-      case "reply":
-        // setReplyToMessage(messageId);
-        break;
-      case "pin":
-        break;
-      case "forward":
-        break;
-      case "edit":
-        enableEditMode(messageId);
-        break;
-      case "delete":
-        deleteMessage(messageId);
-        break;
-      default:
-        break;
-    }
+function handleChatAction(action: string, messageId: string) {
+  const msg = messages.find(m => String(m.id) === String(messageId));
+  switch (action) {
+    case "reaction":
+      openEmojiPicker(messageId);
+      break;
+    case "reply":
+      break;
+    case "pin":
+      if (!msg) return;
+      if (msg.pinned) unpinMessage(messageId);
+      else pinMessage(messageId);
+      break;
+    case "forward":
+      break;
+    case "edit":
+      enableEditMode(messageId);
+      break;
+    case "delete":
+      deleteMessage(messageId);
+      break;
+    default:
+      break;
   }
+}
+
 
   function deleteMessage(messageId: string) {
     if (!confirm("Delete this message?")) return;
@@ -506,9 +584,9 @@ function handleSaveEdit(
     );
   }
 
-useEffect(() => {
-  setMessages([]);
-}, [channelId]);
+// useEffect(() => {
+//   setMessages([]);
+// }, [channelId]);
 
   return (
     <div className="flex min-h-[100%] dark:bg-black  "  onDragEnter={handleDragEnter}
@@ -538,29 +616,38 @@ useEffect(() => {
             return (
               <div
                 key={msgId}
-                className={`hover:bg-gray-50 p-1 rounded-xl relative flex items-center gap-3 ${
-                  msg.self ? "justify-end" : "justify-start"
-                }`}
+                className={` p-1 rounded-xl relative flex items-center gap-3 ${msg.pinned ? 'pinned bg-amber-100':'hover:bg-gray-50'} ${msg.self ? "justify-end" : "justify-start"}`}
                 onMouseEnter={() => setHoveredId(msgId)}
                 onMouseLeave={() => setHoveredId(null)}
               >
                 {hoveredId === msgId && msg.self && (
                   <ChatHover messageId={msgId} onAction={handleChatAction} />
                 )}
-
+                {msg.pinned && (
+                  <span className="absolute top-0 right-0 text-blue-500 text-sm"><TbPinFilled size={20} className="text-amber-400" /></span>
+                )}
                 <div
                   className={`p-1 rounded-xl break-words flex  ${
-                    msg.self ? "flex-row-reverse" : "flex-row"
-                  }  gap-2 items-center relative `}
+                    msg.self ? "items-end flex-row-reverse" : "flex-col items-start"
+                  }  gap-2 relative `}
                 >
                    {!msg.self && showAvatar && (
-                    <img
-                      src={msg.avatar_url != null ? `/avatar/${msg.avatar_url}` : "/avatar/avatar-placeholder.png"}
+                    <div className="flex flex-row gap-2">
+                      <img
+                      src={msg.avatar_url != null ? `/avatar/${msg.avatar_url}` : "/avatar/fallback.webp"}
                       alt="avatar"
-                      className="w-8 h-8 rounded-full object-cover"
+                      className="w-8 h-8 rounded-full object-cover shrink-0"
                     />
-                  )}
-                  <div className="relative">
+                    {msg.sender_name && (
+                      <span className="text-sm font-medium self-center">
+                        {msg.sender_name}
+                      </span>
+                    )}
+
+                    </div> 
+                  )
+                  }
+                 <div className="relative">
                     <div
                       className={`rounded-md p-2 break-words w-fit ${
                         msg.self ? "bg-black text-white" : "bg-zinc-200"
@@ -615,7 +702,7 @@ useEffect(() => {
 
                   {msg.created_at && (
                     <div
-                      className={`text-[10px] top-[50%] translate-y-[-50%] opacity-60 absolute flex-col ${
+                      className={`text-[10px] top-[20px] translate-y-[-50%] opacity-60 absolute flex-col ${
                         msg.self
                           ? "right-0 translate-x-[calc(100%+4px)]"
                           : "left-0 -translate-x-[calc(100%+4px)]"
@@ -662,8 +749,9 @@ useEffect(() => {
                 )}
 
                 {hoveredId === msgId && !msg.self && (
-                  <ChatHover messageId={msgId} onAction={handleChatAction} />
+                  <ChatHover messageId={msgId}  pinned={msg.pinned} onAction={handleChatAction} />
                 )}
+                
               </div>
             );
           })}

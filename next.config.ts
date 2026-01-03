@@ -1,5 +1,9 @@
 import type { NextConfig } from "next";
+const API_URL = process.env.NODE_ENV ? process.env.NEXT_PUBLIC_SERVER_URL : 'http://localhost:8000';
 
+if (!API_URL) {
+  throw new Error("API_URL is not defined");
+}
 const nextConfig: NextConfig = {
   images: {
     remotePatterns: [
@@ -14,7 +18,7 @@ const nextConfig: NextConfig = {
     return [
       {
         source: "/api/:path*",
-        destination: "http://localhost:5000/:path*",
+        destination: `${API_URL}/:path*`,
       },
     ];
   },

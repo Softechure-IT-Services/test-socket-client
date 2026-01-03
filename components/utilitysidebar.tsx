@@ -46,7 +46,7 @@ export function RightSidebar() {
             className="group/collapsible"
           >
             <SidebarMenuItem>
-              <CollapsibleTrigger >
+              <CollapsibleTrigger asChild>
                 <SidebarMenuButton tooltip={"Utilities"}>
                   <Settings />
                   <span>Utilities</span>

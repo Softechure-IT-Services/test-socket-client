@@ -75,7 +75,7 @@ export function SignupForm({ className, ...props }: React.ComponentProps<"div">)
     setLoading(true);
 
     try {
-      const response = await fetch(`${BACKEND_URL}/auth/register`, {
+      const response = await fetch(`/api/auth/register`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

@@ -7,6 +7,10 @@ import DOMPurify from "dompurify";
 import MainHeader from "@/app/shared/ui/MainHeader";
 import FileBg from "@/components/ui/file-bg";
 import FileUploadToggle from "@/components/ui/file-upload";
+import Dateseparator from "@/components/ui/date"
+import { shouldShowDateSeparator } from "@/lib/shouldShowDateSeparator";
+
+
 import {
   Popover,
   PopoverContent,
@@ -41,6 +45,12 @@ type ChannelChatProps = {
 
 export default function ChannelChat({ channelId }: ChannelChatProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const formatDate = (date: string) =>
+  new Date(date).toLocaleDateString("en-GB", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "2-digit",
+  });
   // const [userId, setUserId] = useState<string>("");
   // const [tempUserId, setTempUserId] = useState<string>("");
   // const [connected, setConnected] = useState(false);
@@ -81,17 +91,28 @@ export default function ChannelChat({ channelId }: ChannelChatProps) {
     e.preventDefault(); // important to allow drop
   };
 
-  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    dragCounter.current = 0;
-    setDragging(false);
+  // const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+  //   e.preventDefault();
+  //   dragCounter.current = 0;
+  //   setDragging(false);
 
-    const files = e.dataTransfer.files;
-    if (files.length) {
-      console.log("Dropped files:", files);
-      // Handle files here
-    }
-  };
+  //   const files = e.dataTransfer.files;
+  //   if (files.length) {
+  //     console.log("Dropped files:", files);
+  //     // Handle files here
+  //   }
+  // };
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+  e.preventDefault();
+  dragCounter.current = 0;
+  setDragging(false);
+
+  const files = Array.from(e.dataTransfer.files);
+  if (!files.length) return;
+
+  // 🔥 send files
+  handleSendMessage("", files);
+};
 
   useEffect(() => {
     if (!socket || !channelId) return;
@@ -309,9 +330,23 @@ export default function ChannelChat({ channelId }: ChannelChatProps) {
 
 
   function pinMessage(messageId: string | number) {
+
+
     if (!socket) return;
     socket.emit("pinMessage", { messageId, channel_id: Number(channelId) });
   }
+
+function shouldShowDateSeparator(messages: any[], index: number) {
+  if (index === 0) return true;
+
+  const currentDate = new Date(messages[index].created_at).toDateString();
+  const previousDate = new Date(
+    messages[index - 1].created_at
+  ).toDateString();
+
+  return currentDate !== previousDate;
+}
+
 
   function unpinMessage(messageId: string | number) {
     if (!socket) return;
@@ -564,19 +599,20 @@ export default function ChannelChat({ channelId }: ChannelChatProps) {
       onDragEnter={handleDragEnter}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
-      onDrop={handleDrop}
-    >
-      {dragging && (
-        <div className="absolute top-0 left-0 w-full h-full bg-black bg-opacity-50 flex items-center justify-center z-50 transition-opacity duration-300">
-          <FileBg />
-        </div>
-      )}
+      onDrop={handleDrop}>
+
+       {dragging && (
+  <div className="fixed top-0 left-0 w-full h-[100%] bg-black bg-opacity-50 flex items-center justify-center z-500 transition-opacity duration-300">
+    <FileBg />
+   
+  </div>
+)}
       <main className="flex flex-col flex-1">
         <MainHeader id={channelId} type={"channel"} />
 
         <div
           ref={containerRef}
-          className="flex-1 overflow-y-auto py-6 !px-[3rem] "
+          className="flex-1 py-2 bg-[var(--sidebar)]"
           style={{ scrollbarGutter: "stable" }}
         >
           {messages.map((msg, index) => {
@@ -587,14 +623,14 @@ export default function ChannelChat({ channelId }: ChannelChatProps) {
             return (
               <div
                 key={msgId}
-                className={` p-1 rounded-xl relative flex items-center gap-3 ${
-                  msg.pinned ? "pinned bg-amber-100" : "hover:bg-gray-50"
-                } ${msg.self ? "justify-end" : "justify-start"}`}
+                className={` pt-2.5 pb-1 relative flex justify-start group/message !px-[25px] items-center gap-3 ${
+                  msg.pinned ? "pinned bg-amber-100" : "hover:bg-gray-100"
+                } ${shouldShowDateSeparator(messages, index) && ( 'border-t' )} `}
                 onMouseEnter={() => setHoveredId(msgId)}
                 onMouseLeave={() => setHoveredId(null)}
               >
                 {hoveredId === msgId && msg.self && (
-                  <ChatHover messageId={msgId} pinned={msg.pinned} onAction={handleChatAction} />
+                  <ChatHover messageId={msgId} onAction={handleChatAction} />
                 )}
                 {msg.pinned && (
                   <span className="absolute top-0 right-0 text-blue-500 text-sm">
@@ -602,49 +638,58 @@ export default function ChannelChat({ channelId }: ChannelChatProps) {
                   </span>
                 )}
                 <div
-                  className={`p-1 rounded-xl break-words flex  ${
-                    msg.self
-                      ? "items-end flex-row-reverse"
-                      : "flex-col items-start"
-                  }  gap-2 relative `}
+                  className={`py-0 rounded-xl items-start flex flex-col gap-0 relative `}
                 >
-                  {!msg.self && showAvatar && (
-                    <div className="flex flex-row gap-2">
+                  {showAvatar && (
+                    <div className="flex flex-row gap-2 items-center">
                       <img
-                        src={
-                          msg.avatar_url != null
-                            ? `/avatar/${msg.avatar_url}`
-                            : "/avatar/fallback.webp"
-                        }
-                        alt="avatar"
-                        className="w-8 h-8 rounded-full object-cover shrink-0"
-                      />
-                      {/* {msg.sender_name && ( */}
-                        <span className="text-sm font-medium self-center">
-                          {msg.sender_name}
-                        </span>
-                      {/* )} */}
-                    </div>
-                  )}
-                  <div className="relative">
+                      src={msg.avatar_url != null ? `/avatar/${msg.avatar_url}` : "/avatar/fallback.webp"}
+                      alt="avatar"
+                      className="w-8 h-8 rounded-full object-cover shrink-0"
+                    />
+                    {msg.sender_name && (
+                      
+                      <span className="text-sm font-medium self-center">
+                        {msg.sender_name}
+                        {/* sadfasdjsdngjlksdfghsdjkfghlksjdfhgjksdfgjlksdfghjksdlfhgsdflkjghsdjlkfghsdlkfjhgjkdfgsdfgsdf */}
+                      </span>
+                    )}
+
+                       {msg.sender_name && (
+                        <div className="flex items-center gap-2">
+                          {msg.created_at && (
+                            <span className="text-[10px] opacity-60 whitespace-nowrap">
+                              {new Date(msg.created_at).toLocaleString("en-US", {
+                                hour: "numeric",
+                                minute: "numeric",
+                                hour12: true,
+                              })}
+
+                             {msg.updated_at && msg.updated_at !== msg.created_at && (
+                        <span className="italic text-[10px]  ml-1 line">(edited)</span>
+                      )}
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </div> 
+                  )
+                  }
+
+                 <div className="relative">
                     <div
-                      className={`rounded-md p-2 break-words w-fit ${
-                        msg.self ? "bg-black text-white" : "bg-zinc-200"
-                      }`}
+                      className="rounded-md ms-[38px] w-fit flex flex-col"
                     >
                       <div
-                        className="leading-none"
+                        className="leading-none leading-relaxed max-w-full whitespace-pre-wrap [overflow-wrap:anywhere] "
                         dangerouslySetInnerHTML={{
                           __html: DOMPurify.sanitize(msg.content),
                         }}
-                      />
-                    </div>
-                  </div>
-
-                  {msg.reactions && msg.reactions.length > 0 && (
+                        />
+                           {msg.reactions && msg.reactions.length > 0 && (
                     <Tooltip>
                       <TooltipTrigger asChild>
-                        <div className="flex gap-1 flex-wrap whitespace-nowrap cursor-pointer">
+                        <div className="flex gap-1 mt-2 flex-wrap whitespace-nowrap cursor-pointer">
                           {msg.reactions.map((r, idx) => (
                             <span
                               key={idx}
@@ -678,14 +723,18 @@ export default function ChannelChat({ channelId }: ChannelChatProps) {
                       </TooltipContent>
                     </Tooltip>
                   )}
+                        {!showAvatar && msg.updated_at && msg.updated_at !== msg.created_at && (
+                       <span className="inline text-[10px] italic opacity-60 whitespace-nowrap">(edited)</span>
+                     )}
+                    </div>
+                  </div>
 
-                  {msg.created_at && (
+               
+
+                  { !showAvatar && msg.created_at && (
                     <div
-                      className={`text-[10px] top-[20px] translate-y-[-50%] opacity-60 absolute flex-col ${
-                        msg.self
-                          ? "right-0 translate-x-[calc(100%+4px)]"
-                          : "left-0 -translate-x-[calc(100%+4px)]"
-                      } whitespace-nowrap flex items-center gap-0`}
+                      className="text-[10px] top-[calc(calc(var(--spacing)*1)+0.08rem)] left-0 -translate-x-[0.5rem]  opacity-60 absolute flex-col  hidden group-hover/message:block
+                          whitespace-nowrap flex items-center gap-0"
                     >
                       {new Date(msg.created_at).toLocaleString("en-US", {
                         hour: "numeric",
@@ -694,12 +743,11 @@ export default function ChannelChat({ channelId }: ChannelChatProps) {
                       })}
 
                       {/* 👇 Show "edited" only if the message was edited */}
-                      {msg.updated_at && msg.updated_at !== msg.created_at && (
-                        <span className="italic opacity-60 ml-1">(edited)</span>
-                      )}
+  
                     </div>
                   )}
                 </div>
+                  
 
                 {showEmojiPickerFor === msgId && (
                   <Popover
@@ -726,19 +774,18 @@ export default function ChannelChat({ channelId }: ChannelChatProps) {
                     </PopoverContent>
                   </Popover>
                 )}
-
-                {hoveredId === msgId && !msg.self && (
-                  <ChatHover
-                    messageId={msgId}
-                    pinned={msg.pinned}
-                    onAction={handleChatAction}
-                  />
+                                {hoveredId === msgId && (
+                  <ChatHover messageId={msgId} isSelf={msg.self} onAction={handleChatAction} />
                 )}
+
+                          {shouldShowDateSeparator(messages, index) && (
+                        <Dateseparator date={msg.created_at}/>
+                          )}
               </div>
             );
           })}
         </div>
-        <div className="p-4 relative sticky bottom-0 right-0 bg-white dark:bg-zinc-900 border-t">
+        <div className="p-2 pt-0 relative sticky bottom-0 right-0 bg-[var(--sidebar)] dark:bg-zinc-900 ">
           {/* Pass edit state into MessageInput. When user clicks edit, MessageInput will show Update/Cancel and call onSaveEdit/onCancelEdit */}
           <div>
             <FileUploadToggle />

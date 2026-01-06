@@ -252,3 +252,6 @@ ol {
 .ProseMirror {
   position: relative;
 }
+.line {
+  line-height: 1;
+}

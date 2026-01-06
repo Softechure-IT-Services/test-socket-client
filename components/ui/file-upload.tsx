@@ -9,12 +9,19 @@ import { FaComputer } from "react-icons/fa6";
 export default function FileUploadToggle() {
   const [open, setOpen] = useState<boolean>(false);
 
-  useEffect(() => {
-    const handler = () => setOpen(prev => !prev);
-    window.addEventListener("toggleFileUpload", handler);
+ useEffect(() => {
+  const toggleHandler = () => setOpen(prev => !prev);
+  const closeHandler = () => setOpen(false);
 
-    return () => window.removeEventListener("toggleFileUpload", handler);
-  }, []);
+  window.addEventListener("toggleFileUpload", toggleHandler);
+  window.addEventListener("closeFileUpload", closeHandler);
+
+  return () => {
+    window.removeEventListener("toggleFileUpload", toggleHandler);
+    window.removeEventListener("closeFileUpload", closeHandler);
+  };
+}, []);
+
 
   if (!open) return null;
 

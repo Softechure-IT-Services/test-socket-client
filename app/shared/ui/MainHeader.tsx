@@ -2,7 +2,12 @@
 
 import { useAuth } from "@/components/context/userId_and_connection/provider";
 import ButtonGroup from "@/components/ui/button-group";
+import TabsModalDemo from "@/components/ui/groupmember";
 import { useEffect, useState } from "react";
+import { FaHeadphones } from "react-icons/fa6"
+import { FaRegBell } from "react-icons/fa";
+import { IoSearchOutline } from "react-icons/io5";
+
 
 interface MainHeaderProps {
   id?: string; // channelId or dmId
@@ -62,9 +67,9 @@ export default function MainHeader({ id, type }: MainHeaderProps) {
   }, [id, type]);
 
   return (
-    <div className="p-4 border-b flex justify-between sticky top-[55px] z-50 bg-white">
+    <div className="px-4 pt-4 pb-0 border-b flex justify-between sticky top-[55px] z-50 bg-white">
       <div>
-        <h2 className="mb-1 font-semibold">
+        <h2 className="mb-1 text-2xl font-semibold">
           {loading
             ? "Loading..."
             : type === "channel"
@@ -72,18 +77,31 @@ export default function MainHeader({ id, type }: MainHeaderProps) {
             : "Direct Message"}
         </h2>
 
-        {type === "channel" && !loading && (
+        {/* {type === "channel" && !loading && (
           <p className="text-xs text-gray-500">
             {members.length} members
           </p>
-        )}
+        )} */}
 
         <ButtonGroup items={buttons} />
       </div>
 
-      <span className="text-sm text-gray-600">
-        {isOnline ? "connected" : "connecting..."}
-      </span>
+      <div className="flex flex-row justify-center items-start gap-3 text-sm text-gray-600">
+        {type === "channel" && channel && (
+          <TabsModalDemo channelId={channel.id} />
+        //  <div>hwllo</div>
+        )}
+        <div className="rounded-lg bg-gray-100 p-2 border border-gray-200">
+            <FaHeadphones size={18}/>
+        </div>
+        <div className="rounded-lg bg-gray-100 p-2 border border-gray-200">
+            <FaRegBell size={18}/>
+        </div>
+        <button className="rounded-lg bg-gray-100 p-2 border border-gray-200">
+          <IoSearchOutline size={18}/>
+        </button>
+        {isOnline ? "" : ""}
+      </div>
     </div>
   );
 }

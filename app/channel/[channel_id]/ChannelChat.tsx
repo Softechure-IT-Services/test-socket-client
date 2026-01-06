@@ -4,7 +4,6 @@ import { useAuth } from "@/components/context/userId_and_connection/provider";
 import MessageInput from "@/components/custom/MessageInput";
 import ChatHover from "@/components/chat-hover";
 import DOMPurify from "dompurify";
-import MainHeader from "@/app/shared/ui/MainHeader";
 import  FileBg from "@/components/ui/file-bg";
 import FileUploadToggle from "@/components/ui/file-upload";
 import {
@@ -600,7 +599,6 @@ function handleChatAction(action: string, messageId: string) {
   </div>
 )}
       <main className="flex flex-col flex-1">
-       <MainHeader id={channelId} type={'channel'} />
 
         <div
           ref={containerRef}

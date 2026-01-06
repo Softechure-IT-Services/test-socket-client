@@ -1,11 +1,19 @@
-"use client";
-
-import { useParams } from "next/navigation";
 import ChannelChat from "./ChannelChat";
+import MainHeader from "@/app/shared/ui/MainHeader";
 
-export default function ChannelPage() {
-  const params = useParams();
-  const channelId = params.channel_id as string;
+interface PageProps {
+  params: Promise<{
+    channel_id: string;
+  }>;
+}
 
-  return <ChannelChat channelId={channelId} />;
+export default async function ChannelPage({ params }: PageProps) {
+  const { channel_id } = await params;
+
+  return (
+    <>
+      <MainHeader id={channel_id} type="channel" />
+      <ChannelChat channelId={channel_id} />
+    </>
+  );
 }

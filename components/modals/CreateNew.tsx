@@ -7,6 +7,7 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { useEffect, useState } from "react";
 import { useAuth } from "@/components/context/userId_and_connection/provider";
+import { useDebounce } from "@/hooks/useDebounce";
 
 type User = {
   id: string;
@@ -34,35 +35,47 @@ useEffect(() => {
   }
 }, [isPrivate]);
 
-useEffect(() => {
-  console.log("Current user:", user);
-}, [user]);
 
-// Fetch users from the backend
+const debouncedSearch = useDebounce(search, 300);
+
 useEffect(() => {
+  if (!debouncedSearch) {
+    setUsers([]);
+    return;
+  }
+
+  if (!(type === "dm" || isPrivate)) return;
+
+  const controller = new AbortController();
+
   const fetchUsers = async () => {
     try {
-      const res = await fetch("/api/users");
-      if (!res.ok) throw new Error("Failed to fetch users");
-      const data: User[] = await res.json();
-
-      const filtered = data.filter(
-        (user) => String(user.id) !== String(user.id)
+      const res = await fetch(
+        `/api/users/search?q=${encodeURIComponent(
+          debouncedSearch
+        )}&exclude=${user?.id}`,
+        { signal: controller.signal }
       );
 
-      setUsers(filtered);
-    } catch (err) {
-      console.error("Error fetching users", err);
+      if (!res.ok) throw new Error("Search failed");
+      const data = await res.json();
+      setUsers(data);
+    } catch (err: any) {
+      if (err.name !== "AbortError") {
+        console.error("User search error", err);
+      }
     }
   };
 
-  if (type === "dm" || isPrivate) fetchUsers();
-}, [type, isPrivate, user ]);
+  fetchUsers();
+
+  return () => controller.abort();
+}, [debouncedSearch, type, isPrivate, user?.id]);
 
 
-  const filteredUsers = users.filter((u) =>
-    u.name.toLowerCase().includes(search.toLowerCase())
-  );
+
+  const filteredUsers = users;
+
 
   const toggleUser = (user: User) => {
     if (type === "dm") {

@@ -15,10 +15,15 @@
   import { Button } from "@/components/ui/button";
   import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
   import Picker from "@emoji-mart/react";
+  import { VscMention } from "react-icons/vsc";
   import { FaListUl, FaListOl } from "react-icons/fa6";
   import MentionDropdown from "@/components/ui/mention";
   import { IoMdSend } from "react-icons/io";
 import { CiFileOn } from "react-icons/ci";
+import { CiCirclePlus } from "react-icons/ci";
+import { FiUnderline } from "react-icons/fi";
+import { FiPlus } from "react-icons/fi";
+
   const getFileKind = (type: string, name: string) => {
   if (type.startsWith("image/")) return "image";
   if (type.startsWith("video/")) return "video";
@@ -39,7 +44,9 @@ import { CiFileOn } from "react-icons/ci";
     const [showEmoji, setShowEmoji] = useState(false);
     const [attachedFiles, setAttachedFiles] = useState<File[]>([]);
     const editorRef = useRef<HTMLDivElement>(null);
-
+    // for editor 
+    const [, forceUpdate] = useState(0);
+   
     // file upload and delete
 
     const [uploadedFiles, setUploadedFiles] = useState<
@@ -62,6 +69,7 @@ import { CiFileOn } from "react-icons/ci";
       editor?.chain().focus().setImage({ src: data.url }).run();
     }
   };
+  
   const removeImageFromEditor = (src : any) => {
     if (!editor) return;
 
@@ -289,31 +297,67 @@ import { CiFileOn } from "react-icons/ci";
         .run();
     };
 
-    return (
-      <div className="flex flex-col gap-2 w-full message-box border overflow-hidden rounded-sm bg-[var(--sidebar)] -translate-y-[0.5rem]">
-        <div className="flex items-center gap-1 flex-wrap p-2 bg-gray-200">
-          <ToolbarButton editor={editor}  command="toggleBold" label="B" />
-          <ToolbarButton editor={editor} command="toggleItalic" label="I" />
-          <ToolbarButton editor={editor} command="toggleUnderline" label="U" />
-          <ToolbarButton editor={editor} command="toggleBulletList" label={<FaListUl />} />
-          <ToolbarButton editor={editor} command="toggleOrderedList" label={<FaListOl />} />
-          <ToolbarButton editor={editor} command="toggleCode" label="<>" />
-          <Button size="sm"  variant="editor_buttons" onClick={insertLink}>Link</Button>
+       useEffect(() => {
+  if (!editor) return;
 
-          <Popover open={showEmoji} onOpenChange={setShowEmoji}>
-            <PopoverTrigger>
-              <Button size="sm" variant="editor_buttons">😊</Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-80 z-[99999]">
-              <Picker onEmojiSelect={addEmoji} />
-            </PopoverContent>
-          </Popover>
+  const update = () => forceUpdate(n => n + 1);
+
+  editor.on("selectionUpdate", update);
+  editor.on("transaction", update);
+
+  return () => {
+    editor.off("selectionUpdate", update);
+    editor.off("transaction", update);
+  };
+}, [editor]);
+    return (
+      <div className="flex flex-col gap-2 w-full message-box border overflow-hidden rounded-xl ">
+        <div className="flex items-center gap-1 flex-wrap p-1 bg-gray-200">
+          <ToolbarButton editor={editor}  command="toggleBold" label={<img
+      src="/assets/icons/bold.svg"
+      alt="Plus icon"
+      width={18}
+      height={18}
+      className="black"
+    />} />
+          <ToolbarButton editor={editor} command="toggleItalic" label={<img
+      src="/assets/icons/italic.svg"
+      alt="Plus icon"
+      width={18}
+      height={18}
+      className="black"
+    />} />
+          <ToolbarButton editor={editor}  command="toggleUnderline" label={<FiUnderline />} />
+          <ToolbarButton editor={editor} command="toggleBulletList" label={<img
+      src="/assets/icons/unorderlist.svg"
+      alt="Plus icon"
+      width={18}
+      height={18}
+      className="black"
+    />} />
+          <ToolbarButton editor={editor} command="toggleOrderedList" label={<img
+      src="/assets/icons/orderlist.svg"
+      alt="Plus icon"
+      width={18}
+      height={18}
+      className="black"
+    />} />
+          <ToolbarButton editor={editor} command="toggleCode" label={<img
+      src="/assets/icons/icon.svg"
+      alt="Plus icon"
+      width={18}
+      height={18}
+      className="black"
+    />} />
+          
+
+          
 
           <input type="file" multiple  id="file-upload" className="hidden" onChange={handleFileChange} />
           {/* <label htmlFor="file-upload">
             <Button size="sm">📎</Button>
           </label> */}
-          <ToolbarButton editor={editor} command="toggleFileUpload" label="📎" className="bg-red-500" />
+          
           {/* When editing, show Update and Cancel buttons — otherwise show Send */}
           
         </div>
@@ -391,8 +435,61 @@ return (
   )}
 
 
-  <div className="flex justify-end mt-2 sticky bottom-0">
-    {editingMessageId ? (
+  <div className="flex justify-between mt-2 sticky bottom-0">
+    <div className="flex flex-row gap-1 items-center">
+    <ToolbarButton size="xxl" editor={editor} command="toggleFileUpload" label={ 
+   <FiPlus  />
+  }  className="" />
+        
+    <Popover open={showEmoji} onOpenChange={setShowEmoji}>
+            <PopoverTrigger>
+              <Button size="md" variant="editor_buttons"><img
+      src="/assets/icons/emoji.svg"
+      alt="Plus icon"
+      width={18}
+      height={18}
+       className="black"
+    /></Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-80 z-[99999]">
+              <Picker onEmojiSelect={addEmoji} />
+            </PopoverContent>
+          </Popover>
+          <button
+  type="button"
+  className="px-1 py-1 rounded hover:bg-gray-200 text-sm"
+  onClick={() => {
+    if (mentionOpen) {
+      setMentionOpen(false);
+      return;
+    }
+
+    // Position dropdown near cursor
+    const selection = window.getSelection();
+    if (!selection?.rangeCount) return;
+
+    const range = selection.getRangeAt(0);
+    const rect = range.getBoundingClientRect();
+
+    setMentionPosition({
+      top: rect.bottom + window.scrollY + 6,
+      left: rect.left + window.scrollX,
+    });
+
+    setMentionOpen(true);
+  }}
+>
+  <img
+      src="/assets/icons/mantion.svg"
+      alt="Plus icon"
+      width={18}
+      height={18}
+       className="black"
+    />
+</button>
+    </div>
+    <div>
+          {editingMessageId ? (
       <div className="flex gap-2">
         <Button size="sm" onClick={handleSend}>
           Update
@@ -410,10 +507,12 @@ return (
         </Button>
       </div>
     ) : (
-      <Button size="sm" variant="default" onClick={handleSend}>
+      <Button size="xl" variant="isactive" onClick={handleSend}>
         <IoMdSend />
       </Button>
     )}
+    </div>
+  
   </div>
     </div>
 
@@ -451,30 +550,66 @@ return (
     );
   }
 
-  function ToolbarButton({ editor, command, label }: any) {
-    if (!editor) return null;
+  // function ToolbarButton({ editor, command, label }: any) {
+  //   if (!editor) return null;
 
-    const isActive = editor.isActive(command.replace("toggle", "").toLowerCase());
+  //   const isActive = editor.isActive(command.replace("toggle", "").toLowerCase());
 
-    const run = () => {
-      if (command === "toggleFileUpload") {
-        window.dispatchEvent(new CustomEvent("toggleFileUpload"));
-        return; // do not run editor command
-      }
+  //   const run = () => {
+  //     if (command === "toggleFileUpload") {
+  //       window.dispatchEvent(new CustomEvent("toggleFileUpload"));
+  //       return; // do not run editor command
+  //     }
 
-      editor.chain().focus()[command]().run();
-    };
+  //     editor.chain().focus()[command]().run();
+  //   };
 
-    return (
-      <Button
-        size="md"
-        variant={isActive ? "default" : "editor_buttons"}
-        onClick={run}
-      >
-        {label}
-      </Button>
-    );
-  }
+  //   return (
+  //     <Button
+  //       size="md"
+  //       variant={isActive ? "default" : "editor_buttons"}
+  //       onClick={run}
+  //     >
+  //       {label}
+  //     </Button>
+  //   );
+  // }
+function ToolbarButton({ editor, command, label, size="md" }: any) {
+  if (!editor) return null;
+
+  const activeMap: Record<string, string> = {
+    toggleBold: "bold",
+    toggleItalic: "italic",
+    toggleUnderline: "underline",
+    toggleBulletList: "bulletList",
+    toggleOrderedList: "orderedList",
+    toggleCode: "code",
+
+  };
+
+  const isActive =
+    activeMap[command] ? editor.isActive(activeMap[command]) : false;
+
+  const run = () => {
+    if (command === "toggleFileUpload") {
+      window.dispatchEvent(new CustomEvent("toggleFileUpload"));
+      return;
+    }
+
+    editor.chain().focus()[command]().run();
+  };
+
+  return (
+    <Button
+      size={size} 
+      variant={isActive ? "default" : "editor_buttons"}
+      onClick={run}
+    >
+      {label}
+    </Button>
+  );
+}
+
 
 
 

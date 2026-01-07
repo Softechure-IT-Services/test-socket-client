@@ -252,8 +252,18 @@ ol {
 .ProseMirror {
   position: relative;
 }
+.ProseMirror a {
+  color: #2563eb;
+  text-decoration: underline;
+}
 .line {
   line-height: 1;
+}
+.black{
+  filter: brightness(0) !important;
+}
+.file-icon {
+  font-size: 30px !important;
 }
 .message a {
   color: var(--color-blue-500);

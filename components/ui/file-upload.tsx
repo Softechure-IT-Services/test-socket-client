@@ -26,7 +26,7 @@ export default function FileUploadToggle() {
   if (!open) return null;
 
   return (
-    <div className="absolute bottom-35 left-100 z-50 rounded-xl text-gray-500 py-1 px-3 bg-white">
+    <div className="absolute bottom-15 left-1 z-50 rounded-xl text-gray-500 py-1 px-3 bg-white">
       <div className="border border-gray-200 shadow-md py-3 px-7 w-90 rounded-lg gap-3">
         <p className="flex col-flex text-black text-md items-center gap-3 mt-2">
           <CiViewList size={20} />

@@ -32,7 +32,7 @@ export default function ChatHover({ messageId, pinned,isSelf, onAction }: ChatHo
   ] : [])]
 
   return (
-    <div className="flex gap-2 w-fit h-fit py-1 px-2 rounded-full border border-gray-200 bg-white absolute right-10 top-0 -translate-y-[50%]">
+    <div className="flex gap-2  w-fit h-fit py-1 px-2 rounded-full border border-gray-200 bg-white absolute right-10 top-0 -translate-y-[50%]">
       {items.map((item) => (
         <div key={item.type} className="relative group">
           {/* Icon */}

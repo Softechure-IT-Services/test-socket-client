@@ -9,7 +9,8 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        default: "bg-primary text-primary-foreground hover:bg-primary/90",
+        default: "bg-gray-300",
+        isactive: "bg-primary text-primary-foreground",
         destructive:
           "bg-destructive text-white hover:bg-destructive/90 focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40 dark:bg-destructive/60",
         outline:
@@ -17,7 +18,7 @@ const buttonVariants = cva(
         secondary:
           "bg-secondary text-secondary-foreground hover:bg-secondary/80",
         editor_buttons:
-          "bg-transparent text-secondary-foreground hover:bg-secondary/80",
+          "bg-transparent text-secondary-foreground ",
         ghost:
           "hover:bg-accent hover:text-accent-foreground dark:hover:bg-accent/50",
              navbar:
@@ -26,9 +27,11 @@ const buttonVariants = cva(
       },
       size: {
         default: "h-9 px-4 py-2 has-[>svg]:px-3",
-        sm: "h-8 rounded-md gap-1.5 px-3 has-[>svg]:px-2.5",
-        md: "h-8 rounded-md gap-1.5 px-2 has-[>svg]:px-2.5",
-        lg: "h-10 rounded-md px-6 has-[>svg]:px-4",
+        sm: "h-8 rounded-md gap-1.5 px-1 ",
+        md: "h-8 rounded-md gap-1.5 px-1  ",
+        xl: "h-8 rounded-md gap-1.5 px-2  ",
+        lg: "h-11 rounded-md px-6 has-[>svg]:px-4",
+        xxl: "h-8  gap-1.5 px-2 rounded-full bg-gray-200",
         icon: "size-9",
         "icon-sm": "size-8",
         "icon-lg": "size-10",

@@ -210,20 +210,20 @@ function SidebarProvider({
   )
 
   // Keyboard shortcut: toggle LEFT sidebar only (same behavior as before).
-  React.useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (
-        event.key === SIDEBAR_KEYBOARD_SHORTCUT &&
-        (event.metaKey || event.ctrlKey)
-      ) {
-        event.preventDefault()
-        toggleLeft()
-      }
-    }
+  // React.useEffect(() => {
+  //   const handleKeyDown = (event: KeyboardEvent) => {
+  //     if (
+  //       event.key === SIDEBAR_KEYBOARD_SHORTCUT &&
+  //       (event.metaKey || event.ctrlKey)
+  //     ) {
+  //       event.preventDefault()
+  //       toggleLeft()
+  //     }
+  //   }
 
-    window.addEventListener("keydown", handleKeyDown)
-    return () => window.removeEventListener("keydown", handleKeyDown)
-  }, [toggleLeft])
+  //   window.addEventListener("keydown", handleKeyDown)
+  //   return () => window.removeEventListener("keydown", handleKeyDown)
+  // }, [toggleLeft])
 
   return (
     <SidebarRootContext.Provider value={contextValue}>

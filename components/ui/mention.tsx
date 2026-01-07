@@ -1,25 +1,3 @@
-// "use client";
-
-// type MentionUserItemProps = {
-//   name: string;
-// };
-
-// export default function MentionUserItem({ name }: MentionUserItemProps) {
-//   return (
-//     <div className="border rounded-xl text-gray-500 p-1 shadow-sm bg-white">
-//       <div className="flex items-top gap-2">
-//         <div className="p-4 h-10 rounded-md bg-blue-600 text-white flex items-center justify-center font-semibold">
-//           {name?.charAt(0).toUpperCase()}
-//         </div>
-//         <div>
-//           <p className="font-semibold text-black capitalize">{name}</p>
-//         </div>
-//       </div>
-//     </div>
-//   );
-// }
-
-
 "use client";
 
 import {

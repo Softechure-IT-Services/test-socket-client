@@ -290,7 +290,7 @@ import { CiFileOn } from "react-icons/ci";
     };
 
     return (
-      <div className="flex flex-col gap-2 w-full message-box border overflow-hidden rounded-xl ">
+      <div className="flex flex-col gap-2 w-full message-box border overflow-hidden rounded-sm bg-[var(--sidebar)] -translate-y-[0.5rem]">
         <div className="flex items-center gap-1 flex-wrap p-2 bg-gray-200">
           <ToolbarButton editor={editor}  command="toggleBold" label="B" />
           <ToolbarButton editor={editor} command="toggleItalic" label="I" />

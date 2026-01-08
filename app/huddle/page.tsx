@@ -1,11 +1,15 @@
 // app/main/page.tsx or app/main.tsx
 "use client";
 // @ts-nocheck
-
+import { useSearchParams } from "next/navigation";
 import React, { useEffect } from "react";
 import { useAuth } from "@/components/context/userId_and_connection/provider";
 const MainPage: React.FC = () => {
+    const searchParams = useSearchParams();
+  const meetingId = searchParams.get("meeting_id");
+
   const { socket, user } = useAuth();
+const autoJoinRoomIdRef = React.useRef<string | null>(meetingId);
 
   useEffect(() => {
     if (!socket) return; // wait until provider has created the socket
@@ -43,6 +47,10 @@ const MainPage: React.FC = () => {
         pc.addEventListener("signalingstatechange", handler);
       });
     }
+
+    // new
+   
+    // new end
 
     // ---------- DOM ELEMENTS ----------
     const usernameScreen = document.getElementById("usernameScreen")!;
@@ -152,14 +160,17 @@ const MainPage: React.FC = () => {
         usernameScreen.classList.add("hidden");
         mainApp.classList.remove("hidden");
 
-        socket.emit("set-username", username);
+        socket?.emit("set-username", username);
         await startPreview();
 
         // Auto-join if the URL had ?room=...
-        if (autoJoinRoomId) {
-            joinRoom(autoJoinRoomId, `Room: ${autoJoinRoomId}`);
-            autoJoinRoomId = null;
-        }
+          if (autoJoinRoomIdRef.current && !isInCall) {
+            joinRoom(
+              autoJoinRoomIdRef.current,
+              `Room: ${autoJoinRoomIdRef.current}`
+            );
+            autoJoinRoomIdRef.current = null;
+          }
         }
 
         // If we already have an authenticated user, skip the dialog completely
@@ -303,6 +314,9 @@ const MainPage: React.FC = () => {
         }
       }
     }
+
+
+    // sasdas asd asd asd asd as das 
 
     // ---------- DEVICE CHECK / AUTO UPGRADE ----------
     async function checkAndUpdateDevices() {

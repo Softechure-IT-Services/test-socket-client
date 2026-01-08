@@ -5,6 +5,7 @@ import { UserType } from "@/components/context/userId_and_connection/provider";
 import ButtonGroup from "@/components/ui/button-group";
 import { use, useEffect, useState } from "react";
 import Link from "next/link";
+import { v4 as uuidv4 } from "uuid";
 
 interface MainHeaderProps {
   id: string; // channelId or dmId
@@ -24,7 +25,7 @@ interface Member {
   email: string;
 
 }
-
+// asdasdadasdasasd asd asd 
 export default function MainHeader({ id, type, token }: MainHeaderProps) {
   const { user } = useAuth();
   const [channel, setChannel] = useState<Channel | null>(null);
@@ -36,6 +37,8 @@ export default function MainHeader({ id, type, token }: MainHeaderProps) {
     { label: "Files", href: "/tabs/files" },
     { label: "Pins", href: "/tabs/pins" },
   ];
+
+  const meetingId = uuidv4();
 
 
   useEffect(() => {
@@ -58,7 +61,7 @@ export default function MainHeader({ id, type, token }: MainHeaderProps) {
       } catch (err) {
         console.error(err);
       } finally {
-        setLoading(false);
+        setLoading(false); 
       }
     };
 
@@ -83,7 +86,7 @@ export default function MainHeader({ id, type, token }: MainHeaderProps) {
         <ButtonGroup items={buttons} />
    
       {/* <Link href={`http://localhost:5000/huddle?key=${token}`} className="">Huddle</Link> */}
-      <Link href={`http://localhost:3000/huddle?channel_id=${channel?.id}&user_id=${user?.id}`} target="_blank" className="rounded bg-red-500 text-white px-4 flex items-center justify-center">Huddle</Link>
+      <Link href={`http://localhost:3000/huddle?meeting_id=${meetingId}&channel_id=${channel?.id}&user_id=${user?.id}`} target="_blank" className="rounded bg-red-500 text-white px-4 flex items-center justify-center">Huddle</Link>
 
 
       {/* <p>{randomId ? "generated" : "no"}</p> */}

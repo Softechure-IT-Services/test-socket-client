@@ -2,12 +2,13 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { jwtVerify } from "jose";
 
-const PUBLIC_ROUTES = ["/login", "/signup"];
+const PUBLIC_ROUTES = ["/", "/login", "/signup"];
+
 
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
-  // ✅ Allow public routes & static files
+  // ✅ Allow public pages & static files
   if (
     PUBLIC_ROUTES.some(route => pathname.startsWith(route)) ||
     pathname.startsWith("/_next") ||
@@ -17,15 +18,10 @@ export async function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
-  // ✅ Read token from cookies
+  // ✅ Read JWT from cookie
   const token = req.cookies.get("access_token")?.value;
 
-  // ✅ Debug cookies (safe)
-  console.log("=== Cookies ===");
-  req.cookies.getAll().forEach(c => console.log(`${c.name} = ${c.value}`));
-  console.log("===============");
-
-  // ❌ No token → redirect / 401
+  // ❌ No token → redirect
   if (!token) {
     return pathname.startsWith("/api")
       ? NextResponse.json({ error: "Unauthorized" }, { status: 401 })
@@ -39,19 +35,18 @@ export async function middleware(req: NextRequest) {
       new TextEncoder().encode(process.env.JWT_ACCESS_SECRET!)
     );
 
-    // ✅ Token valid
     return NextResponse.next();
   } catch (error) {
-    console.log("JWT verification failed:", error);
+    console.log("JWT verification failed");
 
-    // ❗ IMPORTANT: DO NOT delete cookie here
+    // ❗ Do NOT clear cookies here
     return pathname.startsWith("/api")
       ? NextResponse.json({ error: "Invalid token" }, { status: 401 })
       : NextResponse.redirect(new URL("/login", req.url));
   }
 }
 
-// ✅ Middleware matcher
+// ✅ Apply middleware to all routes except static & api
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|api).*)"],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|robots.txt).*)"],
 };

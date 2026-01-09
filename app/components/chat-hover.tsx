@@ -4,7 +4,7 @@ import React from "react";
 import { MdAddReaction } from "react-icons/md";
 import { RiUnpinFill } from "react-icons/ri";
 import { GrPin } from "react-icons/gr";
-import MessageInput from "@/components/custom/MessageInput"
+import MessageInput from "@/app/components/custom/MessageInput"
 import { FaRegEdit } from "react-icons/fa";
 import { MdDeleteForever } from "react-icons/md";
 

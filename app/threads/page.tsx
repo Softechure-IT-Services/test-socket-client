@@ -1,4 +1,4 @@
-import MessageInput from "@/components/custom/MessageInput";
+import MessageInput from "@/app/components/custom/MessageInput";
 
 const threads = [
   {

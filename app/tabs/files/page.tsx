@@ -1,8 +1,8 @@
 "use client";
-import ButtonGroup from "@/components/ui/button-group";
+import ButtonGroup from "@/app/components/ui/button-group";
 import { useState } from "react";
-import DocumentItem from "@/components/ui/documentItem";
-import ImageItem from "@/components/ui/file-images";
+import DocumentItem from "@/app/components/ui/documentItem";
+import ImageItem from "@/app/components/ui/file-images";
 import MainHeader from "@/app/shared/ui/MainHeader";
 export default function FileTab() {
   const [showAll, setShowAll] = useState(false);

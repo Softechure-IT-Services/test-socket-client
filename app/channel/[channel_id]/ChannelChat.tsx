@@ -1,27 +1,27 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { useAuth } from "@/components/context/userId_and_connection/provider";
-import MessageInput from "@/components/custom/MessageInput";
-import ChatHover from "@/components/chat-hover";
+import { useAuth } from "@/app/components/context/userId_and_connection/provider";
+import MessageInput from "@/app/components/custom/MessageInput";
+import ChatHover from "@/app/components/chat-hover";
 import DOMPurify from "dompurify";
 import MainHeader from "@/app/shared/ui/MainHeader";
-import FileBg from "@/components/ui/file-bg";
-import FileUploadToggle from "@/components/ui/file-upload";
-import Dateseparator from "@/components/ui/date";
+import FileBg from "@/app/components/ui/file-bg";
+import FileUploadToggle from "@/app/components/ui/file-upload";
+import Dateseparator from "@/app/components/ui/date"
 import { shouldShowDateSeparator } from "@/lib/shouldShowDateSeparator";
 
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
-} from "@/components/ui/popover";
-import { Button } from "@/components/ui/button";
+} from "@/app/components/ui/popover";
+import { Button } from "@/app/components/ui/button";
 import Picker from "@emoji-mart/react";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
-} from "@/components/ui/tooltip";
+} from "@/app/components/ui/tooltip";
 import { TbPinFilled } from "react-icons/tb";
 
 type Reaction = { emoji: string; count: number; users?: string[] };
@@ -72,23 +72,34 @@ export default function ChannelChat({ channelId }: ChannelChatProps) {
   const [dragging, setDragging] = useState(false);
   const dragCounter = useRef(0);
 
+  const isFileDrag = (e: React.DragEvent) => {
+  return Array.from(e.dataTransfer.types).includes("Files");
+};
+
   const handleDragEnter = (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    dragCounter.current += 1;
-    setDragging(true);
-  };
+  if (!isFileDrag(e)) return;
+
+  e.preventDefault();
+  dragCounter.current += 1;
+  setDragging(true);
+};
 
   const handleDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    dragCounter.current -= 1;
-    if (dragCounter.current === 0) {
-      setDragging(false);
-    }
-  };
+  if (!isFileDrag(e)) return;
+
+  e.preventDefault();
+  dragCounter.current -= 1;
+
+  if (dragCounter.current === 0) {
+    setDragging(false);
+  }
+};
 
   const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault(); // important to allow drop
-  };
+  if (!isFileDrag(e)) return;
+
+  e.preventDefault(); // allow drop
+};
 
   // const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
   //   e.preventDefault();
@@ -102,9 +113,11 @@ export default function ChannelChat({ channelId }: ChannelChatProps) {
   //   }
   // };
   const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    dragCounter.current = 0;
-    setDragging(false);
+  if (!isFileDrag(e)) return;
+
+  e.preventDefault();
+  dragCounter.current = 0;
+  setDragging(false);
 
     const files = Array.from(e.dataTransfer.files);
     if (!files.length) return;

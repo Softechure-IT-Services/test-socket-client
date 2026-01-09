@@ -31,8 +31,22 @@ import {
 } from "@/app/components/ui/sidebar"
 import { UserType } from "@/app/components/context/userId_and_connection/provider";
 
-export function NavUser({  user}: {  user: UserType }) {
-  const { isMobile } = useSidebar()
+  export function NavUser({  user}: {  user: UserType }) {
+    const { isMobile } = useSidebar()
+
+    const handleLogout = async () => {
+      try {
+        await fetch("/api/auth/logout", {
+          method: "POST",
+          credentials: "include",
+        })
+
+        window.location.href = "/welcome"
+      } catch (err) {
+        console.error("Logout failed", err)
+      }
+    }
+
 
   return (
     <SidebarMenu>
@@ -97,7 +111,7 @@ export function NavUser({  user}: {  user: UserType }) {
               </DropdownMenuItem>
             </DropdownMenuGroup>
             <DropdownMenuSeparator />
-            <DropdownMenuItem>
+            <DropdownMenuItem onClick={handleLogout}>
               <LogOut />
               Log out
             </DropdownMenuItem>

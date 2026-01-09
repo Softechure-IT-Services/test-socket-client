@@ -10,8 +10,8 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { useSidebar } from "@/components/ui/sidebar";
+} from "@/app/components/ui/dropdown-menu";
+import { useSidebar } from "@/app/components/ui/sidebar";
 import {
   Forward,
   Settings,

@@ -14,21 +14,21 @@ import {
   SquareTerminal,
 } from "lucide-react";
 
-import { NavMain } from "@/components/nav-main";
-import { NavProjects } from "@/components/nav-projects";
-import { NavUser } from "@/components/nav-user";
-import { TeamSwitcher } from "@/components/team-switcher";
+import { NavMain } from "@/app/components/nav-main";
+import { NavProjects } from "@/app/components/nav-projects";
+import { NavUser } from "@/app/components/nav-user";
+import { TeamSwitcher } from "@/app/components/team-switcher";
 import {
   Sidebar,
   SidebarContent,
   SidebarFooter,
   SidebarHeader,
   SidebarRail,
-} from "@/components/ui/sidebar";
-import CreateModal from "@/components/modals/CreateNew";
-import { useAuth } from "@/components/context/userId_and_connection/provider";
+} from "@/app/components/ui/sidebar";
+import CreateModal from "@/app/components/modals/CreateNew";
+import { useAuth } from "@/app/components/context/userId_and_connection/provider";
 // const API_URL = process.env.NEXT_PUBLIC_SERVER_URL;
-import { UserType } from "@/components/context/userId_and_connection/provider";
+import { UserType } from "@/app/components/context/userId_and_connection/provider";
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const [channels, setChannels] = React.useState<any[]>([]);
   const [users, setUsers] = React.useState<any[]>([]);
@@ -38,6 +38,7 @@ const [modalType, setModalType] = React.useState<"channel" | "dm">("channel");
 
 
   React.useEffect(() => {
+    if (!user) return;
     const fetchData = async () => {
       try {
         // ✅ Channels
@@ -109,6 +110,7 @@ const handleAddDM = () => {
         type: "dm",
         icon: Bot,
         items: users,
+        isActive: true,
         onAdd: handleAddDM,
       },
       {

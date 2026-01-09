@@ -1,8 +1,8 @@
 "use client";
 
-import { useAuth } from "@/components/context/userId_and_connection/provider";
-import ButtonGroup from "@/components/ui/button-group";
-import TabsModalDemo from "@/components/ui/groupmember";
+import { useAuth } from "@/app/components/context/userId_and_connection/provider";
+import ButtonGroup from "@/app/components/ui/button-group";
+import TabsModalDemo from "@/app/components/ui/groupmember";
 import { useEffect, useState } from "react";
 import { FaHeadphones } from "react-icons/fa6"
 import { FaRegBell } from "react-icons/fa";

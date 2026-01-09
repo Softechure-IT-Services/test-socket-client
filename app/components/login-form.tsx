@@ -6,7 +6,6 @@ import { Button } from "@/app/components/ui/button";
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,  
 } from "@/app/components/ui/card";
@@ -18,55 +17,64 @@ import {
 } from "@/app/components/ui/field";
 import { Input } from "@/app/components/ui/input";
 import Link from "next/link";
-import {toast} from "sonner";
+import { toast } from "sonner";
+import { useRouter } from "next/navigation";
+import Cookies from "js-cookie";
 
 export function LoginForm({ className, ...props }: React.ComponentProps<"div">) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const router = useRouter();
 
- async function handleSubmit(e: React.FormEvent) {
-  e.preventDefault();
-  setError("");
-  setLoading(true);
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError("");
+    setLoading(true);
 
-  try {
-    const res = await fetch(
-      `api/auth/login`,
-      {
+    try {
+      const res = await fetch(`/api/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
         body: JSON.stringify({ email, password }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        toast.error(data.message || "Login failed");
+        setLoading(false);
+        return;
       }
-    );
 
-    const data = await res.json();
+      // ✅ Set auth_token cookie client-side for middleware
+      if (data.access_token) {
+        Cookies.set("auth_token", data.access_token, {
+          path: "/",           // middleware will read this
+          sameSite: "lax",     // adjust for your environment
+          secure: process.env.NODE_ENV === "production",
+        });
+      }
 
-    if (!res.ok) {
-      toast.error(data.error || "Login failed");
+      // ✅ Show success toast
+      toast.success("Login successful!", {
+        duration: 2000,
+      });
+
+      // ✅ Redirect AFTER cookie is set
+      setTimeout(() => {
+        router.replace("/"); // middleware will now allow access
+      }, 500);
+
+    } catch (err) {
+      console.error(err);
+      toast.error("Something went wrong");
+    } finally {
       setLoading(false);
-      return;
     }
-
-    // SUCCESS
-    toast.success("Login successful!", {
-      duration: 2000,
-      onAutoClose: () => {
-        // Redirect only AFTER toast disappears
-        window.location.href = "/";
-      },
-    });
-
-  } catch (err) {
-    console.error(err);
-    toast.error("Something went wrong");
   }
-
-  setLoading(false);
-}
-
 
   return (
     <div className={cn("flex flex-col gap-6", className)} {...props}>

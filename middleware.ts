@@ -1,52 +1,44 @@
-import { NextResponse } from "next/server";
-import type { NextRequest } from "next/server";
-import { jwtVerify } from "jose";
+// middleware.ts
+import { NextResponse } from 'next/server';
+import type { NextRequest } from 'next/server';
 
-const PUBLIC_ROUTES = ["/", "/login", "/signup"];
+const PROTECTED_ROUTES = [
+  '/profile',
+  '/wishlists',
+  '/my-orders',
+  '/thank-you',
+  '/deleteaccount',
+  '/channel',
+  
+];
 
+export function middleware(request: NextRequest) {
+  const { pathname } = request.nextUrl;
 
-export async function middleware(req: NextRequest) {
-  const { pathname } = req.nextUrl;
-
-  // ✅ Allow public pages & static files
+  // Skip API routes and static files
   if (
-    PUBLIC_ROUTES.some(route => pathname.startsWith(route)) ||
-    pathname.startsWith("/_next") ||
-    pathname.startsWith("/favicon.ico") ||
-    pathname.startsWith("/robots.txt")
+    pathname.startsWith('/api') ||
+    pathname.startsWith('/_next') ||
+    pathname === '/favicon.ico'
   ) {
     return NextResponse.next();
   }
 
-  // ✅ Read JWT from cookie
-  const token = req.cookies.get("access_token")?.value;
+  const token = request.cookies.get('access_token')?.value;
 
-  // ❌ No token → redirect
-  if (!token) {
-    return pathname.startsWith("/api")
-      ? NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-      : NextResponse.redirect(new URL("/login", req.url));
+  // Redirect unauthenticated user visiting protected routes
+  if (PROTECTED_ROUTES.some(route => pathname.startsWith(route)) && !token) {
+    return NextResponse.redirect(new URL('/login', request.url));
   }
 
-  try {
-    // ✅ Verify JWT
-    await jwtVerify(
-      token,
-      new TextEncoder().encode(process.env.JWT_ACCESS_SECRET!)
-    );
-
-    return NextResponse.next();
-  } catch (error) {
-    console.log("JWT verification failed");
-
-    // ❗ Do NOT clear cookies here
-    return pathname.startsWith("/api")
-      ? NextResponse.json({ error: "Invalid token" }, { status: 401 })
-      : NextResponse.redirect(new URL("/login", req.url));
-  }
+  // Redirect unauthenticated user visiting '/' to /welcome
+ if (!token && (pathname === '/' || pathname === '/index')) {
+  return NextResponse.redirect(new URL('/welcome', request.url));
 }
 
-// ✅ Apply middleware to all routes except static & api
+  return NextResponse.next();
+}
+
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|robots.txt).*)"],
+  matcher: ['/((?!_next/static|_next/image|favicon.ico|api).*)'],
 };

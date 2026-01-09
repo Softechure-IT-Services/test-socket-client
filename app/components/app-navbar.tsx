@@ -16,9 +16,11 @@ import {
   Forward,
   Settings,
 } from "lucide-react";
+import { useRouter } from "next/navigation";
 
 export default function AppNavbar() {
   const { isMobile } = useSidebar();
+const router = useRouter();
 
   return (
     <header className="w-full fixed top-0 z-[99] bg-background text-foreground border-b border-border">
@@ -26,7 +28,7 @@ export default function AppNavbar() {
         <div className="flex items-center h-12 sm:h-14 justify-between">
           {/* LEFT SECTION — Menu + Navigation Arrows + Search */}
           <div className="hidden sm:grid grid-cols-12 items-center gap-3 flex-1 justify-start">
-            <div className="flex items-center gap-3 flex-1 justify-start col-span-4">
+            <div className="flex items-center gap-3 flex-1 justify-between col-span-4">
 
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -108,20 +110,25 @@ export default function AppNavbar() {
               </DropdownMenuContent>
             </DropdownMenu>
 
-            {/* Back / Forward */}
-            <button
-              className="p-2 rounded-md hover:bg-accent"
-              aria-label="back"
-            >
-              <FaArrowLeft size={16} />
-            </button>
+          <div>
+          {/* Back / Forward */}
+<button
+  className="p-2 rounded-md hover:bg-accent"
+  aria-label="back"
+  onClick={() => router.back()}
+>
+  <FaArrowLeft size={16} />
+</button>
 
-            <button
-              className="p-2 rounded-md hover:bg-accent"
-              aria-label="forward"
-            >
-              <FaArrowRight size={16} />
-            </button>
+<button
+  className="p-2 rounded-md hover:bg-accent"
+  aria-label="forward"
+  onClick={() => router.forward()}
+>
+  <FaArrowRight size={16} />
+</button>
+
+          </div>
             </div>
             {/* MENU DROPDOWN */}
 

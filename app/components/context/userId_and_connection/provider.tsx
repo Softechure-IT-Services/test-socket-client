@@ -28,10 +28,18 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   useEffect(() => {
     if (socketRef.current) return; // prevent duplicate connection
 
+    // const socket = io(process.env.NEXT_PUBLIC_SERVER_URL!, {
+    //   withCredentials: true, // ✅ cookies sent
+    //   transports: ["websocket"],
+    // });
+
     const socket = io(process.env.NEXT_PUBLIC_SERVER_URL!, {
-      withCredentials: true, // ✅ cookies sent
       transports: ["websocket"],
+      auth: {
+        token: localStorage.getItem("access_token"), // or from memory
+      },
     });
+
 
     socketRef.current = socket;
 

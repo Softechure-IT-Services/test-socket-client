@@ -1,6 +1,6 @@
 "use client";
 import { useParams } from "next/navigation";
-import ChannelChat from "@/app/channel/[channel_id]/ChannelChat";
+import ChannelChat from "@/app/(sidebar)/channel/[channel_id]/ChannelChat";
 
 export default function DMPage() {
   const params = useParams();

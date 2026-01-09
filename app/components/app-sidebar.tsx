@@ -38,7 +38,7 @@ const [modalType, setModalType] = React.useState<"channel" | "dm">("channel");
 
 
   React.useEffect(() => {
-    if (!user) return;
+    // if (!user) return;
     const fetchData = async () => {
       try {
         // ✅ Channels

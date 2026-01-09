@@ -101,7 +101,6 @@ export default function AppNavbar() {
                   </DropdownMenu>
 
                 {/* </DropdownMenuItem> */}
-                <DropdownMenuItem>Log out</DropdownMenuItem>
 
                 <DropdownMenuSeparator />
 

@@ -10,9 +10,15 @@ import { IoSearchOutline } from "react-icons/io5";
 
 
 interface MainHeaderProps {
-  id?: string; // channelId or dmId
+  id?: string;
   type?: "channel" | "dm";
+  dmUser?: {
+    id: number;
+    name: string;
+    avatar_url?: string;
+  } | null;
 }
+
 
 interface Channel {
   id: string;
@@ -26,7 +32,7 @@ interface Member {
   email: string;
 }
 
-export default function MainHeader({ id, type }: MainHeaderProps) {
+export default function MainHeader({ id, type, dmUser }: MainHeaderProps) {
   const { isOnline } = useAuth();
 
   const [channel, setChannel] = useState<Channel | null>(null);
@@ -69,13 +75,23 @@ export default function MainHeader({ id, type }: MainHeaderProps) {
   return (
     <div className="px-4 pt-4 pb-0 border-b flex justify-between sticky top-[55px] z-50 bg-white">
       <div>
+        <div className="flex gap-2">
+
+        {type === "dm" && dmUser && (
+  <img
+    src={dmUser.avatar_url ? `/avatar/${dmUser.avatar_url}` : "/avatar/fallback.webp"}
+    className="w-8 h-8 rounded-sm"
+  />
+)}
+
         <h2 className="mb-1 text-2xl font-semibold">
           {loading
             ? "Loading..."
-            : type === "channel"
-            ? `# ${channel?.name}`
-            : "Direct Message"}
+            : type === "dm"
+            ? dmUser?.name ?? "Direct Message"
+            : `# ${channel?.name}`}
         </h2>
+        </div>
 
         {/* {type === "channel" && !loading && (
           <p className="text-xs text-gray-500">

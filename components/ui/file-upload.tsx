@@ -28,7 +28,7 @@ export default function FileUploadToggle() {
   return (
     <div className="absolute bottom-15 left-1 z-50 rounded-xl text-gray-500 py-1 px-3 bg-white">
       <div className="border border-gray-200 shadow-md py-3 px-7 w-90 rounded-lg gap-3">
-        <p className="flex col-flex text-black text-md items-center gap-3 mt-2">
+        {/* <p className="flex col-flex text-black text-md items-center gap-3 mt-2">
           <CiViewList size={20} />
           <span className="text-md">List</span>
         </p>
@@ -46,7 +46,7 @@ export default function FileUploadToggle() {
         <p className="flex col-flex text-black text-md items-center gap-3 mt-2">
           <GoWorkflow size={20} />
           <span className="text-md">Workflow</span>
-        </p>
+        </p> */}
 
         {/* ✅ THIS IS THE ONLY FUNCTIONAL LINE */}
         <p

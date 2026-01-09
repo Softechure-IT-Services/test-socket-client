@@ -78,17 +78,40 @@ export function NavMain({ items }: { items: NavItem[] }) {
                 <SidebarMenuSub>
                   {item.items?.map((sub) => (
                     <SidebarMenuSubItem key={sub.title} >
-                      { sub.is_dm == false ? (
+                      {
+                      item.type !== "docs" && (
+
+                      sub.is_dm == false && (
                          sub.is_private == true ? (
                          <FaLock className="h-2.5 w-2.5 channel_privacy_icon" />
                          ) : (
                          <FaHashtag className="h-2.5 w-2.5 channel_privacy_icon" />
                          )
-                      ) : 
-                      null
+                      ) 
+                      
+                    )
                       }
                       <SidebarMenuSubButton asChild>
-                        <Link href={sub.url}>{sub.title}</Link>
+                        <Link href={sub.url}>
+                        {item.type === "dm" && (
+                          sub.avatar_url ? (
+                            <img
+                              src={sub.avatar_url}
+                              alt={sub.title}
+                              className="h-5 w-5 rounded-full object-cover"
+                            />
+                          ) : (
+                            <div className="h-5 w-5 rounded-sm bg-gray-400 flex items-center justify-center text-white text-[10px]">
+                              {sub.title
+                                .split(" ")
+                                .map((word) => word.charAt(0).toUpperCase())
+                                .join("")
+                                .slice(0, 2)}
+                            </div>
+                          )
+                        )}
+
+                        {sub.title}</Link>
                       </SidebarMenuSubButton>
                     </SidebarMenuSubItem>
                   ))}

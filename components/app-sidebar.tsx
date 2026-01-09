@@ -42,7 +42,7 @@ const [modalType, setModalType] = React.useState<"channel" | "dm">("channel");
       try {
         // ✅ Channels
         const ch = await axios.get(
-          `/api/channels`,
+          `/api/channels?get_dms=false`,
           {
             withCredentials: true,
           }
@@ -57,21 +57,16 @@ const [modalType, setModalType] = React.useState<"channel" | "dm">("channel");
         );
 
         // ✅ Users
-        const us = await axios.get(
-          `${process.env.NEXT_PUBLIC_SERVER_URL}/users`,
-          {
-            withCredentials: true,
-          }
-        );
+        const dm = await axios.get(`/api/dm`, { withCredentials: true });
 
-        setUsers(
-          us.data.map((u: any) => ({
-            title: u.name,
-            url: `/dm/${u.id}`,
-            avatar: u.avatar_url,
-            is_online: u.is_online,
-          }))
-        );
+setUsers(
+  dm.data.map((d: any) => ({
+    title: d.name,
+    url: `/dm/${d.id}`,   // ✅ THIS IS CHANNEL ID
+    avatar: d.avatar_url,
+  }))
+);
+
       } catch (err) {
         console.error("Sidebar fetch error:", err);
       }
@@ -119,6 +114,7 @@ const handleAddDM = () => {
       {
         title: "Apps & Docs",
         url: "#",
+        type: "docs",
         icon: BookOpen,
         items: [
           { title: "Introduction", url: "#" },

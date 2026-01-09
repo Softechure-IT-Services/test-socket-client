@@ -62,8 +62,8 @@ export function LoginForm({ className, ...props }: React.ComponentProps<"div">) 
       toast.success("Login successful!", {
         duration: 2000,
       });
-      if (data.access_token) {
-        localStorage.setItem("access_token", data.access_token);
+      if (data.user?.access_token) {
+        localStorage.setItem("access_token", data.user.access_token);
       }
 
       // ✅ Redirect AFTER cookie is set

@@ -25,6 +25,7 @@ import { CiFileOn } from "react-icons/ci";
 import { CiCirclePlus } from "react-icons/ci";
 import { FiUnderline } from "react-icons/fi";
 import { FiPlus } from "react-icons/fi";
+import apiFetch from "@/lib/api";
 type UploadedFile = {
   name: string;
   url: string;
@@ -101,7 +102,7 @@ const insertImageFile = async (file: File) => {
   formData.append("files", file);
 
   try {
-    const res = await fetch(`${SERVER_URL}/upload`, {
+    const res = await apiFetch(`${SERVER_URL}/upload`, {
       method: "POST",
       credentials: "include",
       body: formData,
@@ -141,7 +142,7 @@ const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
   files.forEach((f) => formData.append("files", f));
 
   try {
-    const res = await fetch(`${SERVER_URL}/upload`, {
+    const res = await apiFetch(`${SERVER_URL}/upload`, {
       method: "POST",
       credentials: "include",
       body: formData,
@@ -180,7 +181,7 @@ const deleteUploadedFile = async (index: number) => {
   if (!file) return;
 
   try {
-    const res = await fetch(`${SERVER_URL}/upload/delete`, {
+    const res = await apiFetch(`${SERVER_URL}/upload/delete`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       credentials: "include",
@@ -331,7 +332,7 @@ const deleteUploadedFile = async (index: number) => {
   if (!file) return;
 
   try {
-    const res = await fetch(`${process.env.NEXT_PUBLIC_SERVER_URL}/upload/delete`, {
+    const res = await apiFetch(`${process.env.NEXT_PUBLIC_SERVER_URL}/upload/delete`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ path: file.path }),

@@ -6,6 +6,7 @@ import { Input } from "@/app/components/ui/input";
 import { Switch } from "@/app/components/ui/switch";
 import { Label } from "@/app/components/ui/label";
 import { useEffect, useState } from "react";
+import apiFetch from "@/lib/api";
 import { useAuth } from "@/app/components/context/userId_and_connection/provider";
 import { useDebounce } from "@/hooks/useDebounce";
 
@@ -50,7 +51,7 @@ useEffect(() => {
 
   const fetchUsers = async () => {
     try {
-      const res = await fetch(
+      const res = await apiFetch(
         `/api/users/search?q=${encodeURIComponent(
           debouncedSearch
         )}&exclude=${user?.id}`,
@@ -121,7 +122,7 @@ const handleSubmit = async () => {
     if (type === "channel") {
       if (!channelName.trim()) return;
 
-      await fetch("/api/channels", {
+      await apiFetch("/api/channels", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -142,7 +143,7 @@ const handleSubmit = async () => {
 
       const otherUserId = selectedUsers[0].id;
 
-      const res = await fetch(`/api/dm/with/${otherUserId}`, {
+      const res = await apiFetch(`/api/dm/with/${otherUserId}`, {
         method: "POST",
         credentials: "include",
       });

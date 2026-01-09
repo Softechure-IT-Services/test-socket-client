@@ -1,6 +1,7 @@
 // MessageInput.tsx
 "use client";
 import { useEffect, useState, useRef } from "react";
+import apiFetch from "@/lib/api";
 import { EditorContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Underline from "@tiptap/extension-underline";
@@ -65,7 +66,7 @@ export default function MessageInput({
     // Upload to server
     const formData = new FormData();
     formData.append("file", file);
-    const res = await fetch("/api/upload", { method: "POST", body: formData });
+    const res = await apiFetch("/api/upload", { method: "POST", body: formData });
     const data = await res.json();
 
     if (data.url) {
@@ -110,7 +111,7 @@ export default function MessageInput({
     if (!file) return;
 
     try {
-      const res = await fetch("/api/delete-file", {
+      const res = await apiFetch("/api/delete-file", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ path: file.url.replace(/^\/?/, "") }),
@@ -232,7 +233,7 @@ export default function MessageInput({
       const formData = new FormData();
       formData.append("file", file);
 
-      const res = await fetch("/api/upload", {
+      const res = await apiFetch("/api/upload", {
         method: "POST",
         body: formData,
       });

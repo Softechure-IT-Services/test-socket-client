@@ -20,6 +20,7 @@ import Link from "next/link";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 import Cookies from "js-cookie";
+import apiFetch from "@/lib/api";
 
 export function LoginForm({ className, ...props }: React.ComponentProps<"div">) {
   const [email, setEmail] = useState("");
@@ -34,7 +35,7 @@ export function LoginForm({ className, ...props }: React.ComponentProps<"div">) 
     setLoading(true);
 
     try {
-      const res = await fetch(`/api/auth/login`, {
+      const res = await apiFetch(`/api/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",

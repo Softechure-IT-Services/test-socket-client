@@ -3,6 +3,7 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { use } from "react";
+import apiFetch from "@/lib/api";
 
 export default function ExternalLoginPage({
   params,
@@ -16,7 +17,7 @@ export default function ExternalLoginPage({
   useEffect(() => {
     // console.log("External login with token:", login_token);
     async function login() {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_SERVER_URL}/external/external-session`, {
+      const res = await apiFetch(`${process.env.NEXT_PUBLIC_SERVER_URL}/external/external-session`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ token: login_token }),

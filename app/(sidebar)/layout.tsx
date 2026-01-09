@@ -1,4 +1,3 @@
-  import { AuthProvider } from "@/app/components/context/userId_and_connection/provider"
   import { AppSidebar } from "@/app/components/app-sidebar"
   import AppNavbar from "@/app/components/app-navbar"
   import ButtonGroup from "@/app/components/ui/button-group";
@@ -39,7 +38,6 @@
     return (
        <html lang="en">
   <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
-    <AuthProvider>
 
    
     <Toaster />
@@ -57,7 +55,6 @@
 
       <UtilitySidebar />
     </SidebarProvider>
-       </AuthProvider>
   </body>
 </html>
 

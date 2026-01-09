@@ -827,7 +827,7 @@ function SidebarMenuSubItem({
     <li
       data-slot="sidebar-menu-sub-item"
       data-sidebar="menu-sub-item"
-      className={cn("group/menu-sub-item relative hover:bg-sidebar-accent", className)}
+      className={cn("group/menu-sub-item relative hover:bg-sidebar-accent flex items-center", className)}
       {...props}
     />
   )
@@ -835,7 +835,7 @@ function SidebarMenuSubItem({
 
 function SidebarMenuSubButton({
   asChild = false,
-  size = "md",
+  size = "sm",
   isActive = false,
   className,
   ...props

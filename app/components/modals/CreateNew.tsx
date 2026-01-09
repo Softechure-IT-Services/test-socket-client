@@ -90,31 +90,77 @@ useEffect(() => {
     );
   };
 
- const handleSubmit = async () => {
-  if (type !== "channel") return;
-  if (!channelName.trim()) return;
+//  const handleSubmit = async () => {
+//   if (type !== "channel") return;
+//   if (!channelName.trim()) return;
 
+//   try {
+//    await fetch("/api/channels", {
+//   method: "POST",
+//   headers: {
+//     "Content-Type": "application/json",
+//     Authorization: `Bearer ${localStorage.getItem("token")}`,
+//   },
+//   body: JSON.stringify({
+//     name: channelName,
+//     isPrivate,
+//     memberIds: isPrivate
+//       ? selectedUsers.map((u) => Number(u.id))
+//       : [],
+//   }),
+// });
+
+//     resetAndClose();
+//   } catch (err) {
+//     console.error("Create channel failed", err);
+//   }
+// };
+
+const handleSubmit = async () => {
   try {
-   await fetch("/api/channels", {
-  method: "POST",
-  headers: {
-    "Content-Type": "application/json",
-    Authorization: `Bearer ${localStorage.getItem("token")}`,
-  },
-  body: JSON.stringify({
-    name: channelName,
-    isPrivate,
-    memberIds: isPrivate
-      ? selectedUsers.map((u) => Number(u.id))
-      : [],
-  }),
-});
+    if (type === "channel") {
+      if (!channelName.trim()) return;
 
-    resetAndClose();
+      await fetch("/api/channels", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          name: channelName,
+          isPrivate,
+          memberIds: isPrivate ? selectedUsers.map((u) => Number(u.id)) : [],
+        }),
+      });
+
+      resetAndClose();
+      return;
+    }
+
+    // ✅ DM CREATE FLOW
+    if (type === "dm") {
+      if (selectedUsers.length !== 1) return;
+
+      const otherUserId = selectedUsers[0].id;
+
+      const res = await fetch(`/api/dm/with/${otherUserId}`, {
+        method: "POST",
+        credentials: "include",
+      });
+
+      const data = await res.json();
+
+      if (!data.dm_id) throw new Error("Failed to create DM");
+
+      // ✅ Redirect to REAL DM channel
+      window.location.href = `/dm/${data.dm_id}`;
+
+      resetAndClose();
+    }
   } catch (err) {
-    console.error("Create channel failed", err);
+    console.error("Create failed", err);
   }
 };
+
 
 
   const resetAndClose = () => {

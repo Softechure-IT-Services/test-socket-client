@@ -25,12 +25,19 @@ import {
 import { TbPinFilled } from "react-icons/tb";
 
 type Reaction = { emoji: string; count: number; users?: string[] };
+type ChatFile = {
+  url: string;
+  name: string;
+  type: string;
+  size: number;
+};
 type ChatMessage = {
   id?: number | string;
   sender_id: string;
   sender_name?: string;
   avatar_url?: string | null;
   content: string;
+  files?: ChatFile[];
   self: boolean;
   created_at?: string | null;
   updated_at?: string | null;
@@ -44,6 +51,9 @@ type ChannelChatProps = {
 
 export default function ChannelChat({ channelId }: ChannelChatProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [isDm, setIsDm] = useState(false);
+const [dmOtherUser, setDmOtherUser] = useState<any>(null);
+
   const formatDate = (date: string) =>
     new Date(date).toLocaleDateString("en-GB", {
       day: "2-digit",
@@ -127,6 +137,22 @@ export default function ChannelChat({ channelId }: ChannelChatProps) {
   };
 
   useEffect(() => {
+  if (!channelId) return;
+
+  fetch(`${SERVER_URL}/channels/${channelId}`, { credentials: "include" })
+    .then(res => res.json())
+    .then(data => {
+      if (data.channel?.is_dm) {
+        setIsDm(true);
+        setDmOtherUser(data.dm_user); // we will add this from backend
+      } else {
+        setIsDm(false);
+      }
+    });
+}, [channelId]);
+
+
+  useEffect(() => {
     if (!socket || !channelId) return;
 
     socket.emit("joinChannel", { channel_id: Number(channelId) });
@@ -166,6 +192,7 @@ export default function ChannelChat({ channelId }: ChannelChatProps) {
         sender_id: msg.sender_id,
         sender_name: msg.sender_name,
         content: msg.content,
+        files: Array.isArray(msg.files) ? msg.files : [],
         self: String(msg.sender_id) === String(userId),
         created_at: createdAt,
         avatar_url: msg.avatar_url ?? null,
@@ -276,6 +303,7 @@ export default function ChannelChat({ channelId }: ChannelChatProps) {
               sender_id: String(msg.sender_id),
               sender_name: msg.sender_name,
               content: msg.content,
+              files: msg.files ? JSON.parse(msg.files) : [],
               self: String(msg.sender_id) === String(userId),
               created_at: createdAt,
               updated_at: msg.updated_at ?? null,
@@ -324,19 +352,40 @@ export default function ChannelChat({ channelId }: ChannelChatProps) {
     });
   }, [messages.length]);
 
-  const handleSendMessage = (content: string, files?: File[]) => {
-    if (!socket || !socket.connected) return;
+const handleSendMessage = async (content: string, files?: any[]) => {
+  if (!socket || !socket.connected) return;
 
-    console.log("📤 Sending:", {
-      content,
-      channel_id: Number(channelId),
-    });
+  // If files are already metadata objects (have .url), send them directly
+  let fileMetadata: any[] = [];
 
-    socket.emit("sendMessage", {
-      content,
-      channel_id: Number(channelId),
-    });
-  };
+  if (files && files.length > 0) {
+    const first = files[0];
+    const isMetadata = first && (first.url || first.path);
+
+    if (isMetadata) {
+      fileMetadata = files; // already uploaded by MessageInput
+    } else {
+      // fallback: files are raw File objects -> upload them here
+      const formData = new FormData();
+      files.forEach((f: File) => formData.append("files", f));
+
+      const res = await fetch(`${SERVER_URL}/upload`, {
+        method: "POST",
+        credentials: "include",
+        body: formData,
+      });
+      const data = await res.json();
+      fileMetadata = Array.isArray(data.files) ? data.files : [];
+    }
+  }
+
+  socket.emit("sendMessage", {
+    content,
+    channel_id: Number(channelId),
+    files: fileMetadata, // metadata only
+  });
+};
+
 
   function pinMessage(messageId: string | number) {
     if (!socket) return;
@@ -613,14 +662,18 @@ export default function ChannelChat({ channelId }: ChannelChatProps) {
         </div>
       )}
       <main className="flex flex-col flex-1">
-        <MainHeader id={channelId} type={"channel"} />
+<MainHeader
+  id={channelId}
+  type={isDm ? "dm" : "channel"}
+  dmUser={dmOtherUser}
+/>
 
         <div
           ref={containerRef}
           className="flex-1 py-2 bg-[var(--sidebar)]"
           style={{ scrollbarGutter: "stable" }}
         >
-          {messages.map((msg, index) => {
+          {messages?.map((msg, index) => {
             const msgId = String(msg.id);
             const prev = messages[index - 1];
 const showAvatar =
@@ -708,6 +761,22 @@ const showAvatar =
                           __html: DOMPurify.sanitize(msg.content),
                         }}
                       />
+                     {msg.files?.length  ? (
+                        <div className="flex gap-2 mt-2 aspect-square h-[100px] w-[100px] flex-wrap">
+                          {msg.files.map((file, i) => (
+                            <a key={i} href={file.url} target="_blank">
+                              {file.type.startsWith("image/") ? (
+                                <img src={file.url} className="w-full rounded border object-cover h-full" />
+                              ) : (
+                                <div className="p-2 border rounded text-sm">
+                                  📎 {file.name}
+                                </div>
+                              )}
+                            </a>
+                          ))}
+                        </div>
+                      ):null}
+
                       {msg.reactions && msg.reactions.length > 0 && (
                         <Tooltip>
                           <TooltipTrigger asChild>

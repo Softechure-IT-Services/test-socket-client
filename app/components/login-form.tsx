@@ -39,10 +39,10 @@ export function LoginForm({ className, ...props }: React.ComponentProps<"div">) 
       const data = res.data;
 
       // ✅ Set auth_token cookie client-side for middleware
-      if (data.access_token) {
-        Cookies.set("auth_token", data.access_token, {
+      if (data.user?.access_token) {
+        Cookies.set("access_token", data.user.access_token, {
           path: "/",           // middleware will read this
-          sameSite: "lax",     // adjust for your environment
+          sameSite: process.env.NODE_ENV === "production" ? "Lax" : "Strict",
           secure: process.env.NODE_ENV === "production",
         });
       }

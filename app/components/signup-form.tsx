@@ -86,10 +86,7 @@ export function SignupForm({ className, ...props }: React.ComponentProps<"div">)
 
       const data = res.data;
 
-      if (!response.ok) {
-        // setErrors({ general: data.error || "Registration failed." });
-        toast.error(data.error || "Registration failed.");
-      } else {
+
        toast.success("Account created successfully! Please log in.", {
   duration: 1200, // 1.2 seconds
   onAutoClose: () => {
@@ -107,12 +104,13 @@ export function SignupForm({ className, ...props }: React.ComponentProps<"div">)
   },
 });
 
-      }
+      
     } catch (err) {
       setErrors({ general: "Unable to connect to server." });
     }
-
-    setLoading(false);
+    finally {
+      setLoading(false);
+    }
   };
 
   return (

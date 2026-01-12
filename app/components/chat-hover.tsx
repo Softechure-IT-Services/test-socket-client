@@ -17,13 +17,15 @@ type ChatHoverProps = {
 };
 
 export default function ChatHover({ messageId, pinned,isSelf, onAction }: ChatHoverProps) {
+  const isPinned = Boolean(Number(pinned));
+
   const items = [
     { type: "reaction", icon: <MdAddReaction />, label: "Reaction" },
     { type: "reply", icon: <RiReplyFill />, label: "Reply" },
     { 
       type: "pin", 
-      icon: pinned ? <RiUnpinFill /> : <GrPin />, 
-      label: pinned ? "Unpin" : "Pin" // ✅ dynamic tooltip
+      icon: isPinned ? <RiUnpinFill /> : <GrPin />, 
+      label: isPinned ? "Unpin" : "Pin" // ✅ dynamic tooltip
     },
     { type: "forward", icon: <RiShareForwardFill />, label: "Forward" },
     ...(isSelf ? [

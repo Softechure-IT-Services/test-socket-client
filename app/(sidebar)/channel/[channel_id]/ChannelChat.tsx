@@ -596,28 +596,52 @@ useEffect(() => {
 // }, [loadMessages, initialLoading, isLoadingMore, hasMore]);
 
 
+// useEffect(() => {
+//   if (!topMessageRef.current) return;
+//   if (!hasMore || isLoadingMore || initialLoading) return;
+
+//   const observer = new IntersectionObserver(
+//     (entries) => {
+//       const first = entries[0];
+//       if (first.isIntersecting) {
+//         loadMessages(false); // 👈 fetch older messages
+//       }
+//     },
+//     {
+//       root: containerRef.current, // 👈 chat scroll container
+//       threshold: 0.1, // smallest visibility
+//     }
+//   );
+
+//   observer.observe(topMessageRef.current);
+
+//   return () => observer.disconnect();
+// }, [messages, hasMore, isLoadingMore, initialLoading, loadMessages]);
+
 useEffect(() => {
-  if (!topMessageRef.current) return;
-  if (!hasMore || isLoadingMore || initialLoading) return;
+  if (!topMessageRef.current || !containerRef.current) return;
+  if (!hasMore) return;
 
   const observer = new IntersectionObserver(
     (entries) => {
       const first = entries[0];
-      if (first.isIntersecting) {
-        loadMessages(false); // 👈 fetch older messages
+      if (first.isIntersecting && !isLoadingMore && !initialLoading) {
+        loadMessages(false);
       }
     },
     {
-      root: containerRef.current, // 👈 chat scroll container
-      threshold: 0.1, // smallest visibility
+      root: containerRef.current,
+      threshold: 0.1,
     }
   );
 
   observer.observe(topMessageRef.current);
 
-  return () => observer.disconnect();
-}, [messages, hasMore, isLoadingMore, initialLoading, loadMessages]);
-
+  return () => {
+    observer.disconnect();
+  };
+  // ⚠️ ONLY include refs or static flags, NOT `messages`
+}, [hasMore, isLoadingMore, initialLoading, loadMessages]);
 
 
   function MessageSkeleton() {

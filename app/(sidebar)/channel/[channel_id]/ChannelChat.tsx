@@ -488,7 +488,7 @@ const loadMessages = useCallback(
 
       const data = res.data;
 
-      const mapped: ChatMessage[] = res.data.map((msg: any) => ({
+      const mapped: ChatMessage[] = res.data.messages.map((msg: any) => ({
         id: msg.id,
         sender_id: String(msg.sender_id),
         sender_name: msg.sender_name,

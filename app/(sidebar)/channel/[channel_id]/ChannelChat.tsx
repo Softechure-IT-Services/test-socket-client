@@ -893,16 +893,29 @@ function addEmojiToMessage(messageId: string | number, emoji: any) {
       const existing = reactions.find((r) => r.emoji === selectedEmoji);
 
       if (existing) {
-        if (existing.users && !existing.users.includes(userId)) {
-          existing.users.push(userId);
-          existing.count = existing.users.length;
-        }
+                if (
+            existing.users &&
+            !existing.users.some((u) => String(u.id) === String(userId))
+          ) {
+            existing.users.push({
+              id: userId,
+              name: user?.name ?? "You",
+            });
+            existing.count = existing.users.length;
+          }
+
       } else {
-        reactions.push({
-          emoji: selectedEmoji,
-          count: 1,
-          users: [userId],
-        });
+       reactions.push({
+        emoji: selectedEmoji,
+        count: 1,
+        users: [
+          {
+            id: userId,
+            name: user?.name ?? "You",
+          },
+        ],
+      });
+
       }
 
       return { ...msg, reactions };

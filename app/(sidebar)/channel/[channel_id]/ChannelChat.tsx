@@ -361,7 +361,9 @@ const topMessageRef = useRef<HTMLDivElement | null>(null);
     const handleMessageEdited = (msg: any) => {
       setMessages((prev) =>
         prev.map((m) =>
-          String(m.id) === String(msg.id) ? { ...m, content: msg.content } : m,
+          String(m.id) === String(msg.id)
+            ? { ...m, content: msg.content, updated_at: msg.updated_at ?? m.updated_at }
+            : m,
         ),
       );
     };

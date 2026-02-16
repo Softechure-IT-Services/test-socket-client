@@ -44,10 +44,44 @@ export default function FileTab() {
     fetchFiles();
   }, [channelId]);
 
-  const handleAction = (action: "download" | "share", fileId: string) => {
-    console.log(action, fileId);
-    // Add your download or share logic here
-  };
+const handleAction = async (
+  action: "download" | "share",
+  fileId: string
+) => {
+  if (action === "download") {
+    try {
+      const res = await axios.get(
+        `/channels/messages/${fileId}/download`,
+        { responseType: "blob" } // 🔑 IMPORTANT
+      );
+
+      // Create download link
+     const disposition = res.headers["content-disposition"];
+    const fileName =
+      disposition?.split("filename=")[1]?.replace(/"/g, "") || "file";
+
+    const blob = new Blob([res.data]);
+    const url = window.URL.createObjectURL(blob);
+
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+
+    a.remove();
+    window.URL.revokeObjectURL(url);
+
+    } catch (err) {
+      console.error("Download failed:", err);
+    }
+  }
+
+  if (action === "share") {
+    console.log("Share clicked", fileId);
+  }
+};
+
 
   if (loading) return <p className="p-6">Loading files...</p>;
   if (files.length === 0) return <p className="p-6">No files found.</p>;

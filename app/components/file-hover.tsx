@@ -5,7 +5,7 @@ import { RiShareForwardFill } from "react-icons/ri";
 
 type FileHoverProps = {
   fileId: string;
-  onAction: (action: "download" | "share", fileId: string) => void;
+  onAction: (action: "download" | "share") => void;
 };
 
 export default function FileHover({ fileId, onAction }: FileHoverProps) {
@@ -15,14 +15,17 @@ export default function FileHover({ fileId, onAction }: FileHoverProps) {
   ];
 
   return (
-    <div className="flex gap-2 w-fit h-fit py-1 px-2 rounded-full border border-gray-200 bg-white absolute right-2 top-[50%] transform -translate-y-[50%]">
+    <div className="flex gap-2 w-fit h-fit py-1 px-2 rounded-full border border-gray-200 bg-white absolute right-2 top-2">
       {items.map((item) => (
         // ✅ group is on the clickable icon wrapper only
         <div key={item.type} className="relative cursor-pointer">
           <div
             className="group"
-            onClick={() => onAction(item.type as "download" | "share", fileId)}
-          >
+onClick={(e) => {
+  e.stopPropagation();
+  e.preventDefault();
+  onAction(item.type as "download" | "share");
+}}          >
             <span
               className="
                 absolute bottom-full mb-2 left-1/2 -translate-x-1/2

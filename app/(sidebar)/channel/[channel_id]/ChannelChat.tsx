@@ -7,7 +7,7 @@ import DOMPurify from "dompurify";
 import FileBg from "@/app/components/ui/file-bg";
 import FileUploadToggle from "@/app/components/ui/file-upload";
 import Dateseparator from "@/app/components/ui/date";
-
+import FileHover from "@/app/components/file-hover";
 import {
   Popover,
   PopoverContent,
@@ -22,6 +22,7 @@ import {
 } from "@/app/components/ui/tooltip";
 import { TbPinFilled } from "react-icons/tb";
 import api from "@/lib/axios";
+import CreateNew from "@/app/components/modals/CreateNew";
 
 type User = {
   name: string;
@@ -32,6 +33,7 @@ type ReactionUser = {
 };
 type Reaction = { emoji: string; count: number; users?:  ReactionUser[] };
 type ChatFile = {
+  id: number;
   url: string;
   name: string;
   type: string;
@@ -71,6 +73,8 @@ export default function ChannelChat({ channelId }: ChannelChatProps) {
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [nextCursor, setNextCursor] = useState<number | null>(null);
   const [hasMore, setHasMore] = useState(true);
+
+const [forwardMessageId, setForwardMessageId] = useState<string | null>(null);
 
   const formatDate = (date: string) =>
     new Date(date).toLocaleDateString("en-GB", {
@@ -596,6 +600,50 @@ useEffect(() => {
   bottomRef.current?.scrollIntoView({ behavior: "smooth" });
 }, [lastMessageId]);
 
+// const handleDownload = (url: string) => {
+//   const link = document.createElement("a");
+//   link.href = url;
+//   link.download = "";
+//   document.body.appendChild(link);
+//   link.click();
+//   document.body.removeChild(link);
+// };
+
+const handleDownload = async (file: any) => {
+  try {
+    const response = await fetch(file.url);
+    const blob = await response.blob();
+
+    const url = window.URL.createObjectURL(blob);
+
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = file.name; // use original name
+    document.body.appendChild(link);
+    link.click();
+
+    link.remove();
+    window.URL.revokeObjectURL(url);
+  } catch (err) {
+    console.error("Download failed:", err);
+  }
+};
+
+const handleShare = async (file: any) => {
+  if (navigator.share) {
+    try {
+      await navigator.share({
+        title: file.name,
+        url: file.url,
+      });
+    } catch (err) {
+      console.log("Share cancelled");
+    }
+  } else {
+    navigator.clipboard.writeText(file.url);
+    alert("Link copied to clipboard");
+  }
+};
 
 // useEffect(() => {
 //   const el = containerRef.current;
@@ -703,6 +751,8 @@ useEffect(() => {
   };
   // ⚠️ ONLY include refs or static flags, NOT `messages`
 }, [hasMore, isLoadingMore, initialLoading, loadMessages]);
+
+
 
 
   function MessageSkeleton() {
@@ -939,6 +989,7 @@ function addEmojiToMessage(messageId: string | number, emoji: any) {
     socket.emit("reactMessage", { messageId, emoji });
   }
 
+
   function handleChatAction(action: string, messageId: string) {
     const msg = messages.find((m) => String(m.id) === String(messageId));
     switch (action) {
@@ -953,6 +1004,7 @@ function addEmojiToMessage(messageId: string | number, emoji: any) {
         else pinMessage(messageId);
         break;
       case "forward":
+           setForwardMessageId(messageId);
         break;
       case "edit":
         enableEditMode(messageId);
@@ -1149,29 +1201,58 @@ const handleScroll = () => {
                           __html: DOMPurify.sanitize(msg.content),
                         }}
                       />
-                      {msg.files?.length ? (
-                        <div className="flex gap-2 mt-2 ">
-                          {msg.files.map((file, i) => (
-                            <a
-                              key={i}
-                              href={file.url}
-                              target="_blank"
-                              className="aspect-square h-[100px] w-[100px]"
-                            >
-                              {file.type.startsWith("image/") ? (
-                                <img
-                                  src={file.url}
-                                  className="w-full rounded border object-cover h-full"
-                                />
-                              ) : (
-                                <div className="p-2 border rounded text-sm">
-                                  📎 {file.name}
-                                </div>
-                              )}
-                            </a>
-                          ))}
-                        </div>
-                      ) : null}
+                     {msg.files?.length ? (
+  <div className="flex gap-2 mt-2">
+    {msg.files.map((file, i) => (
+      <div
+        key={i}
+        className="relative aspect-square h-[100px] w-[100px]"
+      >
+        {/* <FileHover
+  fileId={String(file.id)}
+  onAction={(action, id) => {
+    if (action === "download") {
+      handleDownload(id);
+    }
+
+    if (action === "share") {
+      handleShare(file);
+    }
+  }}
+/> */}
+<FileHover
+  fileId={msgId} // just pass anything unique
+  onAction={(action) => {
+    if (action === "download") {
+      handleDownload(file);
+    }
+
+    if (action === "share") {
+      setForwardMessageId(msgId);
+    }
+  }}
+/>
+
+        <a
+          href={file.url}
+          target="_blank"
+          className="block w-full h-full"
+        >
+          {file.type.startsWith("image/") ? (
+            <img
+              src={file.url}
+              className="w-full rounded border object-cover h-full"
+            />
+          ) : (
+            <div className="p-2 border rounded text-sm h-full flex items-center justify-center">
+              📎 {file.name}
+            </div>
+          )}
+        </a>
+      </div>
+    ))}
+  </div>
+) : null}
 
                       {msg.reactions && msg.reactions.length > 0 && (
                         <Tooltip>
@@ -1291,6 +1372,12 @@ const handleScroll = () => {
           />
         </div>
         <div ref={bottomRef} />
+      <CreateNew
+  open={!!forwardMessageId}
+  onClose={() => setForwardMessageId(null)}
+  type="forward"
+  forwardMessageId={forwardMessageId}
+/>
       </main>
     </div>
   );

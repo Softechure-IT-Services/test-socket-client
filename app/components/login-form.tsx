@@ -21,6 +21,8 @@ import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 import Cookies from "js-cookie";
 import api from "@/lib/axios";
+import { useAuth } from "@/app/components/context/userId_and_connection/provider";
+
 
 export function LoginForm({ className, ...props }: React.ComponentProps<"div">) {
   const [email, setEmail] = useState("");
@@ -28,6 +30,8 @@ export function LoginForm({ className, ...props }: React.ComponentProps<"div">) 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const router = useRouter();
+  const { login } = useAuth();
+
 
   async function handleSubmit(e: React.FormEvent) {
   e.preventDefault();
@@ -51,6 +55,7 @@ export function LoginForm({ className, ...props }: React.ComponentProps<"div">) 
 
       // ✅ Store access_token in localStorage for API calls
       localStorage.setItem("access_token", data.user.access_token);
+      login(data.user.access_token);      
     }
 
     // ✅ Show success toast

@@ -94,19 +94,30 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   React.useEffect(() => {
   if (!socket || !user) return;
 
-const dmHandler = (payload: any) => {
-  setUsers(prev => {
-    const exists = prev.some(u => u.url === `/channel/${payload.channel_id}`);
-    if (exists) return prev;
+// const dmHandler = (payload: any) => {
+//   setUsers(prev => {
+//     const exists = prev.some(u => u.url === `/channel/${payload.channel_id}`);
+//     if (exists) return prev;
 
-    const otherUser = payload.members.find((m: any) => m.id !== user?.id);
+//     const otherUser = payload.members.find((m: any) => m.id !== user?.id);
 
-    return [{
-      title: otherUser.name,
-      url: `/channel/${payload.channel_id}`,
-      avatar: otherUser.avatar_url,
-    }, ...prev];
-  });
+//     return [{
+//       title: otherUser.name,
+//       url: `/channel/${payload.channel_id}`,
+//       avatar: otherUser.avatar_url,
+//     }, ...prev];
+//   });
+// };
+const dmHandler = async () => {
+  const dm = await api.get(`/dm`);
+
+  setUsers(
+    dm.data.map((d: any) => ({
+      title: d.name,
+      url: `/channel/${d.id}`,
+      avatar: d.avatar_url,
+    }))
+  );
 };
 
 

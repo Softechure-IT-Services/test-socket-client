@@ -338,6 +338,7 @@ const topMessageRef = useRef<HTMLDivElement | null>(null);
         self: true,
         created_at: createdAt,
         avatar_url: user?.avatar_url ?? null,
+        pinned: msg.pinned ?? false,
       };
       setMessages((prev) => {
         if (

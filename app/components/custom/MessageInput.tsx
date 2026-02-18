@@ -339,7 +339,11 @@ const deleteUploadedFile = async (index: number) => {
       Highlight,
       Color,
       CharacterCount.configure({ limit: 5000 }),
-      Placeholder.configure({ placeholder: "Write a message..." }),
+Placeholder.configure({
+  placeholder: "Write a message...",
+  showOnlyCurrent: false,
+  showOnlyWhenEditable: true,
+}),
     ],
     content: "",
     editorProps: {

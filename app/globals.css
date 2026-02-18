@@ -295,3 +295,43 @@ code{
 body{
   overflow: hidden !important;
 }
+/* Only show placeholder on the very first paragraph when doc is empty */
+.tiptap p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  color: #adb5bd;
+  pointer-events: none;
+  height: 0;
+}
+
+/* Hide placeholder when there's a list or other block content */
+.tiptap:has(ul, ol, blockquote, pre) p.is-editor-empty::before {
+  display: none;
+}
+.tiptap p.is-editor-empty:first-child:last-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  color: #9ca3af;
+  pointer-events: none;
+  height: 0;
+}
+/* Default placeholder on empty paragraph */
+.tiptap p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  color: #9ca3af;
+  pointer-events: none;
+  height: 0;
+}
+
+/* Prevent placeholder appearing on list elements */
+.tiptap ul.is-editor-empty::before,
+.tiptap ol.is-editor-empty::before {
+  display: none;
+}
+
+/* Also hide the paragraph placeholder that appears below the list */
+.tiptap ul ~ p.is-editor-empty::before,
+.tiptap ol ~ p.is-editor-empty::before {
+  display: none;
+}

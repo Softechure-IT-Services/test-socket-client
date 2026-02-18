@@ -5,7 +5,7 @@ import { RiShareForwardFill } from "react-icons/ri";
 
 type FileHoverProps = {
   fileId: string;
-  onAction: (action: "download" | "share") => void;
+onAction: (action: "download" | "share", fileId: string) => void | Promise<void>;
 };
 
 export default function FileHover({ fileId, onAction }: FileHoverProps) {
@@ -24,7 +24,7 @@ export default function FileHover({ fileId, onAction }: FileHoverProps) {
 onClick={(e) => {
   e.stopPropagation();
   e.preventDefault();
-  onAction(item.type as "download" | "share");
+  onAction(item.type as "download" | "share",fileId);
 }}          >
             <span
               className="

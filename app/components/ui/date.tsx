@@ -30,7 +30,7 @@ export default function DateSeparator({ date }: DateSeparatorProps) {
 
   return (
     <div className="flex items-center justify-center absolute left-[50%] top-0 -translate-x-[50%] -translate-y-[50%]">
-      <span className="px-4 py-1 text-xs text-gray-600 bg-white border rounded-full">
+      <span className="px-4 py-1 text-sm font-[500] text-gray-700 bg-white border rounded-full">
         {formattedDate}
       </span>
     </div>  

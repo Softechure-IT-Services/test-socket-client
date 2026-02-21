@@ -1,5 +1,6 @@
+
 "use client";
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback, memo } from "react";
 import { useAuth } from "@/app/components/context/userId_and_connection/provider";
 import MessageInput from "@/app/components/custom/MessageInput";
 import ChatHover from "@/app/components/chat-hover";
@@ -9,13 +10,6 @@ import FileUploadToggle from "@/app/components/ui/file-upload";
 import Dateseparator from "@/app/components/ui/date";
 import FileHover from "@/app/components/file-hover";
 import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/app/components/ui/popover";
-import { Button } from "@/app/components/ui/button";
-import Picker from "@emoji-mart/react";
-import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
@@ -23,15 +17,16 @@ import {
 import { TbPinFilled } from "react-icons/tb";
 import api from "@/lib/axios";
 import CreateNew from "@/app/components/modals/CreateNew";
-
+import { type Reaction as ChatHoverReaction } from "@/app/components/chat-hover";
+ import { useSearchParams } from "next/navigation";
 type User = {
   name: string;
-}
+};
 type ReactionUser = {
   id: number | string;
   name: string;
 };
-type Reaction = { emoji: string; count: number; users?:  ReactionUser[] };
+type Reaction = { emoji: string; count: number; users?: ReactionUser[] };
 type ChatFile = {
   id: number;
   url: string;
@@ -62,7 +57,43 @@ type ChannelChatProps = {
   channelId: string;
 };
 
+// ─── GIF header injection ─────────────────────────────────────────────────────
+// Before sanitizing, wrap every img[title="via GIPHY"] with a flex container
+// that prepends a header bar showing the GIF badge, title, and source label.
+function injectGifHeaders(html: string): string {
+  return html.replace(
+    /<img([^>]*?)title="via GIPHY"([^>]*?)>/gi,
+    (match, before, after) => {
+      const altMatch = (before + after).match(/alt="([^"]*)"/i);
+      const title = altMatch ? altMatch[1] : "GIF";
+      const header =
+        `<div style="display:flex;align-items:center;gap:6px;padding:2px 4px;border-radius:4px;background:rgba(0,0,0,0.05);font-size:11px;color:#6b7280;margin-bottom:2px;">` +
+        `<span style="flex-shrink:0;font-weight:700;font-size:10px;padding:1px 4px;border-radius:3px;background:#6366f1;color:#fff;line-height:1;">GIF</span>` +
+        `<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${title}</span>` +
+        `<span style="margin-left:auto;flex-shrink:0;opacity:0.5;font-size:10px;">via GIPHY</span>` +
+        `</div>`;
+      return `<div style="display:inline-flex;flex-direction:column;max-width:100%;">${header}${match}</div>`;
+    }
+  );
+}
+
+// ─── Memoized message content renderer ────────────────────────────────────────
+// Prevents GIF/image flicker: the inner HTML (and its <img> tags) will NOT
+// remount when sibling state (hover, reactions, etc.) changes — only when the
+// actual message content string changes.
+const MessageContent = memo(
+  ({ html, className }: { html: string; className?: string }) => (
+    <div
+      className={className}
+      dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(injectGifHeaders(html), { ADD_ATTR: ["style"] }) }}
+    />
+  ),
+  (prev, next) => prev.html === next.html && prev.className === next.className,
+);
+MessageContent.displayName = "MessageContent";
+
 export default function ChannelChat({ channelId }: ChannelChatProps) {
+
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isDm, setIsDm] = useState(false);
   const [dmOtherUser, setDmOtherUser] = useState<any>(null);
@@ -74,8 +105,8 @@ export default function ChannelChat({ channelId }: ChannelChatProps) {
   const [nextCursor, setNextCursor] = useState<number | null>(null);
   const [hasMore, setHasMore] = useState(true);
 
-const [forwardMessageId, setForwardMessageId] = useState<string | null>(null);
-
+  const [forwardMessageId, setForwardMessageId] = useState<string | null>(null);
+ const searchParams = useSearchParams();
   const formatDate = (date: string) =>
     new Date(date).toLocaleDateString("en-GB", {
       day: "2-digit",
@@ -90,28 +121,29 @@ const [forwardMessageId, setForwardMessageId] = useState<string | null>(null);
   const userId = user?.id;
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [hoveredId, setHoveredId] = useState<string | number | null>(null);
+  // lockedId keeps ChatHover mounted when a popup (emoji picker / dropdown) is open,
+  // even if the mouse moves to a different message.
+  const [lockedId, setLockedId] = useState<string | number | null>(null);
   const SERVER_URL =
     process.env.NEXT_PUBLIC_SERVER_URL ?? "http://192.168.0.113:5000";
 
   // EDIT state (we'll load content into the MessageInput when editing)
   const [editMessageId, setEditMessageId] = useState<string | null>(null);
   const [editContent, setEditContent] = useState<string>("");
-  const [showEmojiPickerFor, setShowEmojiPickerFor] = useState<string | null>(
-    null,
-  );
 
   // for drag and drop file
   const [dragging, setDragging] = useState(false);
+  const [droppedFiles, setDroppedFiles] = useState<File[]>([]);
   const dragCounter = useRef(0);
-  const messageBoxRef = useRef<HTMLDivElement | null >(null);
-const didInitialScrollRef = useRef(false);
-const loadingMoreRef = useRef(false);
+  const messageBoxRef = useRef<HTMLDivElement | null>(null);
+  const didInitialScrollRef = useRef(false);
+  const loadingMoreRef = useRef(false);
+  const highlightedScrollIds = useRef<Set<string>>(new Set());
 
-const [hasNewMessages, setHasNewMessages] = useState(false);
-const [highlightedIds, setHighlightedIds] = useState<Set<string>>(new Set());
-const oldestMessageId = messages[0]?.id;
-const topMessageRef = useRef<HTMLDivElement | null>(null);
-
+  const [hasNewMessages, setHasNewMessages] = useState(false);
+  const [highlightedIds, setHighlightedIds] = useState<Set<string>>(new Set());
+  const oldestMessageId = messages[0]?.id;
+  const topMessageRef = useRef<HTMLDivElement | null>(null);
 
   const isFileDrag = (e: React.DragEvent) => {
     return Array.from(e.dataTransfer.types).includes("Files");
@@ -152,8 +184,8 @@ const topMessageRef = useRef<HTMLDivElement | null>(null);
     const files = Array.from(e.dataTransfer.files);
     if (!files.length) return;
 
-    // 🔥 send files
-    handleSendMessage("", files);
+    // 🔥 Stage files in MessageInput for preview — user sends manually
+    setDroppedFiles(files);
   };
 
   useEffect(() => {
@@ -172,6 +204,43 @@ const topMessageRef = useRef<HTMLDivElement | null>(null);
       })
       .catch((err) => console.error(err));
   }, [channelId]);
+
+  useEffect(() => {
+   const scrollToId = searchParams?.get("scrollTo");
+   if (!scrollToId || messages.length === 0 || initialLoading) return;
+
+   // Only highlight once per scrollTo ID — prevents re-triggering on reactions/state updates
+   if (highlightedScrollIds.current.has(scrollToId)) return;
+
+   const timer = setTimeout(() => {
+     const el = document.getElementById(`msg-${scrollToId}`);
+     if (!el) return;
+
+     highlightedScrollIds.current.add(scrollToId);
+
+     // Scroll the message into view
+     el.scrollIntoView({ behavior: "smooth", block: "center" });
+
+     // Flash highlight: yellow background that fades out after 2.5s
+     el.style.transition = "none";
+     el.style.backgroundColor = "#fef08a";
+     el.style.borderRadius = "6px";
+     el.style.outline = "2px solid #facc15";
+
+     setTimeout(() => {
+       el.style.transition = "background-color 1s ease, outline 1s ease";
+       el.style.backgroundColor = "";
+       el.style.outline = "2px solid transparent";
+       setTimeout(() => {
+         el.style.transition = "";
+         el.style.outline = "";
+         el.style.borderRadius = "";
+       }, 1000);
+     }, 1800);
+   }, 500);
+
+   return () => clearTimeout(timer);
+ }, [searchParams, messages, initialLoading]);
 
   useEffect(() => {
     if (!socket || !channelId) return;
@@ -202,129 +271,128 @@ const topMessageRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     if (!socket || !userId) return;
 
-//     const handleReceive = (msg: any) => {
-//       if (String(msg.channel_id) !== String(channelId)) return;
-//         if (String(msg.sender_id) === String(userId)) return;
+    //     const handleReceive = (msg: any) => {
+    //       if (String(msg.channel_id) !== String(channelId)) return;
+    //         if (String(msg.sender_id) === String(userId)) return;
 
+    //       const stableId =
+    //         msg.id ?? `${msg.sender_id}-${msg.created_at ?? Date.now()}`;
 
-//       const stableId =
-//         msg.id ?? `${msg.sender_id}-${msg.created_at ?? Date.now()}`;
+    //       const chatMsg: ChatMessage = {
+    //         id: stableId,
+    //         sender_id: msg.sender_id,
+    //         sender_name: msg.sender_name,
+    //         content: msg.content,
+    //         files: Array.isArray(msg.files) ? msg.files : [],
+    //         self: String(msg.sender_id) === String(userId),
+    //         created_at: msg.created_at ?? new Date().toISOString(),
+    //         avatar_url: msg.avatar_url ?? null,
+    //       };
 
-//       const chatMsg: ChatMessage = {
-//         id: stableId,
-//         sender_id: msg.sender_id,
-//         sender_name: msg.sender_name,
-//         content: msg.content,
-//         files: Array.isArray(msg.files) ? msg.files : [],
-//         self: String(msg.sender_id) === String(userId),
-//         created_at: msg.created_at ?? new Date().toISOString(),
-//         avatar_url: msg.avatar_url ?? null,
-//       };
+    //       // setMessages((prev) => {
+    //       //   // 1️⃣ Try to find the optimistic message to replace
+    //       //   const tempIdx = prev.findIndex(
+    //       //     (m) =>
+    //       //       m.self &&
+    //       //       m.id.toString().startsWith("temp-") &&
+    //       //       m.content === chatMsg.content,
+    //       //   );
 
-//       // setMessages((prev) => {
-//       //   // 1️⃣ Try to find the optimistic message to replace
-//       //   const tempIdx = prev.findIndex(
-//       //     (m) =>
-//       //       m.self &&
-//       //       m.id.toString().startsWith("temp-") &&
-//       //       m.content === chatMsg.content,
-//       //   );
+    //       //   if (tempIdx !== -1) {
+    //       //     const next = [...prev];
+    //       //     next[tempIdx] = chatMsg;
+    //       //     return next;
+    //       //   }
 
-//       //   if (tempIdx !== -1) {
-//       //     const next = [...prev];
-//       //     next[tempIdx] = chatMsg;
-//       //     return next;
-//       //   }
+    //       //   // 2️⃣ Prevent duplicates if message already exists
+    //       //   if (prev.some((m) => String(m.id) === String(chatMsg.id))) return prev;
 
-//       //   // 2️⃣ Prevent duplicates if message already exists
-//       //   if (prev.some((m) => String(m.id) === String(chatMsg.id))) return prev;
+    //       //   return [...prev, chatMsg].sort(
+    //       //     (a, b) =>
+    //       //       new Date(a.created_at!).getTime() -
+    //       //       new Date(b.created_at!).getTime(),
+    //       //   );
+    //       // });
+    //       setMessages((prev) => {
+    //   const exists = prev.some((m) => String(m.id) === String(chatMsg.id));
+    //   if (exists) return prev;
 
-//       //   return [...prev, chatMsg].sort(
-//       //     (a, b) =>
-//       //       new Date(a.created_at!).getTime() -
-//       //       new Date(b.created_at!).getTime(),
-//       //   );
-//       // });
-//       setMessages((prev) => {
-//   const exists = prev.some((m) => String(m.id) === String(chatMsg.id));
-//   if (exists) return prev;
+    //   const next = [...prev, chatMsg].sort(
+    //     (a, b) =>
+    //       new Date(a.created_at!).getTime() -
+    //       new Date(b.created_at!).getTime()
+    //   );
 
-//   const next = [...prev, chatMsg].sort(
-//     (a, b) =>
-//       new Date(a.created_at!).getTime() -
-//       new Date(b.created_at!).getTime()
-//   );
+    //   // 👇 If user is NOT near bottom → show indicator
+    //   if (!shouldAutoScrollRef.current && !chatMsg.self) {
+    //   setHasNewMessages(true);
 
-//   // 👇 If user is NOT near bottom → show indicator
-//   if (!shouldAutoScrollRef.current && !chatMsg.self) {
-//   setHasNewMessages(true);
+    //   setHighlightedIds((prevSet) => {
+    //     const copy = new Set(prevSet);
+    //     copy.add(String(chatMsg.id));
+    //     return copy;
+    //   });
+    // }
 
-//   setHighlightedIds((prevSet) => {
-//     const copy = new Set(prevSet);
-//     copy.add(String(chatMsg.id));
-//     return copy;
-//   });
-// }
+    //   return next;
+    // });
 
-
-//   return next;
-// });
-
-//     };
+    //     };
 
     const handleReceive = (msg: any) => {
-  if (String(msg.channel_id) !== String(channelId)) return;
+      if (String(msg.channel_id) !== String(channelId)) return;
 
-  const stableId = msg.id ?? `${msg.sender_id}-${msg.created_at ?? Date.now()}`;
+      const stableId =
+        msg.id ?? `${msg.sender_id}-${msg.created_at ?? Date.now()}`;
 
-  const chatMsg: ChatMessage = {
-    id: stableId,
-    sender_id: msg.sender_id,
-    sender_name: msg.sender_name,
-    content: msg.content,
-    files: Array.isArray(msg.files) ? msg.files : [],
-    self: String(msg.sender_id) === String(userId),
-    created_at: msg.created_at ?? new Date().toISOString(),
-    avatar_url: msg.avatar_url ?? null,
-  };
+      const chatMsg: ChatMessage = {
+        id: stableId,
+        sender_id: msg.sender_id,
+        sender_name: msg.sender_name,
+        content: msg.content,
+        files: Array.isArray(msg.files) ? msg.files : [],
+        self: String(msg.sender_id) === String(userId),
+        created_at: msg.created_at ?? new Date().toISOString(),
+        avatar_url: msg.avatar_url ?? null,
+      };
 
-  setMessages((prev) => {
-    // 🔹 Replace temp message if this is from the sender
-    const tempIdx = prev.findIndex(
-      (m) =>
-        m.self &&
-        m.id?.toString().startsWith("temp-") &&
-        m.content === chatMsg.content
-    );
+      setMessages((prev) => {
+        // 🔹 Replace temp message if this is from the sender
+        const tempIdx = prev.findIndex(
+          (m) =>
+            m.self &&
+            m.id?.toString().startsWith("temp-") &&
+            m.content === chatMsg.content,
+        );
 
-    if (tempIdx !== -1) {
-      const next = [...prev];
-      next[tempIdx] = chatMsg; // replace temp with server message
-      return next;
-    }
+        if (tempIdx !== -1) {
+          const next = [...prev];
+          next[tempIdx] = chatMsg; // replace temp with server message
+          return next;
+        }
 
-    // 🔹 Prevent duplicates if message already exists
-    if (prev.some((m) => String(m.id) === String(chatMsg.id))) return prev;
+        // 🔹 Prevent duplicates if message already exists
+        if (prev.some((m) => String(m.id) === String(chatMsg.id))) return prev;
 
-    const next = [...prev, chatMsg].sort(
-      (a, b) =>
-        new Date(a.created_at!).getTime() - new Date(b.created_at!).getTime()
-    );
+        const next = [...prev, chatMsg].sort(
+          (a, b) =>
+            new Date(a.created_at!).getTime() -
+            new Date(b.created_at!).getTime(),
+        );
 
-    // handle highlighted messages for auto scroll
-    if (!shouldAutoScrollRef.current && !chatMsg.self) {
-      setHasNewMessages(true);
-      setHighlightedIds((prevSet) => {
-        const copy = new Set(prevSet);
-        copy.add(String(chatMsg.id));
-        return copy;
+        // handle highlighted messages for auto scroll
+        if (!shouldAutoScrollRef.current && !chatMsg.self) {
+          setHasNewMessages(true);
+          setHighlightedIds((prevSet) => {
+            const copy = new Set(prevSet);
+            copy.add(String(chatMsg.id));
+            return copy;
+          });
+        }
+
+        return next;
       });
-    }
-
-    return next;
-  });
-};
-
+    };
 
     const handleAck = (msg: any) => {
       const stableId =
@@ -335,31 +403,56 @@ const topMessageRef = useRef<HTMLDivElement | null>(null);
         sender_id: msg.sender_id,
         sender_name: msg.sender_name,
         content: msg.content,
+        files: Array.isArray(msg.files) ? msg.files : [],
         self: true,
         created_at: createdAt,
         avatar_url: user?.avatar_url ?? null,
         pinned: msg.pinned ?? false,
       };
       setMessages((prev) => {
-        if (
-          chatMsg.id != null &&
-          prev.some((m) => String(m.id) === String(chatMsg.id))
-        )
-          return prev;
-        const next = [...prev, chatMsg].sort((a, b) => {
+        // Replace the temp optimistic message with the ack'd server message
+        const tempIdx = prev.findIndex(
+          (m) =>
+            m.self &&
+            m.id?.toString().startsWith("temp-") &&
+            m.content === chatMsg.content,
+        );
+        if (tempIdx !== -1) {
+          const next = [...prev];
+          next[tempIdx] = chatMsg;
+          return next;
+        }
+        // Already replaced by receiveMessage, just deduplicate
+        if (prev.some((m) => String(m.id) === String(chatMsg.id))) return prev;
+        return [...prev, chatMsg].sort((a, b) => {
           const ta = a.created_at ? new Date(a.created_at).getTime() : 0;
           const tb = b.created_at ? new Date(b.created_at).getTime() : 0;
           return ta - tb;
         });
-        return next;
       });
     };
 
     const handleReactionsUpdate = ({ messageId, reactions }: any) => {
       setMessages((prev) =>
-        prev.map((msg) =>
-          String(msg.id) === String(messageId) ? { ...msg, reactions } : msg,
-        ),
+        prev.map((msg) => {
+          if (String(msg.id) !== String(messageId)) return msg;
+          const existingReactions = msg.reactions ?? [];
+          const merged = (reactions as any[]).map((serverR: any) => {
+            const existing = existingReactions.find(
+              (r) => r.emoji === serverR.emoji,
+            );
+            return {
+              ...serverR,
+              users:
+                Array.isArray(serverR.users) && serverR.users.length > 0
+                  ? serverR.users
+                  : Array.isArray(existing?.users)
+                  ? existing.users
+                  : [],
+            };
+          });
+          return { ...msg, reactions: merged };
+        }),
       );
     };
 
@@ -367,7 +460,11 @@ const topMessageRef = useRef<HTMLDivElement | null>(null);
       setMessages((prev) =>
         prev.map((m) =>
           String(m.id) === String(msg.id)
-            ? { ...m, content: msg.content, updated_at: msg.updated_at ?? m.updated_at }
+            ? {
+                ...m,
+                content: msg.content,
+                updated_at: msg.updated_at ?? m.updated_at,
+              }
             : m,
         ),
       );
@@ -449,7 +546,6 @@ const topMessageRef = useRef<HTMLDivElement | null>(null);
   //         setNextCursor(newCursor);
   //       }
 
-
   //       if (!initial && el) {
   //         requestAnimationFrame(() => {
   //           const newScrollHeight = el.scrollHeight;
@@ -469,107 +565,156 @@ const topMessageRef = useRef<HTMLDivElement | null>(null);
   //   [channelId, userId, hasMore, isLoadingMore, nextCursor],
   // );
 
-const loadMessages = useCallback(
-  async (initial = false) => {
-    if (!channelId || !userId) return;
+  const loadMessages = useCallback(
+    async (initial = false) => {
+      if (!channelId || !userId) return;
 
-    // 🔒 HARD LOCK (prevents double fetch in same frame)
-    if (!initial) {
-      if (loadingMoreRef.current) return;
-      if (!hasMore) return;
-      loadingMoreRef.current = true;
-    }
-
-    const el = containerRef.current;
-    const prevScrollHeight = el?.scrollHeight ?? 0;
-
-    if (initial) {
-      setInitialLoading(true);
-    } else {
-      setIsLoadingMore(true);
-    }
-
-    try {
-      const res = await api.get(`/channels/${channelId}/messages`, {
-        params: {
-          limit: 16,
-          cursor: messages[0]?.id ?? null,
-        },
-      });
-
-      const data = res.data;
-
-      const mapped: ChatMessage[] = res.data.messages.map((msg: any) => ({
-        id: msg.id,
-        sender_id: String(msg.sender_id),
-        sender_name: msg.sender_name,
-        content: msg.content,
-        files: msg.files ? JSON.parse(msg.files) : [],
-        self: String(msg.sender_id) === String(userId),
-        created_at: msg.created_at,
-        updated_at: msg.updated_at,
-        reactions: msg.reactions ? JSON.parse(msg.reactions) : [],
-        avatar_url: msg.avatar_url ?? null,
-        pinned: msg.pinned === true,
-      }));
-
-
-      setMessages((prev) => (initial ? mapped : [...mapped, ...prev]));
-
-      const newCursor = data.nextCursor ?? null;
-
-      if (!mapped.length || newCursor == null) {
-        setHasMore(false);
-      } else {
-        setHasMore(true);
-        setNextCursor(newCursor);
+      // 🔒 HARD LOCK (prevents double fetch in same frame)
+      if (!initial) {
+        if (loadingMoreRef.current) return;
+        if (!hasMore) return;
+        loadingMoreRef.current = true;
       }
 
-      if (!initial && el) {
-        requestAnimationFrame(() => {
-          const newScrollHeight = el.scrollHeight;
-          el.scrollTop = newScrollHeight - prevScrollHeight;
-        });
-      }
-    } catch (err) {
-      console.error("Failed to load messages:", err);
-    } finally {
+      const el = containerRef.current;
+      const prevScrollHeight = el?.scrollHeight ?? 0;
+
       if (initial) {
-        setInitialLoading(false);
+        setInitialLoading(true);
       } else {
-        setIsLoadingMore(false);
-        loadingMoreRef.current = false; // 🔓 UNLOCK
+        setIsLoadingMore(true);
       }
-    }
-  },
-  [channelId, userId, hasMore, nextCursor],
-);
 
+      try {
+        const res = await api.get(`/channels/${channelId}/messages`, {
+          params: {
+            limit: 16,
+            cursor: messages[0]?.id ?? null,
+          },
+        });
+
+        const data = res.data;
+
+        const mapped: ChatMessage[] = res.data.messages.map((msg: any) => ({
+          id: msg.id,
+          sender_id: String(msg.sender_id),
+          sender_name: msg.sender_name,
+          content: msg.content,
+          files: msg.files ? JSON.parse(msg.files) : [],
+          self: String(msg.sender_id) === String(userId),
+          created_at: msg.created_at,
+          updated_at: msg.updated_at,
+          reactions: msg.reactions ? JSON.parse(msg.reactions) : [],
+          avatar_url: msg.avatar_url ?? null,
+          pinned: msg.pinned === true,
+        }));
+
+        setMessages((prev) => (initial ? mapped : [...mapped, ...prev]));
+
+        const newCursor = data.nextCursor ?? null;
+
+        if (!mapped.length || newCursor == null) {
+          setHasMore(false);
+        } else {
+          setHasMore(true);
+          setNextCursor(newCursor);
+        }
+
+        if (!initial && el) {
+          requestAnimationFrame(() => {
+            const newScrollHeight = el.scrollHeight;
+            el.scrollTop = newScrollHeight - prevScrollHeight;
+          });
+        }
+      } catch (err) {
+        console.error("Failed to load messages:", err);
+      } finally {
+        if (initial) {
+          setInitialLoading(false);
+        } else {
+          setIsLoadingMore(false);
+          loadingMoreRef.current = false; // 🔓 UNLOCK
+        }
+      }
+    },
+    [channelId, userId, hasMore, nextCursor],
+  );
+
+  /**
+   * Fetches a window of messages centered around a specific message ID.
+   * Used when navigating from search results so the target message is in the DOM.
+   * We fetch 30 messages with cursor = targetId + 1 (gets messages up to and including target),
+   * then the scrollTo useEffect handles the scroll + highlight.
+   */
+  const loadMessagesAroundId = useCallback(
+    async (targetId: string) => {
+      if (!channelId || !userId) return;
+      setInitialLoading(true);
+      try {
+        // Fetch 30 messages ending AT the target message (cursor = targetId + 1 gives messages < cursor)
+        const cursorAbove = Number(targetId) + 1;
+        const res = await api.get(`/channels/${channelId}/messages`, {
+          params: { limit: 30, cursor: cursorAbove },
+        });
+        const mapped: ChatMessage[] = res.data.messages.map((msg: any) => ({
+          id: msg.id,
+          sender_id: String(msg.sender_id),
+          sender_name: msg.sender_name,
+          content: msg.content,
+          files: msg.files ? JSON.parse(msg.files) : [],
+          self: String(msg.sender_id) === String(userId),
+          created_at: msg.created_at,
+          updated_at: msg.updated_at,
+          reactions: msg.reactions ? JSON.parse(msg.reactions) : [],
+          avatar_url: msg.avatar_url ?? null,
+          pinned: msg.pinned === true,
+        }));
+        setMessages(mapped);
+        setNextCursor(res.data.nextCursor ?? null);
+        setHasMore(!!res.data.nextCursor);
+      } catch (err) {
+        console.error("Failed to load messages around id:", err);
+        loadMessages(true); // fallback to normal load
+      } finally {
+        setInitialLoading(false);
+      }
+    },
+    [channelId, userId]
+  );
 
   useEffect(() => {
     if (!channelId || !userId) return;
-didInitialScrollRef.current = false;
+    didInitialScrollRef.current = false;
     setMessages([]);
     setNextCursor(null);
     setHasMore(true);
+    highlightedScrollIds.current.clear(); // reset so scrollTo can fire again on new channel
 
-    loadMessages(true);
+    const scrollToId = searchParams?.get("scrollTo");
+    if (scrollToId) {
+      // Load messages around the target message so it exists in the DOM
+      loadMessagesAroundId(scrollToId);
+    } else {
+      loadMessages(true);
+    }
   }, [channelId, userId]);
 
-useEffect(() => {
-  if (!initialLoading) return;
+  useEffect(() => {
+    if (!initialLoading) return;
 
-  const el = containerRef.current;
-  if (!el) return;
+    const el = containerRef.current;
+    if (!el) return;
 
-  // Only scroll to bottom on FIRST load
-  requestAnimationFrame(() => {
-    el.scrollTop = el.scrollHeight;
-    didInitialScrollRef.current = true;
-  });
-}, [initialLoading]);
+    const scrollToId = searchParams?.get("scrollTo");
+    if (scrollToId) return; // scrollTo effect handles scrolling instead
 
-  
+    // Only scroll to bottom on FIRST load
+    requestAnimationFrame(() => {
+      el.scrollTop = el.scrollHeight;
+      didInitialScrollRef.current = true;
+    });
+  }, [initialLoading]);
+
   useEffect(() => {
     if (!socket) return;
 
@@ -592,169 +737,164 @@ useEffect(() => {
 
   const shouldAutoScrollRef = useRef(true);
 
-const lastMessageId = messages[messages.length - 1]?.id;
+  const lastMessageId = messages[messages.length - 1]?.id;
 
-useEffect(() => {
-  if (isLoadingMore) return;
-  if (!shouldAutoScrollRef.current) return;
+  useEffect(() => {
+    if (isLoadingMore) return;
+    if (!shouldAutoScrollRef.current) return;
 
-  bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-}, [lastMessageId]);
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [lastMessageId]);
 
-// const handleDownload = (url: string) => {
-//   const link = document.createElement("a");
-//   link.href = url;
-//   link.download = "";
-//   document.body.appendChild(link);
-//   link.click();
-//   document.body.removeChild(link);
-// };
+  // const handleDownload = (url: string) => {
+  //   const link = document.createElement("a");
+  //   link.href = url;
+  //   link.download = "";
+  //   document.body.appendChild(link);
+  //   link.click();
+  //   document.body.removeChild(link);
+  // };
 
-const handleDownload = async (file: any) => {
-  try {
-    const response = await fetch(file.url);
-    const blob = await response.blob();
-
-    const url = window.URL.createObjectURL(blob);
-
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = file.name; // use original name
-    document.body.appendChild(link);
-    link.click();
-
-    link.remove();
-    window.URL.revokeObjectURL(url);
-  } catch (err) {
-    console.error("Download failed:", err);
-  }
-};
-
-const handleShare = async (file: any) => {
-  if (navigator.share) {
+  const handleDownload = async (file: any) => {
     try {
-      await navigator.share({
-        title: file.name,
-        url: file.url,
-      });
+      const response = await fetch(file.url);
+      const blob = await response.blob();
+
+      const url = window.URL.createObjectURL(blob);
+
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = file.name; // use original name
+      document.body.appendChild(link);
+      link.click();
+
+      link.remove();
+      window.URL.revokeObjectURL(url);
     } catch (err) {
-      console.log("Share cancelled");
+      console.error("Download failed:", err);
     }
-  } else {
-    navigator.clipboard.writeText(file.url);
-    alert("Link copied to clipboard");
-  }
-};
-
-// useEffect(() => {
-//   const el = containerRef.current;
-//   if (!el) return;
-//   console.log("SCROLL:", {
-//   scrollTop: el.scrollTop,
-//   clientHeight: el.clientHeight,
-//   scrollHeight: el.scrollHeight,
-// });
-
-
-//   const onScroll = () => {
-//     const nearBottom =
-//       el.scrollHeight - el.scrollTop - el.clientHeight < 400;
-
-//     // Only enable auto-scroll if user is near bottom
-//     shouldAutoScrollRef.current = nearBottom;
-
-//     // If user scrolls up near top → load older messages
-//     if (el.scrollTop < 400) {
-//       loadMessages(false);
-//     }
-//   };
-
-//   el.addEventListener("scroll", onScroll);
-//   return () => el.removeEventListener("scroll", onScroll);
-// }, [loadMessages]);
-
-// useEffect(() => {
-//   const el = containerRef.current;
-//   if (!el) return;
-
-//   const onScroll = () => {
-//     // 🚫 Do NOTHING until initial scroll positioning is complete
-//     if (!didInitialScrollRef.current) return;
-
-//     const nearBottom =
-//       el.scrollHeight - el.scrollTop - el.clientHeight < 400;
-
-//     shouldAutoScrollRef.current = nearBottom;
-
-//     if (nearBottom) {
-//       setHasNewMessages(false);
-//       setHighlightedIds(new Set());
-//     }
-
-//     if (
-//       el.scrollTop < 200 &&
-//       !initialLoading &&
-//       !isLoadingMore &&
-//       hasMore
-//     ) {
-//       loadMessages(false);
-//     }
-//   };
-
-//   el.addEventListener("scroll", onScroll);
-//   return () => el.removeEventListener("scroll", onScroll);
-// }, [loadMessages, initialLoading, isLoadingMore, hasMore]);
-
-
-// useEffect(() => {
-//   if (!topMessageRef.current) return;
-//   if (!hasMore || isLoadingMore || initialLoading) return;
-
-//   const observer = new IntersectionObserver(
-//     (entries) => {
-//       const first = entries[0];
-//       if (first.isIntersecting) {
-//         loadMessages(false); // 👈 fetch older messages
-//       }
-//     },
-//     {
-//       root: containerRef.current, // 👈 chat scroll container
-//       threshold: 0.1, // smallest visibility
-//     }
-//   );
-
-//   observer.observe(topMessageRef.current);
-
-//   return () => observer.disconnect();
-// }, [messages, hasMore, isLoadingMore, initialLoading, loadMessages]);
-
-useEffect(() => {
-  if (!topMessageRef.current || !containerRef.current) return;
-  if (!hasMore) return;
-
-  const observer = new IntersectionObserver(
-    (entries) => {
-      const first = entries[0];
-      if (first.isIntersecting && !isLoadingMore && !initialLoading) {
-        loadMessages(false);
-      }
-    },
-    {
-      root: containerRef.current,
-      threshold: 0.1,
-    }
-  );
-
-  observer.observe(topMessageRef.current);
-
-  return () => {
-    observer.disconnect();
   };
-  // ⚠️ ONLY include refs or static flags, NOT `messages`
-}, [hasMore, isLoadingMore, initialLoading, loadMessages]);
 
+  const handleShare = async (file: any) => {
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: file.name,
+          url: file.url,
+        });
+      } catch (err) {
+        console.log("Share cancelled");
+      }
+    } else {
+      navigator.clipboard.writeText(file.url);
+      alert("Link copied to clipboard");
+    }
+  };
 
+  // useEffect(() => {
+  //   const el = containerRef.current;
+  //   if (!el) return;
+  //   console.log("SCROLL:", {
+  //   scrollTop: el.scrollTop,
+  //   clientHeight: el.clientHeight,
+  //   scrollHeight: el.scrollHeight,
+  // });
 
+  //   const onScroll = () => {
+  //     const nearBottom =
+  //       el.scrollHeight - el.scrollTop - el.clientHeight < 400;
+
+  //     // Only enable auto-scroll if user is near bottom
+  //     shouldAutoScrollRef.current = nearBottom;
+
+  //     // If user scrolls up near top → load older messages
+  //     if (el.scrollTop < 400) {
+  //       loadMessages(false);
+  //     }
+  //   };
+
+  //   el.addEventListener("scroll", onScroll);
+  //   return () => el.removeEventListener("scroll", onScroll);
+  // }, [loadMessages]);
+
+  // useEffect(() => {
+  //   const el = containerRef.current;
+  //   if (!el) return;
+
+  //   const onScroll = () => {
+  //     // 🚫 Do NOTHING until initial scroll positioning is complete
+  //     if (!didInitialScrollRef.current) return;
+
+  //     const nearBottom =
+  //       el.scrollHeight - el.scrollTop - el.clientHeight < 400;
+
+  //     shouldAutoScrollRef.current = nearBottom;
+
+  //     if (nearBottom) {
+  //       setHasNewMessages(false);
+  //       setHighlightedIds(new Set());
+  //     }
+
+  //     if (
+  //       el.scrollTop < 200 &&
+  //       !initialLoading &&
+  //       !isLoadingMore &&
+  //       hasMore
+  //     ) {
+  //       loadMessages(false);
+  //     }
+  //   };
+
+  //   el.addEventListener("scroll", onScroll);
+  //   return () => el.removeEventListener("scroll", onScroll);
+  // }, [loadMessages, initialLoading, isLoadingMore, hasMore]);
+
+  // useEffect(() => {
+  //   if (!topMessageRef.current) return;
+  //   if (!hasMore || isLoadingMore || initialLoading) return;
+
+  //   const observer = new IntersectionObserver(
+  //     (entries) => {
+  //       const first = entries[0];
+  //       if (first.isIntersecting) {
+  //         loadMessages(false); // 👈 fetch older messages
+  //       }
+  //     },
+  //     {
+  //       root: containerRef.current, // 👈 chat scroll container
+  //       threshold: 0.1, // smallest visibility
+  //     }
+  //   );
+
+  //   observer.observe(topMessageRef.current);
+
+  //   return () => observer.disconnect();
+  // }, [messages, hasMore, isLoadingMore, initialLoading, loadMessages]);
+
+  useEffect(() => {
+    if (!topMessageRef.current || !containerRef.current) return;
+    if (!hasMore) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const first = entries[0];
+        if (first.isIntersecting && !isLoadingMore && !initialLoading) {
+          loadMessages(false);
+        }
+      },
+      {
+        root: containerRef.current,
+        threshold: 0.1,
+      },
+    );
+
+    observer.observe(topMessageRef.current);
+
+    return () => {
+      observer.disconnect();
+    };
+    // ⚠️ ONLY include refs or static flags, NOT `messages`
+  }, [hasMore, isLoadingMore, initialLoading, loadMessages]);
 
   function MessageSkeleton() {
     return (
@@ -878,75 +1018,29 @@ useEffect(() => {
     setEditContent("");
   }
 
-  function openEmojiPicker(messageId: string) {
-    setShowEmojiPickerFor(messageId);
-  }
 
-  // function addEmojiToMessage(messageId: string | number, emoji: any) {
-  //   if (!socket || !userId) {
-  //     setShowEmojiPickerFor(null);
-  //     return;
-  //   }
+  function addEmojiToMessage(messageId: string | number, emoji: any) {
+    if (!socket || !userId) {
+      return;
+    }
 
-  //   const selectedEmoji = emoji.native ?? emoji.colons ?? String(emoji);
+    const selectedEmoji = emoji.native ?? emoji.colons ?? String(emoji);
 
-  //   setMessages((prev) =>
-  //     prev.map((msg) => {
-  //       if (String(msg.id) !== String(messageId)) return msg;
+    setMessages((prev) =>
+      prev.map((msg) => {
+        if (String(msg.id) !== String(messageId)) return msg;
 
-  //       const reactions = msg.reactions
-  //         ? msg.reactions.map((r) => ({
-  //             ...r,
-  //             users: Array.isArray(r.users) ? r.users : [],
-  //           }))
-  //         : [];
+        const reactions = msg.reactions
+          ? msg.reactions.map((r) => ({
+              ...r,
+              users: Array.isArray(r.users) ? r.users : [],
+            }))
+          : [];
 
-  //       const existing = reactions.find((r) => r.emoji === selectedEmoji);
+        const existing = reactions.find((r) => r.emoji === selectedEmoji);
 
-  //       if (existing) {
-  //         if (!existing.users.includes(userId)) {
-  //           existing.users.push(userId);
-  //           existing.count = existing.users.length;
-  //         }
-  //       } else {
-  //         reactions.push({
-  //           emoji: selectedEmoji,
-  //           count: 1,
-  //           users: [userId],
-  //         });
-  //       }
-
-  //       return { ...msg, reactions };
-  //     }),
-  //   );
-
-  //   socket.emit("reactMessage", { messageId, emoji: selectedEmoji });
-  //   setShowEmojiPickerFor(null);
-  // }
-
-function addEmojiToMessage(messageId: string | number, emoji: any) {
-  if (!socket || !userId) {
-    setShowEmojiPickerFor(null);
-    return;
-  }
-
-  const selectedEmoji = emoji.native ?? emoji.colons ?? String(emoji);
-
-  setMessages((prev) =>
-    prev.map((msg) => {
-      if (String(msg.id) !== String(messageId)) return msg;
-
-      const reactions = msg.reactions
-        ? msg.reactions.map((r) => ({
-            ...r,
-            users: Array.isArray(r.users) ? r.users : [],
-          }))
-        : [];
-
-      const existing = reactions.find((r) => r.emoji === selectedEmoji);
-
-      if (existing) {
-                if (
+        if (existing) {
+          if (
             existing.users &&
             !existing.users.some((u) => String(u.id) === String(userId))
           ) {
@@ -956,46 +1050,111 @@ function addEmojiToMessage(messageId: string | number, emoji: any) {
             });
             existing.count = existing.users.length;
           }
+        } else {
+          reactions.push({
+            emoji: selectedEmoji,
+            count: 1,
+            users: [
+              {
+                id: userId,
+                name: user?.name ?? "You",
+              },
+            ],
+          });
+        }
 
-      } else {
-       reactions.push({
-        emoji: selectedEmoji,
-        count: 1,
-        users: [
-          {
-            id: userId,
-            name: user?.name ?? "You",
-          },
-        ],
-      });
+        return { ...msg, reactions };
+      }),
+    );
 
-      }
-
-      return { ...msg, reactions };
-    }),
-  );
-
-  try {
-    socket.emit("reactMessage", { messageId, emoji: selectedEmoji });
-  } catch (err) {
-    console.error("Failed to emit reactMessage", err);
+    try {
+      socket.emit("reactMessage", { messageId, emoji: selectedEmoji });
+    } catch (err) {
+      console.error("Failed to emit reactMessage", err);
+    }
   }
-
-  setShowEmojiPickerFor(null);
-}
-
 
   function toggleReaction(messageId: string | number, emoji: string) {
     if (!socket || !userId) return;
+
+    setMessages((prev) =>
+      prev.map((msg) => {
+        if (String(msg.id) !== String(messageId)) return msg;
+
+        const reactions = (msg.reactions ?? []).map((r) => ({
+          ...r,
+          users: Array.isArray(r.users) ? r.users : [],
+        }));
+
+        const existing = reactions.find((r) => r.emoji === emoji);
+
+        if (existing) {
+          const alreadyReacted = existing.users.some(
+            (u) => String(u.id) === String(userId),
+          );
+          if (alreadyReacted) {
+            existing.users = existing.users.filter(
+              (u) => String(u.id) !== String(userId),
+            );
+            existing.count = existing.users.length;
+          } else {
+            existing.users.push({ id: userId, name: user?.name ?? "You" });
+            existing.count = existing.users.length;
+          }
+          return { ...msg, reactions: reactions.filter((r) => r.count > 0) };
+        } else {
+          reactions.push({
+            emoji,
+            count: 1,
+            users: [{ id: userId, name: user?.name ?? "You" }],
+          });
+          return { ...msg, reactions };
+        }
+      }),
+    );
+
     socket.emit("reactMessage", { messageId, emoji });
   }
 
-
+  // function handleChatAction(action: string, messageId: string) {
+  //   const msg = messages.find((m) => String(m.id) === String(messageId));
+  //   switch (action) {
+  //     case "reaction":
+  //       openEmojiPicker(messageId);
+  //       break;
+  //     case "reply":
+  //       break;
+  //     case "pin":
+  //       if (!msg) return;
+  //       if (msg.pinned) unpinMessage(messageId);
+  //       else pinMessage(messageId);
+  //       break;
+  //     case "forward":
+  //          setForwardMessageId(messageId);
+  //       break;
+  //     case "edit":
+  //       enableEditMode(messageId);
+  //       break;
+  //     case "delete":
+  //       deleteMessage(messageId);
+  //       break;
+  //     default:
+  //       break;
+  //   }
+  // }
   function handleChatAction(action: string, messageId: string) {
     const msg = messages.find((m) => String(m.id) === String(messageId));
+
+    // Handle quick emoji reactions from ChatHover (e.g. "react:👍")
+    if (action.startsWith("react:")) {
+      const emoji = action.slice(6); // strip "react:"
+      addEmojiToMessage(messageId, { native: emoji });
+      return;
+    }
+
     switch (action) {
       case "reaction":
-        openEmojiPicker(messageId);
+        // Handled inside ChatHover — no-op here
         break;
       case "reply":
         break;
@@ -1005,7 +1164,7 @@ function addEmojiToMessage(messageId: string | number, emoji: any) {
         else pinMessage(messageId);
         break;
       case "forward":
-           setForwardMessageId(messageId);
+        setForwardMessageId(messageId);
         break;
       case "edit":
         enableEditMode(messageId);
@@ -1028,36 +1187,37 @@ function addEmojiToMessage(messageId: string | number, emoji: any) {
     );
   }
 
- useEffect(() => {
-  if (!messageBoxRef.current) return;
+  useEffect(() => {
+    if (!messageBoxRef.current) return;
 
-  const el = messageBoxRef.current;
+    const el = messageBoxRef.current;
 
-  const ro = new ResizeObserver(() => {
-    let height=getComputedStyle(document.documentElement).getPropertyValue("--main-header-height");
-    let mainheight=document.querySelectorAll('header')[0]?.clientHeight;
-    console.log("Message box height:", el.clientHeight);
-    console.log("Main header height", mainheight);
-  });
+    const ro = new ResizeObserver(() => {
+      let height = getComputedStyle(document.documentElement).getPropertyValue(
+        "--main-header-height",
+      );
+      let mainheight = document.querySelectorAll("header")[0]?.clientHeight;
+      console.log("Message box height:", el.clientHeight);
+      console.log("Main header height", mainheight);
+    });
 
-  ro.observe(el);
+    ro.observe(el);
 
-  return () => ro.disconnect();
-}, []);
-const handleScroll = () => {
-  console.log("SCROLL FIRED");
-};
+    return () => ro.disconnect();
+  }, []);
+  const handleScroll = () => {
+    console.log("SCROLL FIRED");
+  };
 
-    useEffect(() => {
-      if (highlightedIds.size === 0) return;
+  useEffect(() => {
+    if (highlightedIds.size === 0) return;
 
-      const t = setTimeout(() => {
-        setHighlightedIds(new Set());
-      }, 3000);
+    const t = setTimeout(() => {
+      setHighlightedIds(new Set());
+    }, 3000);
 
-      return () => clearTimeout(t);
-    }, [highlightedIds]);
-
+    return () => clearTimeout(t);
+  }, [highlightedIds]);
 
   return (
     <div
@@ -1072,7 +1232,8 @@ const handleScroll = () => {
           <FileBg />
         </div>
       )}
-      <main className="flex flex-col flex-1 min-h-0 overflow-y-auto max-h-[calc(100vh-var(--main-header-height)-var(--chat-header-height)+33px)] "
+      <main
+        className="flex flex-col flex-1 min-h-0 overflow-y-auto overflow-x-hidden max-h-[calc(100vh-var(--main-header-height)-var(--chat-header-height)+33px)] "
         onScroll={handleScroll}
         ref={containerRef}
       >
@@ -1092,7 +1253,7 @@ const handleScroll = () => {
         )}
 
         <div
-          className="flex-1 py-6 bg-[var(--sidebar)] px-0 "
+          className="flex-1 pt-[60px] pb-[10px] bg-[var(--chat_bg)] px-0 "
           style={{ scrollbarGutter: "stable" }}
         >
           {initialLoading && (
@@ -1122,13 +1283,14 @@ const handleScroll = () => {
             return (
               <div
                 key={msgId}
-                ref={index === 0 ? topMessageRef : null} 
+                id={`msg-${msgId}`} 
+                ref={index === 0 ? topMessageRef : null}
                 className={` py-0 relative flex justify-start group/message !px-[25px] items-center gap-3 
-                  ${msg.pinned ? "pinned bg-amber-100" : "hover:bg-gray-100"}
+                  ${msg.pinned ? "pinned bg-amber-100" : "hover:bg-[var(--sidebar-accent)]"}
                   ${isHighlighted ? "bg-red-200 animate-pulse" : ""}
                   ${shouldShowDateSeparator(messages, index) && "border-t"} `}
-                onMouseEnter={() => setHoveredId(msgId)}
-                onMouseLeave={() => setHoveredId(null)}
+                onMouseEnter={() => { if (!lockedId) setHoveredId(msgId); }}
+                onMouseLeave={() => { if (lockedId !== msgId) setHoveredId(null); }}
               >
                 {/* {hoveredId === msgId && msg.self && (
                   <ChatHover messageId={msgId} onAction={handleChatAction} />
@@ -1139,10 +1301,10 @@ const handleScroll = () => {
                   </span>
                 )}
                 <div
-                  className={`py-0 rounded-xl items-start flex flex-col gap-0 relative ${showAvatar ? "pt-1 pb-1" : ""}`}
+                  className={`py-2 rounded-xl items-start flex flex-col gap-0 relative w-full min-w-0 ${showAvatar ? "pt-1 pb-1" : ""}`}
                 >
                   {showAvatar && (
-                    <div className="grid grid-cols-1 md:grid-cols-[max-content_max-content] grid-rows-2 gap-x-2">
+                    <div className="grid grid-cols-1 md:grid-cols-[max-content_minmax(0,1fr)] grid-rows-2 gap-x-2 min-w-0 top_most_message">
                       <img
                         src={
                           msg.avatar_url != null
@@ -1152,7 +1314,7 @@ const handleScroll = () => {
                         alt="avatar"
                         className="w-8 h-8 rounded-sm object-cover shrink-0 row-span-2 aspect-square"
                       />
-                      <div className="flex flex-row gap-1 items-center">
+                      <div className="flex flex-row gap-1 items-center h-fit">
                         {msg.sender_name && (
                           <span className="text-sm font-bold self-center">
                             {msg.sender_name}
@@ -1183,11 +1345,9 @@ const handleScroll = () => {
                           </div>
                         )}
                       </div>
-                      <div
+                      <MessageContent
+                        html={msg.content}
                         className="leading-none leading-relaxed max-w-full whitespace-pre-wrap [overflow-wrap:anywhere] message"
-                        dangerouslySetInnerHTML={{
-                          __html: DOMPurify.sanitize(msg.content),
-                        }}
                       />
                     </div>
                   )}
@@ -1196,101 +1356,129 @@ const handleScroll = () => {
                     <div
                       className={`rounded-md ms-[40px] w-fit flex flex-col ${msg.reactions && msg.reactions.length > 0 ? "mb-2" : ""}`}
                     >
-                      <div
+                      <MessageContent
+                        html={msg.content}
                         className={`leading-none leading-relaxed max-w-full whitespace-pre-wrap [overflow-wrap:anywhere] message ${showAvatar ? "hidden" : ""}`}
-                        dangerouslySetInnerHTML={{
-                          __html: DOMPurify.sanitize(msg.content),
-                        }}
                       />
-                     {msg.files?.length ? (
-  <div className="flex gap-2 mt-2">
-    {msg.files.map((file, i) => (
-      <div
-        key={i}
-        className="relative aspect-square h-[100px] w-[100px]"
-      >
-        {/* <FileHover
-  fileId={String(file.id)}
-  onAction={(action, id) => {
-    if (action === "download") {
-      handleDownload(id);
-    }
+                      {msg.files?.length ? (
+                        <div className="flex gap-2">
+                          {msg.files.map((file, i) => (
+                            <div key={i} className="flex flex-col gap-1">
+                              {/* File header */}
+                              <div className="flex items-center gap-2 px-1 py-0.5 rounded text-xs text-gray-600 dark:text-gray-400 max-w-[400px]">
+                                {file.type === "image/gif" && (
+                                  <span className="shrink-0 font-bold text-[10px] px-1 py-0.5 rounded bg-indigo-500 text-white leading-none">
+                                    GIF
+                                  </span>
+                                )}
+                                <span className="font-medium truncate">{file.name}</span>
+                                <span className="shrink-0 opacity-60 ml-auto">
+                                  {file.size < 1024
+                                    ? `${file.size} B`
+                                    : file.size < 1024 * 1024
+                                    ? `${(file.size / 1024).toFixed(1)} KB`
+                                    : `${(file.size / (1024 * 1024)).toFixed(1)} MB`}
+                                </span>
+                              </div>
+                              <div
+                                className="group relative aspect-square max-h-[400px] max-w-[400px] h-full w-full min-h-[200px] min-w-[200px] rounded"
+                              >
+                              {/* <FileHover
+                                fileId={String(file.id)}
+                                onAction={(action, id) => {
+                                  if (action === "download") {
+                                    handleDownload(id);
+                                  }
 
-    if (action === "share") {
-      handleShare(file);
-    }
-  }}
-/> */}
-<FileHover
-  fileId={msgId} // just pass anything unique
-  onAction={(action) => {
-    if (action === "download") {
-      handleDownload(file);
-    }
+                                  if (action === "share") {
+                                    handleShare(file);
+                                  }
+                                }}
+                              /> */}
+                              <FileHover
+                                fileId={msgId} // just pass anything unique
+                                onAction={(action) => {
+                                  if (action === "download") {
+                                    handleDownload(file);
+                                  }
 
-    if (action === "share") {
-      setForwardMessageId(msgId);
-    }
-  }}
-/>
+                                  if (action === "share") {
+                                    setForwardMessageId(msgId);
+                                  }
+                                }}
+                              />
 
-        <a
-          href={file.url}
-          target="_blank"
-          className="block w-full h-full"
-        >
-          {file.type.startsWith("image/") ? (
-            <img
-              src={file.url}
-              className="w-full rounded border object-cover h-full"
-            />
-          ) : (
-            <div className="p-2 border rounded text-sm h-full flex items-center justify-center">
-              📎 {file.name}
-            </div>
-          )}
-        </a>
-      </div>
-    ))}
-  </div>
-) : null}
+                              {/* <a
+                                href={file.url}
+                                target="_blank"
+                                className="block w-full h-full"
+                              > */}
+                                {file.type.startsWith("image/") ? (
+                                  <img
+                                    src={file.url}
+                                    className="w-full rounded border object-cover h-full"
+                                  />
+                                ) : (
+                                  <div className="p-2 border rounded text-sm h-full flex items-center justify-center">
+                                    📎 {file.name}
+                                  </div>
+                                )}
+                              {/* </a> */}
+                            </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
 
                       {msg.reactions && msg.reactions.length > 0 && (
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <div className="flex gap-1 flex-wrap whitespace-nowrap cursor-pointer">
-                              {msg.reactions.map((r, idx) => (
-                                <span
-                                  key={idx}
-                                  onClick={() => {
-                                    if (msg.id == null) return;
-                                    toggleReaction(msg.id, r.emoji);
-                                  }}
-                                  className="text-sm px-2 leading-none py-1 bg-gray-200 rounded-full flex items-center gap-1 border border-black"
-                                >
-                                  {r.emoji} {r.count <= 1 ? "" : r.count}
-                                </span>
-                              ))}
-                            </div>
-                          </TooltipTrigger>
-
-                          <TooltipContent className="bg-black text-white p-2 text-xs rounded-md grid grid-cols-2 gap-1">
-                            <p className="font-semibold mb-1 col-span-2">
-                              Reactions:
-                            </p>
-
-                            {msg.reactions.map((r, i) => (
-                              <div key={i} className="mb-1 col-span-1">
-                                <strong>{r.emoji}</strong>
-                                <div className="ml-2 ">
-                                  {(r.users ?? []).map((u, j) => (
-                                    <div key={j}>{u.name}</div>
-                                  ))}
-                                </div>
-                              </div>
-                            ))}
-                          </TooltipContent>
-                        </Tooltip>
+                        <div className="flex gap-1 flex-wrap whitespace-nowrap mt-1 w-fit">
+                          {msg.reactions.map((r, idx) => {
+                            const currentUserReacted = (r.users ?? []).some(
+                              (u) => String(u.id) === String(userId)
+                            );
+                            // Build tooltip names: "You" first, then others
+                            const tooltipUsers = [
+                              ...(r.users ?? []).filter((u) => String(u.id) === String(userId)).map(() => "You"),
+                              ...(r.users ?? []).filter((u) => String(u.id) !== String(userId)).map((u) => u.name),
+                            ];
+                            return (
+                              <Tooltip key={idx}>
+                                <TooltipTrigger asChild>
+                                  <span
+                                    onClick={() => {
+                                      if (msg.id == null) return;
+                                      toggleReaction(msg.id, r.emoji);
+                                    }}
+                                    className={`text-sm px-2 leading-none py-1 rounded-full flex items-center gap-1 cursor-pointer select-none transition-colors ${
+                                      currentUserReacted
+                                        ? "bg-blue-100 border border-blue-500 text-blue-700 dark:bg-blue-900/40 dark:border-blue-400 dark:text-blue-300"
+                                        : "bg-gray-200 border border-transparent hover:border-gray-400 dark:bg-zinc-700 dark:text-gray-200"
+                                    }`}
+                                  >
+                                    {r.emoji} {r.count <= 1 ? "" : r.count}
+                                  </span>
+                                </TooltipTrigger>
+                                <TooltipContent className="bg-black text-white p-2 text-xs rounded-md flex flex-col gap-1 min-w-[80px]">
+                                  <p className="font-semibold border-b border-white/20 pb-1 mb-0.5">
+                                    {r.emoji} {r.count === 1 ? "1 person" : `${r.count} people`}
+                                  </p>
+                                  {tooltipUsers.length > 0 ? (
+                                    tooltipUsers.map((name, j) => (
+                                      <span
+                                        key={j}
+                                        className={`truncate max-w-[140px] ${name === "You" ? "font-semibold text-blue-300" : ""}`}
+                                      >
+                                        {name}
+                                      </span>
+                                    ))
+                                  ) : (
+                                    <span className="opacity-60 italic">reacted</span>
+                                  )}
+                                </TooltipContent>
+                              </Tooltip>
+                            );
+                          })}
+                        </div>
                       )}
                       {!showAvatar &&
                         msg.updated_at &&
@@ -1304,7 +1492,7 @@ const handleScroll = () => {
 
                   {!showAvatar && msg.created_at && (
                     <div
-                      className="text-[10px] top-[calc(calc(var(--spacing)*1)+0.08rem)] left-0 -translate-x-[0.5rem]  opacity-60 absolute flex-col  hidden group-hover/message:block
+                      className="text-[10px] top-[calc(calc(var(--spacing)*1)+0.5rem)] left-0 -translate-x-[0.5rem]  opacity-60 absolute flex-col  hidden group-hover/message:block
                           whitespace-nowrap flex items-center gap-0"
                     >
                       {new Date(msg.created_at).toLocaleString("en-US", {
@@ -1318,37 +1506,32 @@ const handleScroll = () => {
                   )}
                 </div>
 
-                {showEmojiPickerFor === msgId && (
-                  <Popover
-                    open={true}
-                    onOpenChange={(open) => {
-                      if (!open) setShowEmojiPickerFor(null);
-                    }}
-                  >
-                    <PopoverTrigger>
-                      <Button
-                        size="sm"
-                        className="absolute -right-10 top-2 p-1"
-                        aria-label="Emoji picker trigger"
-                      >
-                        😊
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-80 z-[99999]">
-                      <Picker
-                        onEmojiSelect={(emoji: any) =>
-                          addEmojiToMessage(msgId, emoji)
-                        }
-                      />
-                    </PopoverContent>
-                  </Popover>
-                )}
-                {hoveredId === msgId && (
+                {/* Emoji picker is now handled entirely inside ChatHover via portal */}
+                {/* {hoveredId === msgId && (
                   <ChatHover
                     messageId={msgId}
                     pinned={msg.pinned}
                     isSelf={msg.self}
                     onAction={handleChatAction}
+                  />
+                )} */}
+                {(lockedId ? lockedId === msgId : hoveredId === msgId) && (
+                  <ChatHover
+                    messageId={msgId}
+                    pinned={msg.pinned}
+                    isSelf={msg.self}
+                    reactions={(msg.reactions ?? []) as ChatHoverReaction[]}
+                    currentUserId={userId}
+                    onAction={handleChatAction}
+                    onOpenChange={(isOpen) => {
+                      if (isOpen) {
+                        setLockedId(msgId);
+                      } else {
+                        setLockedId(null);
+                        // If mouse already left this message, clear hover too
+                        setHoveredId((prev) => prev === msgId ? null : prev);
+                      }
+                    }}
                   />
                 )}
 
@@ -1359,7 +1542,10 @@ const handleScroll = () => {
             );
           })}
         </div>
-        <div className="pb-2 px-[25px] pt-0 relative sticky bottom-0 right-0 bg-[var(--sidebar)] dark:bg-zinc-900 " ref={messageBoxRef}>
+        <div
+          className="pb-2 px-[25px] pt-0 relative sticky bottom-0 right-0 bg-[var(--chat_bg)] dark:bg-zinc-900 "
+          ref={messageBoxRef}
+        >
           {/* Pass edit state into MessageInput. When user clicks edit, MessageInput will show Update/Cancel and call onSaveEdit/onCancelEdit */}
           <div>
             <FileUploadToggle />
@@ -1370,15 +1556,17 @@ const handleScroll = () => {
             editingInitialContent={editContent}
             onSaveEdit={handleSaveEdit}
             onCancelEdit={handleCancelEdit}
+            dropFiles={droppedFiles}
+            onDropFilesConsumed={() => setDroppedFiles([])}
           />
         </div>
         <div ref={bottomRef} />
-      <CreateNew
-  open={!!forwardMessageId}
-  onClose={() => setForwardMessageId(null)}
-  type="forward"
-  forwardMessageId={forwardMessageId}
-/>
+        <CreateNew
+          open={!!forwardMessageId}
+          onClose={() => setForwardMessageId(null)}
+          type="forward"
+          forwardMessageId={forwardMessageId}
+        />
       </main>
     </div>
   );

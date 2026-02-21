@@ -4,15 +4,14 @@ import * as React from "react";
 import api from "@/lib/axios";
 import {
   AudioWaveform,
-  BookOpen,
-  Bot,
   Command,
   Frame,
   GalleryVerticalEnd,
   Map,
   PieChart,
-  SquareTerminal,
 } from "lucide-react";
+import { HiHashtag } from "react-icons/hi";
+import { IoChatbubblesOutline } from "react-icons/io5";
 
 import { NavMain } from "@/app/components/nav-main";
 import { NavProjects } from "@/app/components/nav-projects";
@@ -151,7 +150,7 @@ const dmHandler = async () => {
         title: "Channels",
         url: "#",
         type: "channel",
-        icon: SquareTerminal,
+        icon: HiHashtag,
         isActive: true,
         items: channels,
         onAdd: handleAddChannel,
@@ -160,7 +159,7 @@ const dmHandler = async () => {
         title: "Direct Messages",
         url: "#",
         type: "dm",
-        icon: Bot,
+        icon: IoChatbubblesOutline,
         items: users,
         isActive: true,
         onAdd: handleAddDM,
@@ -175,9 +174,9 @@ const dmHandler = async () => {
 
   return (
     <Sidebar collapsible="icon" {...props}>
-      <SidebarHeader>
+      {/* <SidebarHeader>
         <TeamSwitcher teams={data.teams} />
-      </SidebarHeader>
+      </SidebarHeader> */}
 
       <SidebarContent>
         <NavProjects projects={data.projects} />

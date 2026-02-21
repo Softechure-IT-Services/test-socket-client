@@ -1,6 +1,9 @@
 "use client"
 
-import { ChevronRight,Plus, type LucideIcon } from "lucide-react"
+import React from "react"
+import { ChevronRight, Plus, Hash, Lock } from "lucide-react"
+import Link from "next/link"
+import { usePathname } from "next/navigation"
 
 import {
   Collapsible,
@@ -17,108 +20,154 @@ import {
   SidebarMenuSub,
   SidebarMenuSubButton,
   SidebarMenuSubItem,
+  useSidebar,
 } from "@/app/components/ui/sidebar"
 
-import { FaLock } from "react-icons/fa";
-import { FaHashtag } from "react-icons/fa";
-import Link from "next/link"
+type SubItem = {
+  title: string
+  url: string
+  is_private?: boolean
+  is_dm?: boolean
+  avatar_url?: string
+}
 
 type NavItem = {
   title: string
-  icon?: LucideIcon
+  icon?: React.ComponentType<{ className?: string }>
   type?: string
   isActive?: boolean
   onAdd?: () => void
-  items?: {
-    title: string
-    url: string
-    is_private?: Boolean
-    is_dm?: Boolean
-    avatar_url?: string
-  }[]
+  items?: SubItem[]
+}
+
+function DMAvatar({ sub }: { sub: SubItem }) {
+  if (sub.avatar_url) {
+    return (
+      <img
+        src={sub.avatar_url}
+        alt={sub.title}
+        className="h-5 w-5 rounded-full object-cover shrink-0"
+      />
+    )
+  }
+  return (
+    <div className="h-5 w-5 rounded-sm bg-muted flex items-center justify-center text-black text-[10px] font-medium shrink-0">
+      {sub.title
+        .split(" ")
+        .map((word) => word.charAt(0).toUpperCase())
+        .join("")
+        .slice(0, 2)}
+    </div>
+  )
+}
+
+function ChannelIcon({ sub }: { sub: SubItem }) {
+  if (sub.is_private) {
+    return <Lock className="h-3 w-3 shrink-0 text-inherit" />
+  }
+  return <Hash className="h-3 w-3 shrink-0 text-inherit" />
 }
 
 export function NavMain({ items }: { items: NavItem[] }) {
+  const { state } = useSidebar()
+  const isCollapsed = state === "collapsed"
+  const pathname = usePathname()
+
   return (
     <>
       {items.map((item) => (
         <SidebarGroup key={item.title}>
-          {/* 🔹 Group Header */}
-          <div className="relative">
-            <SidebarGroupLabel>
-              <div className="flex items-center gap-2">
-                {item.icon && <item.icon className="h-4 w-4" />}
-                <span>{item.title}</span>
+          {/* When sidebar is expanded: show full collapsible group */}
+          {!isCollapsed && (
+            <>
+              <div className="relative flex items-center border-b border-[var(--border-color)]">
+                <SidebarGroupLabel className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  {item.icon && <item.icon className="h-3.5 w-3.5" />}
+                  <span>{item.title}</span>
+                </SidebarGroupLabel>
+                {item.onAdd && (
+                  <SidebarGroupAction
+                    onClick={item.onAdd}
+                    aria-label={`Add ${item.title}`}
+                    className="ml-auto"
+                  >
+                    <Plus className="h-4 w-4" />
+                    <span className="sr-only">Add {item.title}</span>
+                  </SidebarGroupAction>
+                )}
               </div>
-            </SidebarGroupLabel>
 
-            {item.onAdd && (
-              <SidebarGroupAction
-                onClick={item.onAdd}
-                aria-label={`Add ${item.title}`}
-                tooltip={`Add ${item.title}`}
-              >
-                <Plus />
-              </SidebarGroupAction>
-            )}
-          </div>
+              <SidebarMenu>
+                <Collapsible defaultOpen={item.isActive} className="group/collapsible">
+                  <CollapsibleTrigger asChild>
+                    <SidebarMenuItem>
+                      <SidebarMenuButton className="text-muted-foreground hover:text-foreground data-[state=open]:text-foreground">
+                        <ChevronRight className="h-4 w-4 transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
+                        <span className="text-xs">{item.items?.length ?? 0} items</span>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  </CollapsibleTrigger>
 
-          {/* 🔹 Collapsible menu */}
-          <SidebarMenu>
-            <Collapsible defaultOpen={item.isActive}>
-              <CollapsibleTrigger asChild>
-                <SidebarMenuItem className="custom_drop_trigger">
-                  <SidebarMenuButton>
-                    <ChevronRight className="ml-auto h-4 w-4 transition-transform data-[state=open]:rotate-90" />
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              </CollapsibleTrigger>
+                  <CollapsibleContent>
+                    <SidebarMenuSub>
+                      {item.items?.map((sub) => {
+                        const isActive = pathname === sub.url
+                        return (
+                          <SidebarMenuSubItem key={sub.url}>
+                            <SidebarMenuSubButton
+                              asChild
+                              isActive={isActive}
+                            >
+                              <Link
+                                href={sub.url}
+                                className="flex items-center gap-2"
+                              >
+                                {item.type === "dm" ? (
+                                  <DMAvatar sub={sub} />
+                                ) : (
+                                  sub.is_dm === false && <ChannelIcon sub={sub} />
+                                )}
+                                <span className="truncate">{sub.title}</span>
+                              </Link>
+                            </SidebarMenuSubButton>
+                          </SidebarMenuSubItem>
+                        )
+                      })}
+                    </SidebarMenuSub>
+                  </CollapsibleContent>
+                </Collapsible>
+              </SidebarMenu>
+            </>
+          )}
 
-              <CollapsibleContent>
-                <SidebarMenuSub>
-                  {item.items?.map((sub) => (
-                    <SidebarMenuSubItem key={sub.url} >
-                      {
-                      item.type !== "docs" && (
-
-                      sub.is_dm == false && (
-                         sub.is_private == true ? (
-                         <FaLock className="h-2.5 w-2.5 channel_privacy_icon" />
-                         ) : (
-                         <FaHashtag className="h-2.5 w-2.5 channel_privacy_icon" />
-                         )
-                      ) 
-                      
-                    )
-                      }
-                      <SidebarMenuSubButton asChild>
-                        <Link href={sub.url}>
-                        {item.type === "dm" && (
-                          sub.avatar_url ? (
-                            <img
-                              src={sub.avatar_url}
-                              alt={sub.title}
-                              className="h-5 w-5 rounded-full object-cover"
-                            />
-                          ) : (
-                            <div className="h-5 w-5 rounded-sm bg-gray-400 flex items-center justify-center text-white text-[10px]">
-                              {sub.title
-                                .split(" ")
-                                .map((word) => word.charAt(0).toUpperCase())
-                                .join("")
-                                .slice(0, 2)}
-                            </div>
-                          )
+          {/* When sidebar is collapsed: show icon-only buttons for each item */}
+          {isCollapsed && (
+            <SidebarMenu>
+              {item.items?.map((sub) => {
+                const isActive = pathname === sub.url
+                return (
+                  <SidebarMenuItem key={sub.url}>
+                    <SidebarMenuButton
+                      asChild
+                      tooltip={sub.title}
+                      isActive={isActive}
+                    >
+                      <Link href={sub.url} className="flex items-center justify-center">
+                        {item.type === "dm" ? (
+                          <DMAvatar sub={sub} />
+                        ) : sub.is_private ? (
+                          <Lock className="h-4 w-4" />
+                        ) : (
+                          <Hash className="h-4 w-4" />
                         )}
-
-                        {sub.title}</Link>
-                      </SidebarMenuSubButton>
-                    </SidebarMenuSubItem>
-                  ))}
-                </SidebarMenuSub>
-              </CollapsibleContent>
-            </Collapsible>
-          </SidebarMenu>
+                        <span className="sr-only">{sub.title}</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                )
+              })}
+            </SidebarMenu>
+          )}
         </SidebarGroup>
       ))}
     </>

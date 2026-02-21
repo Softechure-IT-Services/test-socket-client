@@ -20,21 +20,18 @@ export default function ButtonGroup({ items }: Props) {
   return (
     <div className="inline-flex" role="group">
       {items.map((item, index) => {
-        const isFirst = index === 0;
-        const isLast = index === items.length - 1;
-
-        // Check if this button is active
-const isActive =
-  pathname === item.href || pathname?.endsWith(item.href.split("/").pop() || "");
+        const isActive = pathname === item.href;
 
         return (
           <Link key={index} href={item.href}>
             <Button
-              variant={item.variant || "ghost"}
+              variant="navbar"
               className={`
-                rounded-none relative justify-center flex
-                ${isFirst ? "" : ""}
-                ${isActive ? "after:absolute after:left-0 after:-bottom-0 after:h-[2px] after:w-full after:bg-current after:scale-x-100 after:origin-left after:transition-transform" : "after:scale-x-0"}
+                rounded-b-none relative px-3 py-1.5
+                ${isActive
+                  ? "text-sidebar-foreground after:absolute after:bottom-0 after:left-0 after:h-[2px] after:w-full after:bg-sidebar-foreground after:rounded-t-sm"
+                  : "text-sidebar-foreground/70 hover:text-sidebar-foreground"
+                }
               `}
             >
               {item.label}

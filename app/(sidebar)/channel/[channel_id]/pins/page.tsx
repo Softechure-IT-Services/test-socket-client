@@ -1,9 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import MainHeader from "@/app/shared/ui/MainHeader";
 import DOMPurify from "dompurify";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import axios from "@/lib/axios";
 
 interface Sender {
@@ -23,6 +22,7 @@ interface PinnedMessage {
 
 export default function PinnedMessages() {
   const params = useParams();
+  const router = useRouter();
   const channelId = params?.channel_id;
 
   const [messages, setMessages] = useState<PinnedMessage[]>([]);
@@ -47,24 +47,58 @@ export default function PinnedMessages() {
     fetchPinnedMessages();
   }, [channelId]);
 
-  if (loading) return <p className="p-6">Loading pinned messages...</p>;
-  if (messages.length === 0) return <p className="p-6">No pinned messages.</p>;
+  /**
+   * Navigate to the chat tab and scroll to the specific message.
+   * We use a URL hash: /channels/<id>/chat#msg-<messageId>
+   * ChannelChat renders each message with id="msg-<messageId>",
+   * so the browser will auto-scroll on load, and we also do a
+   * manual scrollIntoView + highlight in case the tab is already open.
+   */
+  /**
+   * Navigate to the channel's root page (where ChannelChat lives)
+   * and pass the target message ID via a query param.
+   * ChannelChat reads ?scrollTo=<id> on mount and scrolls + highlights.
+   */
+  const handleMessageClick = (messageId: number) => {
+    router.push(`/channel/${channelId}?scrollTo=${messageId}`);
+  };
+
+  if (loading)
+    return (
+      <div className="max-w-5xl mx-auto space-y-4 p-4">
+        {[...Array(3)].map((_, i) => (
+          <div key={i} className="h-24 rounded-xl bg-gray-100 animate-pulse" />
+        ))}
+      </div>
+    );
+
+  if (messages.length === 0)
+    return <p className="p-6 text-gray-500">No pinned messages.</p>;
 
   return (
     <div className="max-w-5xl mx-auto space-y-6 p-4">
       {messages.map((msg) => (
         <div
           key={msg.message_id}
-          className="border rounded-xl p-4 shadow-sm bg-white"
+          onClick={() => handleMessageClick(msg.message_id)}
+          className="border rounded-xl p-4 shadow-sm bg-white cursor-pointer
+                     hover:border-blue-400 hover:shadow-md hover:bg-blue-50/40
+                     transition-all duration-150 group"
         >
           {/* Header */}
           <div className="flex items-start gap-3">
-            <div className="p-4 h-10 w-10 rounded-md bg-green-600 text-white flex items-center justify-center font-semibold text-lg">
+            <div className="p-4 h-10 w-10 rounded-md bg-green-600 text-white flex items-center justify-center font-semibold text-lg shrink-0">
               {msg.sender.name[0].toUpperCase()}
             </div>
 
-            <div className="flex-1">
-              <p className="font-semibold text-black">{msg.sender.name}</p>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center justify-between gap-2">
+                <p className="font-semibold text-black">{msg.sender.name}</p>
+                {/* "Jump to message" hint */}
+                <span className="text-xs text-blue-500 opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
+                  Jump to message →
+                </span>
+              </div>
 
               <p className="text-gray-500 text-sm">
                 {new Date(msg.created_at).toLocaleString("en-US", {
@@ -76,7 +110,7 @@ export default function PinnedMessages() {
               </p>
 
               <div
-                className="mt-2 text-gray-700"
+                className="mt-2 text-gray-700 line-clamp-3"
                 dangerouslySetInnerHTML={{
                   __html: DOMPurify.sanitize(msg.content),
                 }}

@@ -1,18 +1,17 @@
-import { Geist, Geist_Mono } from "next/font/google"
 import "@/app/globals.css"
   import { Toaster } from "@/app/components/ui/sonner"
 import { AuthProvider } from "@/app/components/context/userId_and_connection/provider";
+import { Inter, Roboto } from "next/font/google"
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+const inter = Inter({
   subsets: ["latin"],
+  variable: "--font-inter",
 })
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
+const roboto = Roboto({
   subsets: ["latin"],
+  variable: "--font-roboto",
 })
-
 export default function RootLayout({
   children,
 }: {
@@ -20,7 +19,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
+      <body className={`${inter.variable} ${roboto.variable} antialiased`}>
                 <AuthProvider>
         {children}
         </AuthProvider>

@@ -34,6 +34,8 @@ const {  user } = useAuth();
 const router = useRouter();
 const [nameStatus, setNameStatus] = useState<"idle" | "checking" | "available" | "taken">("idle");
 const [channels, setChannels] = useState<any[]>([]);
+const [selectedForward, setSelectedForward] = useState<any[]>([]);
+const [forwarding, setForwarding] = useState(false);
 const debouncedSearch = useDebounce(search, 300);
 const debouncedChannelName = useDebounce(channelName, 400);
 
@@ -224,6 +226,8 @@ const resetAndClose = () => {
   setSearch("");
   setIsPrivate(false);
   setSelectedUsers([]);
+  setSelectedForward([]);
+  setForwarding(false);
   setNameStatus("idle");
   onClose();
 };
@@ -309,32 +313,99 @@ const resetAndClose = () => {
 {type === "forward" && (
   <>
     <Input
-      placeholder="Search channels..."
+      placeholder="Search channels or people..."
       value={search}
       onChange={(e) => setSearch(e.target.value)}
     />
 
     <div className="max-h-60 overflow-y-auto rounded-md border p-2 space-y-1">
-      {channels.map((item) => (
-  <div
-    key={item.id}
-    onClick={async () => {
-      if (!forwardMessageId) return;
-
-      await api.post(
-        `/channels/messages/${forwardMessageId}/forward/${item.id}`
-      );
-
-      resetAndClose();
-      router.push(`/channel/${item.id}`);
-    }}
-    className="cursor-pointer rounded px-3 py-2 text-sm hover:bg-muted"
-  >
-    {item.kind === "channel" ? "# " : "👤 "}
-    {item.name}
-  </div>
-))}
+      {channels.length === 0 && search.trim() && (
+        <p className="text-xs text-muted-foreground text-center py-4">No results found</p>
+      )}
+      {channels.length === 0 && !search.trim() && (
+        <p className="text-xs text-muted-foreground text-center py-4">Start typing to search</p>
+      )}
+      {channels.map((item) => {
+        const isSelected = selectedForward.some((s) => s.id === item.id);
+        return (
+          <div
+            key={item.id}
+            onClick={() => {
+              setSelectedForward((prev) =>
+                isSelected
+                  ? prev.filter((s) => s.id !== item.id)
+                  : [...prev, item]
+              );
+            }}
+            className={`cursor-pointer rounded px-3 py-2 text-sm flex items-center justify-between transition-colors ${
+              isSelected
+                ? "bg-primary text-primary-foreground"
+                : "hover:bg-muted"
+            }`}
+          >
+            <span>
+              {item.kind === "channel" ? "# " : "👤 "}
+              {item.name}
+            </span>
+            {isSelected && (
+              <span className="text-xs font-semibold opacity-80">✓</span>
+            )}
+          </div>
+        );
+      })}
     </div>
+
+    {/* Selected chips */}
+    {selectedForward.length > 0 && (
+      <div className="flex flex-wrap gap-1.5">
+        {selectedForward.map((item) => (
+          <span
+            key={item.id}
+            className="inline-flex items-center gap-1 text-xs bg-muted rounded-full px-2.5 py-1"
+          >
+            {item.kind === "channel" ? "#" : "👤"} {item.name}
+            <button
+              onClick={() =>
+                setSelectedForward((prev) => prev.filter((s) => s.id !== item.id))
+              }
+              className="ml-0.5 opacity-60 hover:opacity-100 cursor-pointer"
+            >
+              ×
+            </button>
+          </span>
+        ))}
+      </div>
+    )}
+
+    <Button
+      onClick={async () => {
+        if (!forwardMessageId || selectedForward.length === 0) return;
+        setForwarding(true);
+        try {
+          await Promise.all(
+            selectedForward.map((item) =>
+              api.post(`/channels/messages/${forwardMessageId}/forward/${item.id}`)
+            )
+          );
+          // Navigate to the last selected channel
+          const last = selectedForward[selectedForward.length - 1];
+          resetAndClose();
+          router.push(`/channel/${last.id}`);
+        } catch (err) {
+          console.error("Forward failed", err);
+        } finally {
+          setForwarding(false);
+        }
+      }}
+      disabled={selectedForward.length === 0 || forwarding}
+      className="w-full cursor-pointer"
+    >
+      {forwarding
+        ? "Forwarding..."
+        : selectedForward.length > 1
+        ? `Forward to ${selectedForward.length} channels`
+        : "Forward"}
+    </Button>
   </>
 )}
 

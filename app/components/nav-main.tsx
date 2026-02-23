@@ -29,6 +29,7 @@ type SubItem = {
   is_private?: boolean
   is_dm?: boolean
   avatar_url?: string
+  unread?: number
 }
 
 type NavItem = {
@@ -127,7 +128,14 @@ export function NavMain({ items }: { items: NavItem[] }) {
                                 ) : (
                                   sub.is_dm === false && <ChannelIcon sub={sub} />
                                 )}
-                                <span className="truncate">{sub.title}</span>
+                                <span className={`truncate ${(sub.unread ?? 0) > 0 ? "font-semibold text-foreground" : ""}`}>
+                                  {sub.title}
+                                </span>
+                                {(sub.unread ?? 0) > 0 && (
+                                  <span className="ml-auto shrink-0 min-w-[18px] h-[18px] rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center px-1 leading-none">
+                                    {sub.unread! > 99 ? "99+" : sub.unread}
+                                  </span>
+                                )}
                               </Link>
                             </SidebarMenuSubButton>
                           </SidebarMenuSubItem>
@@ -152,13 +160,18 @@ export function NavMain({ items }: { items: NavItem[] }) {
                       tooltip={sub.title}
                       isActive={isActive}
                     >
-                      <Link href={sub.url} className="flex items-center justify-center">
+                      <Link href={sub.url} className="flex items-center justify-center relative">
                         {item.type === "dm" ? (
                           <DMAvatar sub={sub} />
                         ) : sub.is_private ? (
                           <Lock className="h-4 w-4" />
                         ) : (
                           <Hash className="h-4 w-4" />
+                        )}
+                        {(sub.unread ?? 0) > 0 && (
+                          <span className="absolute -top-0.5 -right-0.5 min-w-[14px] h-[14px] rounded-full bg-red-500 text-white text-[9px] font-bold flex items-center justify-center px-0.5 leading-none">
+                            {sub.unread! > 9 ? "9+" : sub.unread}
+                          </span>
                         )}
                         <span className="sr-only">{sub.title}</span>
                       </Link>

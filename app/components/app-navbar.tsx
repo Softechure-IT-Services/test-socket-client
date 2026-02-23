@@ -264,19 +264,8 @@ export default function AppNavbar() {
                   side={isMobile ? "bottom" : "right"}
                   align={isMobile ? "end" : "start"}
                 >
-                  <DropdownMenuItem>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <button className="p-0 rounded-md hover:bg-accent flex items-center gap-1">Profile</button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent className="w-48 rounded-lg" side={isMobile ? "bottom" : "right"} align={isMobile ? "end" : "start"}>
-                        <DropdownMenuItem>Profile</DropdownMenuItem>
-                        <DropdownMenuItem><Forward className="text-muted-foreground" />Share Project</DropdownMenuItem>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem><Settings size={18} />Settings</DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </DropdownMenuItem>
+                
+                  <DropdownMenuItem>Profile</DropdownMenuItem>
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <DropdownMenuItem>

@@ -89,6 +89,8 @@ interface MessageInputProps {
   /** Files dropped from outside (e.g. drag-and-drop over the chat area). Processed through the normal upload pipeline. */
   dropFiles?: File[];
   /** Called after dropFiles have been picked up, so the parent can reset its state. */
+
+  in_thread?: boolean; // Whether this MessageInput is rendered inside a ThreadPanel (affects styling)
   onDropFilesConsumed?: () => void;
 }
 
@@ -196,6 +198,7 @@ export default function MessageInput({
   onSaveEdit,
   onCancelEdit,
   dropFiles,
+  in_thread = false,
   onDropFilesConsumed,
 }: MessageInputProps) {
   const [showEmoji, setShowEmoji] = useState(false);
@@ -588,6 +591,16 @@ export default function MessageInput({
           }
         }
 
+        // ── Escape cancels edit mode ───────────────────────────────────────────
+        if (event.key === "Escape" && !mentionOpenRef.current) {
+          if (onCancelEdit) {
+            onCancelEdit();
+            editor?.commands.clearContent();
+            event.preventDefault();
+            return true;
+          }
+        }
+
         // ── Detect @ typed ─────────────────────────────────────────────────────
         if (event.key === "@") {
           mentionStartPosRef.current = state.selection.from;
@@ -643,9 +656,16 @@ export default function MessageInput({
         return false;
       },
       handleDrop: (_, event) => {
-        event.preventDefault();
-        const files = Array.from(event.dataTransfer?.files || []);
-        files.forEach((file) => insertImageFile(file));
+        // Prevent Tiptap from natively handling file drops.
+        // Files dropped on the chat area are routed through the parent's
+        // dropFiles prop → our upload pipeline, so we must stop Tiptap from
+        // also inserting a second copy of the image via its built-in handler.
+        const files = Array.from(event.dataTransfer?.files ?? []);
+        if (files.length > 0) {
+          event.preventDefault();
+          return true; // handled — block default Tiptap behaviour
+        }
+        return false;
       },
     },
     immediatelyRender: false,
@@ -733,6 +753,28 @@ export default function MessageInput({
     };
   }, [editor]);
 
+  // ─── Load initial content when entering edit mode ────────────────────────────
+  // When editingMessageId is set, populate the editor with the existing message
+  // content so the user can modify it. When cleared (cancel/save), wipe it.
+  // `editor` is included in deps so this re-runs once the editor is initialized.
+  useEffect(() => {
+    if (!editor) return;
+    if (editingMessageId && editingInitialContent) {
+      // Use a short timeout to ensure the editor is fully mounted and ready
+      const timer = setTimeout(() => {
+        if (editor.isDestroyed) return;
+        editor.commands.setContent(editingInitialContent, false);
+        // Move cursor to end
+        editor.commands.focus("end");
+      }, 0);
+      return () => clearTimeout(timer);
+    } else if (!editingMessageId) {
+      editor.commands.clearContent();
+      setUploadedFiles([]);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editor, editingMessageId, editingInitialContent]);
+
   // ─── Send ──────────────────────────────────────────────────────────────────
 
   const handleSend = () => {
@@ -776,7 +818,7 @@ export default function MessageInput({
   // ─── Render ────────────────────────────────────────────────────────────────
 
   return (
-    <div className="flex flex-col gap-2 w-full message-box border overflow-hidden rounded-xl bg-[var(--chat_bg)] -translate-y-[10px]">
+    <div className={`flex flex-col gap-2 w-full message-box border overflow-hidden rounded-xl bg-[var(--chat_bg)] ${in_thread ? "-translate-y-[5px]" : "-translate-y-[10px]"}`}>
       <style>{`
         .mention-chip {
           display: inline;

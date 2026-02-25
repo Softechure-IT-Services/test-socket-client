@@ -61,7 +61,7 @@ export default function ChannelLayout({
 
   return (
     <div className="flex flex-col h-full">
-            <div ref={headerRef} className="sticky top-[56px] z-1">
+            <div ref={headerRef} className="sticky top-0 z-1">
       <MainHeader
         id={channelId}
         type={isDm ? "dm" : "channel"}

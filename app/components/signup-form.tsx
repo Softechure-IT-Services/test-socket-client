@@ -20,6 +20,7 @@ import { Input } from "@/app/components/ui/input";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
+import { Eye, EyeOff } from "lucide-react";
 
 export function SignupForm({ className, ...props }: React.ComponentProps<"div">) {
   const router = useRouter();
@@ -34,8 +35,8 @@ export function SignupForm({ className, ...props }: React.ComponentProps<"div">)
 
   const [errors, setErrors] = useState<any>({});
   const [loading, setLoading] = useState(false);
-
-  const BACKEND_URL = process.env.NEXT_PUBLIC_SERVER_URL || "http://localhost:3001";
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
 
   const validate = () => {
     const newErrors: any = {};
@@ -75,7 +76,6 @@ export function SignupForm({ className, ...props }: React.ComponentProps<"div">)
     setLoading(true);
 
     try {
-      // Use axios instance which injects Authorization header from localStorage
       const res = await (await import("@/lib/axios")).default.post(`/auth/register`, {
         external_id: null,
         name: formData.name,
@@ -84,31 +84,22 @@ export function SignupForm({ className, ...props }: React.ComponentProps<"div">)
         avatar_url: formData.avatar_url || null,
       });
 
-      const data = res.data;
-
-
-       toast.success("Account created successfully! Please log in.", {
-  duration: 1200, // 1.2 seconds
-  onAutoClose: () => {
-    // Reset form AFTER toast closes
-    setFormData({
-      name: "",
-      email: "",
-      password: "",
-      confirmPassword: "",
-      avatar_url: "",
-    });
-
-    // Redirect AFTER reset
-    router.push("/login");
-  },
-});
-
-      
+      toast.success("Account created successfully! Please log in.", {
+        duration: 1200,
+        onAutoClose: () => {
+          setFormData({
+            name: "",
+            email: "",
+            password: "",
+            confirmPassword: "",
+            avatar_url: "",
+          });
+          router.push("/login");
+        },
+      });
     } catch (err) {
       setErrors({ general: "Unable to connect to server." });
-    }
-    finally {
+    } finally {
       setLoading(false);
     }
   };
@@ -134,14 +125,10 @@ export function SignupForm({ className, ...props }: React.ComponentProps<"div">)
                 <Input
                   type="text"
                   value={formData.name}
-                  onChange={(e) =>
-                    setFormData({ ...formData, name: e.target.value })
-                  }
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                 />
                 {errors.name && (
-                  <FieldDescription className="text-red-500">
-                    {errors.name}
-                  </FieldDescription>
+                  <FieldDescription className="text-red-500">{errors.name}</FieldDescription>
                 )}
               </Field>
 
@@ -150,58 +137,58 @@ export function SignupForm({ className, ...props }: React.ComponentProps<"div">)
                 <Input
                   type="email"
                   value={formData.email}
-                  onChange={(e) =>
-                    setFormData({ ...formData, email: e.target.value })
-                  }
+                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                 />
                 {errors.email && (
-                  <FieldDescription className="text-red-500">
-                    {errors.email}
-                  </FieldDescription>
+                  <FieldDescription className="text-red-500">{errors.email}</FieldDescription>
                 )}
               </Field>
 
               <Field>
-                <FieldLabel>Avatar URL (optional)</FieldLabel>
-                <Input
-                  type="url"
-                  placeholder="https://example.com/avatar.png"
-                  value={formData.avatar_url}
-                  onChange={(e) =>
-                    setFormData({ ...formData, avatar_url: e.target.value })
-                  }
-                />
-              </Field>
-
-              <Field>
                 <FieldLabel>Password</FieldLabel>
-                <Input
-                  type="password"
-                  value={formData.password}
-                  onChange={(e) =>
-                    setFormData({ ...formData, password: e.target.value })
-                  }
-                />
+                <div className="relative">
+                  <Input
+                    type={showPassword ? "text" : "password"}
+                    value={formData.password}
+                    onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                    className="pr-10"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((v) => !v)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-[--accent-foreground] hover:text-foreground transition-colors"
+                    tabIndex={-1}
+                    aria-label={showPassword ? "Hide password" : "Show password"}
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
                 {errors.password && (
-                  <FieldDescription className="text-red-500">
-                    {errors.password}
-                  </FieldDescription>
+                  <FieldDescription className="text-red-500">{errors.password}</FieldDescription>
                 )}
               </Field>
 
               <Field>
                 <FieldLabel>Confirm Password</FieldLabel>
-                <Input
-                  type="password"
-                  value={formData.confirmPassword}
-                  onChange={(e) =>
-                    setFormData({ ...formData, confirmPassword: e.target.value })
-                  }
-                />
+                <div className="relative">
+                  <Input
+                    type={showConfirm ? "text" : "password"}
+                    value={formData.confirmPassword}
+                    onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
+                    className="pr-10"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirm((v) => !v)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-[--accent-foreground] hover:text-foreground transition-colors"
+                    tabIndex={-1}
+                    aria-label={showConfirm ? "Hide password" : "Show password"}
+                  >
+                    {showConfirm ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
                 {errors.confirmPassword && (
-                  <FieldDescription className="text-red-500">
-                    {errors.confirmPassword}
-                  </FieldDescription>
+                  <FieldDescription className="text-red-500">{errors.confirmPassword}</FieldDescription>
                 )}
               </Field>
 
@@ -209,7 +196,6 @@ export function SignupForm({ className, ...props }: React.ComponentProps<"div">)
                 <Button type="submit" disabled={loading}>
                   {loading ? "Creating..." : "Create Account"}
                 </Button>
-
                 {errors.general && (
                   <FieldDescription className="text-red-500 text-center">
                     {errors.general}

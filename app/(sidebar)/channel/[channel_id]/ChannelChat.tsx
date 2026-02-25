@@ -1,26 +1,17 @@
 "use client";
-import { useEffect, useRef, useState, useCallback, memo } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { useAuth } from "@/app/components/context/userId_and_connection/provider";
 import MessageInput from "@/app/components/custom/MessageInput";
-import ChatHover from "@/app/components/chat-hover";
-import DOMPurify from "dompurify";
 import FileBg from "@/app/components/ui/file-bg";
 import FileUploadToggle from "@/app/components/ui/file-upload";
 import Dateseparator from "@/app/components/ui/date";
-import FileHover from "@/app/components/file-hover";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/app/components/ui/tooltip";
-import { TbPinFilled } from "react-icons/tb";
 import api from "@/lib/axios";
 import CreateNew from "@/app/components/modals/CreateNew";
-import { type Reaction as ChatHoverReaction } from "@/app/components/chat-hover";
 import { useSearchParams, useRouter } from "next/navigation";
 import ThreadPanel from "@/app/components/custom/ThreadPanel";
 import { getLastRead, setLastRead } from "@/hooks/useLastRead";
 import { useUnread } from "@/app/components/context/UnreadContext";
+import { MessageRow, MessageSkeleton } from "@/app/components/MessageRow";
 
 type User = {
   name: string;
@@ -70,51 +61,11 @@ type ChannelChatProps = {
   channelId: string;
 };
 
-// ─── GIF header injection ─────────────────────────────────────────────────────
-function injectGifHeaders(html: string | null | undefined): string {
-  if (!html) return "";
-  return html.replace(
-    /<img([^>]*?)title="via GIPHY"([^>]*?)>/gi,
-    (match, before, after) => {
-      const altMatch = (before + after).match(/alt="([^"]*)"/i);
-      const title = altMatch ? altMatch[1] : "GIF";
-      const header =
-        `<div style="display:flex;align-items:center;gap:6px;padding:2px 4px;border-radius:4px;background:rgba(0,0,0,0.05);font-size:11px;color:#6b7280;margin-bottom:2px;">` +
-        `<span style="flex-shrink:0;font-weight:700;font-size:10px;padding:1px 4px;border-radius:3px;background:#6366f1;color:#fff;line-height:1;">GIF</span>` +
-        `<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${title}</span>` +
-        `<span style="margin-left:auto;flex-shrink:0;opacity:0.5;font-size:10px;">via GIPHY</span>` +
-        `</div>`;
-      return `<div style="display:inline-flex;flex-direction:column;max-width:100%;">${header}${match}</div>`;
-    }
-  );
-}
-
-// ─── Memoized message content renderer ────────────────────────────────────────
-const MessageContent = memo(
-  ({
-    html,
-    className,
-  }: {
-    html: string | null | undefined;
-    className?: string;
-  }) => (
-    <div
-      className={className}
-      dangerouslySetInnerHTML={{
-        __html: DOMPurify.sanitize(injectGifHeaders(html ?? ""), {
-          ADD_ATTR: ["style"],
-        }),
-      }}
-    />
-  ),
-  (prev, next) => prev.html === next.html && prev.className === next.className
-);
-MessageContent.displayName = "MessageContent";
 
 // ─── New message divider ───────────────────────────────────────────────────────
 function NewMessageDivider() {
   return (
-    <div className="flex items-center gap-2 px-6 py-1 select-none">
+    <div className="flex items-end gap-2 px-6 py-1 select-none">
       <div className="flex-1 h-px bg-red-400/60" />
       <span className="text-[10px] font-bold tracking-widest text-red-500 uppercase px-2 py-0.5 rounded-full bg-red-50 dark:bg-red-950/30 border border-red-300 dark:border-red-700 shrink-0">
         New
@@ -150,69 +101,6 @@ function SystemMessage({
           </span>
         )}
       </div>
-    </div>
-  );
-}
-
-// ─── Forwarded message card ────────────────────────────────────────────────────
-function ForwardedCard({
-  forwarded_from,
-  content,
-  userId,
-  contentClassName,
-}: {
-  forwarded_from: ForwardedFrom | null | undefined;
-  content: string;
-  userId: string | undefined;
-  contentClassName?: string;
-}) {
-  const senderLabel =
-    forwarded_from?.id && String(forwarded_from.id) === String(userId)
-      ? "you"
-      : forwarded_from?.name ?? "unknown";
-
-  const channelLabel = forwarded_from?.channel_name
-    ? forwarded_from.channel_is_dm
-      ? forwarded_from.channel_name
-      : `#${forwarded_from.channel_name}`
-    : null;
-
-  return (
-    <div className="border-l-2 border-blue-400 dark:border-blue-500 pl-3 pr-2 py-1.5 mt-0.5 rounded-r-md bg-blue-50/50 dark:bg-blue-950/20 max-w-full">
-      <div className="flex items-start gap-1.5 mb-1 flex-wrap">
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          width="11"
-          height="11"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2.5"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          className="text-blue-400 shrink-0 mt-[2px]"
-        >
-          <polyline points="15 10 20 15 15 20" />
-          <path d="M4 4v7a4 4 0 0 0 4 4h12" />
-        </svg>
-        <div className="flex flex-col gap-0.5 leading-none">
-          <span className="text-[11px] text-blue-500 dark:text-blue-400 font-medium leading-none">
-            Forwarded from{" "}
-            <span className="font-bold">{senderLabel}</span>
-          </span>
-          {channelLabel && (
-            <span className="text-[10px] text-blue-400/80 dark:text-blue-500/80 leading-none">
-              {forwarded_from?.channel_is_dm
-                ? "in a DM"
-                : `in ${channelLabel}`}
-            </span>
-          )}
-        </div>
-      </div>
-      <MessageContent
-        html={content}
-        className={`leading-relaxed max-w-full whitespace-pre-wrap [overflow-wrap:anywhere] message text-[0.95em] opacity-90 ${contentClassName ?? ""}`}
-      />
     </div>
   );
 }
@@ -665,23 +553,42 @@ export default function ChannelChat({ channelId }: ChannelChatProps) {
 
         const data = res.data;
 
-        const mapped: ChatMessage[] = res.data.messages.map((msg: any) => ({
-          id: msg.id,
-          sender_id: String(msg.sender_id),
-          sender_name: msg.sender_name,
-          content: msg.content,
-          files: msg.files ? JSON.parse(msg.files) : [],
-          self: String(msg.sender_id) === String(userId),
-          created_at: msg.created_at,
-          updated_at: msg.updated_at,
-          reactions: msg.reactions ? JSON.parse(msg.reactions) : [],
-          avatar_url: msg.avatar_url ?? null,
-          pinned: msg.pinned === true,
-          is_forwarded: msg.is_forwarded ?? false,
-          forwarded_from: msg.forwarded_from ?? null,
-          is_system: msg.is_system ?? false,
-          thread_count: msg.thread_count ?? 0,
-        }));
+        const mapped: ChatMessage[] = res.data.messages.map((msg: any) => {
+          // The API now returns files and reactions as already-parsed arrays.
+          // Guard against both shapes (array = new backend, string = old backend)
+          // so the client is robust regardless of which version is deployed.
+          let files: ChatFile[] = [];
+          if (Array.isArray(msg.files)) {
+            files = msg.files;
+          } else if (typeof msg.files === "string" && msg.files) {
+            try { files = JSON.parse(msg.files); } catch { files = []; }
+          }
+
+          let reactions: Reaction[] = [];
+          if (Array.isArray(msg.reactions)) {
+            reactions = msg.reactions;
+          } else if (typeof msg.reactions === "string" && msg.reactions) {
+            try { reactions = JSON.parse(msg.reactions); } catch { reactions = []; }
+          }
+
+          return {
+            id: msg.id,
+            sender_id: String(msg.sender_id),
+            sender_name: msg.sender_name,
+            content: msg.content,
+            files,
+            self: String(msg.sender_id) === String(userId),
+            created_at: msg.created_at,
+            updated_at: msg.updated_at,
+            reactions,
+            avatar_url: msg.avatar_url ?? null,
+            pinned: msg.pinned === true,
+            is_forwarded: msg.is_forwarded ?? false,
+            forwarded_from: msg.forwarded_from ?? null,
+            is_system: msg.is_system ?? false,
+            thread_count: msg.thread_count ?? 0,
+          };
+        });
 
         setMessages((prev) => (initial ? mapped : [...mapped, ...prev]));
 
@@ -924,18 +831,6 @@ export default function ChannelChat({ channelId }: ChannelChatProps) {
     };
   }, [hasMore, isLoadingMore, initialLoading, loadMessages]);
 
-  function MessageSkeleton() {
-    return (
-      <div className="flex gap-3 px-6 py-2 animate-pulse">
-        <div className="w-8 h-8 rounded bg-gray-300" />
-        <div className="flex-1 space-y-2">
-          <div className="h-3 w-32 bg-gray-300 rounded" />
-          <div className="h-3 w-full bg-gray-200 rounded" />
-          <div className="h-3 w-2/3 bg-gray-200 rounded" />
-        </div>
-      </div>
-    );
-  }
 
   const handleSendMessage = async (content: string, files?: any[]) => {
     if (!socket || !socket.connected) return;
@@ -1257,17 +1152,14 @@ export default function ChannelChat({ channelId }: ChannelChatProps) {
 
   return (
     <div
-      className="flex min-h-[100%] dark:bg-black"
-      onDragEnter={handleDragEnter}
-      onDragOver={handleDragOver}
-      onDragLeave={handleDragLeave}
-      onDrop={handleDrop}
+      className="flex min-h-[100%] dark:bg-black relative"
     >
       {/* Thread panel — 1/3 width, slides in from the right */}
       {threadMessage && (
-        <div className="hidden md:flex md:w-[340px] lg:w-[380px] xl:w-[420px] shrink-0 flex-col h-[calc(100vh-var(--main-header-height)-var(--chat-header-height)+33px)] sticky top-0 order-2 animate-in slide-in-from-right duration-200">
+        <div className="hidden md:flex md:w-[33vw]  shrink-0 flex-col h-[calc(100vh-var(--main-header-height)-var(--chat-header-height)+33px)] sticky top-0 order-2 animate-in slide-in-from-right duration-200">
           <ThreadPanel
             parentMessage={threadMessage}
+            channelId={channelId}
             onClose={() => setThreadMessage(null)}
             onReplyCountChange={(msgId, count) => {
               setMessages((prev) =>
@@ -1279,16 +1171,20 @@ export default function ChannelChat({ channelId }: ChannelChatProps) {
           />
         </div>
       )}
-      {dragging && isMember && (
-        <div className="fixed top-0 left-0 w-full h-[100%] bg-black bg-opacity-50 flex items-center justify-center z-500 transition-opacity duration-300">
-          <FileBg />
-        </div>
-      )}
-      <main
-        className="flex flex-col flex-1 min-h-0 overflow-y-auto overflow-x-hidden max-h-[calc(100vh-var(--main-header-height)-var(--chat-header-height)+33px)] order-1"
+      <div
+        className="relative flex flex-col flex-1 min-h-0 overflow-y-auto overflow-x-hidden max-h-[calc(100vh-var(--main-header-height)-var(--chat-header-height)+33px)] order-1"
         onScroll={handleScroll}
+        onDragEnter={handleDragEnter}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
         ref={containerRef}
       >
+      {dragging && isMember && (
+        <div className="absolute top-0 left-0 w-full h-[100%]  bg-opacity-50 flex items-center justify-center z-500 transition-opacity duration-300 order-1">
+          <FileBg />
+        </div>
+        )}  
         {hasNewMessages && isMember && (
           <div className="sticky top-2 z-50 flex justify-center">
             <button
@@ -1334,355 +1230,64 @@ export default function ChannelChat({ channelId }: ChannelChatProps) {
             const msgId = String(msg.id);
             const isHighlighted = highlightedIds.has(msgId);
             const isNewSeparator = newMessageSeparatorId && msgId === newMessageSeparatorId;
+            const showDateSep = shouldShowDateSeparator(messages, index);
 
-            // ─── Render system messages differently ────────────────────
+            // System messages use a different pill layout
             if (msg.is_system) {
               return (
-                <div
-                  key={msgId}
-                  id={`msg-${msgId}`}
-                  ref={index === 0 ? topMessageRef : null}
-                >
+                <div className="relative" key={msgId} id={`msg-${msgId}`} ref={index === 0 ? topMessageRef : null}>
                   {isNewSeparator && <NewMessageDivider />}
-                  {shouldShowDateSeparator(messages, index) && (
-                    <Dateseparator date={msg.created_at} />
-                  )}
-                  <SystemMessage
-                    content={msg.content}
-                    created_at={msg.created_at}
-                  />
+                  {showDateSep && <Dateseparator date={msg.created_at} />}
+                  <SystemMessage content={msg.content} created_at={msg.created_at} />
                 </div>
               );
             }
 
+            // showHeader = first message in a run (show avatar + name)
             const prev = messages[index - 1];
-            const showAvatar =
+            const showHeader =
               !prev ||
               prev.sender_id !== msg.sender_id ||
               prev.is_system ||
-              shouldShowDateSeparator(messages, index);
+              showDateSep;
 
             return (
-              <div key={msgId}>
+              <div className="relative" key={msgId} ref={index === 0 ? topMessageRef : null}>
                 {isNewSeparator && <NewMessageDivider />}
-              <div
-                id={`msg-${msgId}`}
-                ref={index === 0 ? topMessageRef : null}
-                className={`py-0 relative flex justify-start group/message !px-[25px] items-center gap-3 
-                  ${msg.pinned ? "pinned bg-amber-100" : "hover:bg-[var(--sidebar-accent)]"}
-                  ${isHighlighted ? "bg-red-200 animate-pulse" : ""}
-                  ${shouldShowDateSeparator(messages, index) && "border-t"}`}
-                onMouseEnter={() => {
-                  if (!lockedId && isMember) setHoveredId(msgId);
-                }}
-                onMouseLeave={() => {
-                  if (lockedId !== msgId) setHoveredId(null);
-                }}
-              >
-                {msg.pinned && (
-                  <span className="absolute top-0 right-0 text-blue-500 text-sm">
-                    <TbPinFilled
-                      size={20}
-                      className="text-amber-400"
-                    />
-                  </span>
-                )}
-                <div
-                  className={`py-1 rounded-xl items-start flex flex-col gap-0 relative w-full min-w-0 ${showAvatar ? "pt-1 pb-1" : ""}`}
-                >
-                  {showAvatar && (
-                    <div className="grid grid-cols-1 md:grid-cols-[max-content_minmax(0,1fr)] grid-rows-2 gap-x-2 min-w-0 top_most_message">
-                      <img
-                        src={
-                          msg.avatar_url != null
-                            ? `/avatar/${msg.avatar_url}`
-                            : "/avatar/fallback.webp"
-                        }
-                        alt="avatar"
-                        className="w-8 h-8 rounded-sm object-cover shrink-0 row-span-2 aspect-square"
-                      />
-                      <div className="flex flex-row gap-1 items-center h-fit">
-                        {msg.sender_name && (
-                          <span className="text-sm font-bold self-center">
-                            {msg.sender_name}
-                          </span>
-                        )}
-                        {msg.sender_name && (
-                          <div className="flex items-center gap-2">
-                            {msg.created_at && (
-                              <span className="text-[10px] opacity-60 whitespace-nowrap">
-                                {new Date(
-                                  msg.created_at
-                                ).toLocaleString("en-US", {
-                                  hour: "numeric",
-                                  minute: "numeric",
-                                  hour12: true,
-                                })}
-                                {msg.updated_at &&
-                                  msg.updated_at !==
-                                    msg.created_at && (
-                                    <span className="italic text-[10px] ml-1 line">
-                                      (edited)
-                                    </span>
-                                  )}
-                              </span>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                      {msg.is_forwarded ? (
-                        <ForwardedCard
-                          forwarded_from={msg.forwarded_from}
-                          content={msg.content}
-                          userId={userId}
-                        />
-                      ) : (
-                        <MessageContent
-                          html={msg.content}
-                          className="leading-relaxed max-w-full whitespace-pre-wrap [overflow-wrap:anywhere] message"
-                        />
-                      )}
-                    </div>
-                  )}
-
-                  <div className="relative">
-                    <div
-                      className={`rounded-md ms-[40px] w-fit flex flex-col ${msg.reactions && msg.reactions.length > 0 ? "mb-2" : ""}`}
-                    >
-                      {!showAvatar && msg.is_forwarded ? (
-                        <ForwardedCard
-                          forwarded_from={msg.forwarded_from}
-                          content={msg.content}
-                          userId={userId}
-                        />
-                      ) : (
-                        <MessageContent
-                          html={msg.content}
-                          className={`leading-relaxed max-w-full whitespace-pre-wrap [overflow-wrap:anywhere] message ${showAvatar ? "hidden" : ""}`}
-                        />
-                      )}
-                      {msg.files?.length ? (
-                        <div className="flex gap-2">
-                          {msg.files.map((file, i) => (
-                            <div
-                              key={i}
-                              className="flex flex-col gap-1"
-                            >
-                              <div className="flex items-center gap-2 px-1 py-0.5 rounded text-xs text-gray-600 dark:text-gray-400 max-w-[400px]">
-                                {file.type === "image/gif" && (
-                                  <span className="shrink-0 font-bold text-[10px] px-1 py-0.5 rounded bg-indigo-500 text-white leading-none">
-                                    GIF
-                                  </span>
-                                )}
-                                <span className="font-medium truncate">
-                                  {file.name}
-                                </span>
-                                <span className="shrink-0 opacity-60 ml-auto">
-                                  {file.size < 1024
-                                    ? `${file.size} B`
-                                    : file.size < 1024 * 1024
-                                      ? `${(file.size / 1024).toFixed(1)} KB`
-                                      : `${(file.size / (1024 * 1024)).toFixed(1)} MB`}
-                                </span>
-                              </div>
-                              <div className="group relative aspect-square max-h-[400px] max-w-[400px] h-full w-full min-h-[200px] min-w-[200px] rounded">
-                                <FileHover
-                                  fileId={msgId}
-                                  onAction={(action) => {
-                                    if (action === "download") {
-                                      handleDownload(file);
-                                    }
-                                    if (action === "share") {
-                                      setForwardMessageId(msgId);
-                                    }
-                                  }}
-                                />
-                                {file.type.startsWith("image/") ? (
-                                  <img
-                                    src={file.url}
-                                    className="w-full rounded border object-cover h-full"
-                                  />
-                                ) : (
-                                  <div className="p-2 border rounded text-sm h-full flex items-center justify-center">
-                                    📎 {file.name}
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      ) : null}
-
-                      {msg.reactions &&
-                        msg.reactions.length > 0 && (
-                          <div className="flex gap-1 flex-wrap whitespace-nowrap mt-1 w-fit">
-                            {msg.reactions.map((r, idx) => {
-                              const currentUserReacted = (
-                                r.users ?? []
-                              ).some(
-                                (u) =>
-                                  String(u.id) ===
-                                  String(userId)
-                              );
-                              const tooltipUsers = [
-                                ...(r.users ?? [])
-                                  .filter(
-                                    (u) =>
-                                      String(u.id) ===
-                                      String(userId)
-                                  )
-                                  .map(() => "You"),
-                                ...(r.users ?? [])
-                                  .filter(
-                                    (u) =>
-                                      String(u.id) !==
-                                      String(userId)
-                                  )
-                                  .map((u) => u.name),
-                              ];
-                              return (
-                                <Tooltip key={idx}>
-                                  <TooltipTrigger asChild>
-                                    <span
-                                      onClick={() => {
-                                        if (
-                                          msg.id == null ||
-                                          !isMember
-                                        )
-                                          return;
-                                        toggleReaction(
-                                          msg.id,
-                                          r.emoji
-                                        );
-                                      }}
-                                      className={`text-sm px-2 leading-none py-1 rounded-full flex items-center gap-1 select-none transition-colors ${
-                                        isMember
-                                          ? "cursor-pointer"
-                                          : "cursor-default opacity-60"
-                                      } ${
-                                        currentUserReacted
-                                          ? "bg-blue-100 border border-blue-500 text-blue-700 dark:bg-blue-900/40 dark:border-blue-400 dark:text-blue-300"
-                                          : "bg-gray-200 border border-transparent hover:border-gray-400 dark:bg-zinc-700 dark:text-gray-200"
-                                      }`}
-                                    >
-                                      {r.emoji}{" "}
-                                      {r.count <= 1
-                                        ? ""
-                                        : r.count}
-                                    </span>
-                                  </TooltipTrigger>
-                                  <TooltipContent className="bg-black text-white p-2 text-xs rounded-md flex flex-col gap-1 min-w-[80px]">
-                                    <p className="font-semibold border-b border-white/20 pb-1 mb-0.5">
-                                      {r.emoji}{" "}
-                                      {r.count === 1
-                                        ? "1 person"
-                                        : `${r.count} people`}
-                                    </p>
-                                    {tooltipUsers.length > 0 ? (
-                                      tooltipUsers.map(
-                                        (name, j) => (
-                                          <span
-                                            key={j}
-                                            className={`truncate max-w-[140px] ${name === "You" ? "font-semibold text-blue-300" : ""}`}
-                                          >
-                                            {name}
-                                          </span>
-                                        )
-                                      )
-                                    ) : (
-                                      <span className="opacity-60 italic">
-                                        reacted
-                                      </span>
-                                    )}
-                                  </TooltipContent>
-                                </Tooltip>
-                              );
-                            })}
-                          </div>
-                        )}
-                      {!showAvatar &&
-                        msg.updated_at &&
-                        msg.updated_at !== msg.created_at && (
-                          <span className="inline text-[10px] italic opacity-60 whitespace-nowrap">
-                            (edited)
-                          </span>
-                        )}
-                    </div>
-                  </div>
-
-                  {/* ── Thread reply count pill ── */}
-                  {(msg.thread_count ?? 0) > 0 && (
-                    <button
-                      onClick={() => {
-                        setThreadMessage({
-                          id: msg.id!,
-                          content: msg.content,
-                          sender_name: msg.sender_name,
-                          avatar_url: msg.avatar_url,
-                          created_at: msg.created_at,
-                        });
-                      }}
-                      className="flex items-center gap-1.5 mt-0.5 ml-10 text-xs text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-200 hover:bg-blue-50 dark:hover:bg-blue-900/20 px-2 py-1 rounded-md transition-colors group/thread cursor-pointer w-fit"
-                    >
-                      <div className="flex -space-x-1">
-                        {/* small avatar stack placeholder */}
-                        <div className="w-4 h-4 rounded-full bg-blue-200 dark:bg-blue-800 border border-white dark:border-zinc-900" />
-                      </div>
-                      <span className="font-semibold">
-                        {msg.thread_count} {(msg.thread_count ?? 0) === 1 ? "reply" : "replies"}
-                      </span>
-                      <span className="text-gray-400 dark:text-gray-500 opacity-0 group-hover/thread:opacity-100 transition-opacity text-[11px]">
-                        View thread →
-                      </span>
-                    </button>
-                  )}
-
-                  {!showAvatar && msg.created_at && (
-                    <div className="text-[10px] top-[calc(calc(var(--spacing)*1)+0.5rem)] left-0 -translate-x-[0.5rem] opacity-60 absolute flex-col hidden group-hover/message:block whitespace-nowrap flex items-center gap-0">
-                      {new Date(msg.created_at).toLocaleString(
-                        "en-US",
-                        {
-                          hour: "numeric",
-                          minute: "numeric",
-                          hour12: true,
-                        }
-                      )}
-                    </div>
-                  )}
-                </div>
-
-                {/* Only show ChatHover if user is still a member */}
-                {isMember &&
-                  (lockedId
-                    ? lockedId === msgId
-                    : hoveredId === msgId) && (
-                    <ChatHover
-                      messageId={msgId}
-                      pinned={msg.pinned}
-                      isSelf={msg.self}
-                      reactions={
-                        (msg.reactions ??
-                          []) as ChatHoverReaction[]
-                      }
-                      currentUserId={userId}
-                      onAction={handleChatAction}
-                      onOpenChange={(isOpen) => {
-                        if (isOpen) {
-                          setLockedId(msgId);
-                        } else {
-                          setLockedId(null);
-                          setHoveredId((prev) =>
-                            prev === msgId ? null : prev
-                          );
-                        }
-                      }}
-                    />
-                  )}
-
-                {shouldShowDateSeparator(messages, index) && (
-                  <Dateseparator date={msg.created_at} />
-                )}
-              </div>
+                {showDateSep && <Dateseparator date={msg.created_at} />}
+                <MessageRow
+                  msg={msg}
+                  showHeader={showHeader}
+                  isHighlighted={isHighlighted}
+                  currentUserId={userId}
+                  isMember={isMember}
+                  onToggleReaction={toggleReaction}
+                  onDownloadFile={handleDownload}
+                  onShareFile={(id) => setForwardMessageId(String(id))}
+                  isHovered={hoveredId === msgId}
+                  isLocked={lockedId === msgId}
+                  onChatAction={handleChatAction}
+                  onChatHoverOpenChange={(isOpen) => {
+                    if (isOpen) {
+                      setLockedId(msgId);
+                    } else {
+                      setLockedId(null);
+                      setHoveredId((prev) => prev === msgId ? null : prev);
+                    }
+                  }}
+                  onOpenThread={(m) =>
+                    setThreadMessage({
+                      id: m.id!,
+                      content: m.content,
+                      sender_name: m.sender_name,
+                      avatar_url: m.avatar_url,
+                      created_at: m.created_at,
+                    })
+                  }
+                  className={showDateSep ? "border-t" : ""}
+                  onMouseEnter={() => { if (!lockedId && isMember) setHoveredId(msgId); }}
+                  onMouseLeave={() => { if (lockedId !== msgId) setHoveredId(null); }}
+                />
               </div>
             );
           })}
@@ -1695,7 +1300,7 @@ export default function ChannelChat({ channelId }: ChannelChatProps) {
         >
           {isMember ? (
             <>
-              <div>
+              <div className="relative">
                 <FileUploadToggle />
               </div>
               <MessageInput
@@ -1746,7 +1351,7 @@ export default function ChannelChat({ channelId }: ChannelChatProps) {
           type="forward"
           forwardMessageId={forwardMessageId}
         />
-      </main>
+      </div>
     </div>
   );
 }

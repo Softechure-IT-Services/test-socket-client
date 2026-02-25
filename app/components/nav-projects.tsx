@@ -1,5 +1,6 @@
 "use client"
 import Link from "next/link"
+import { usePathname } from "next/navigation"
 import { type LucideIcon } from "lucide-react"
 
 import {
@@ -18,20 +19,24 @@ export function NavProjects({
     icon: LucideIcon
   }[]
 }) {
+  const pathname = usePathname()
+
   return (
     <SidebarGroup>
       <SidebarMenu>
-        {projects.map((item) => (
-          <SidebarMenuItem key={item.name}>
-            {/* tooltip prop shows the name when sidebar is collapsed (icon-only mode) */}
-            <SidebarMenuButton asChild tooltip={item.name}>
-              <Link href={item.url}>
-                <item.icon className="h-4 w-4 shrink-0" />
-                <span>{item.name}</span>
-              </Link>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        ))}
+        {projects.map((item) => {
+          const isActive = pathname === item.url || pathname.startsWith(item.url + "/")
+          return (
+            <SidebarMenuItem key={item.name}>
+              <SidebarMenuButton asChild tooltip={item.name} isActive={isActive}>
+                <Link href={item.url}>
+                  <item.icon className="h-4 w-4 shrink-0" />
+                  <span>{item.name}</span>
+                </Link>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          )
+        })}
       </SidebarMenu>
     </SidebarGroup>
   )

@@ -1,9 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import DOMPurify from "dompurify";
+import { useEffect, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import axios from "@/lib/axios";
+import { TbPinFilled } from "react-icons/tb";
+import { MessageRow, MessageSkeleton, type MessageRowData } from "@/app/components/MessageRow";
+
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 interface Sender {
   id: number;
@@ -18,7 +21,34 @@ interface PinnedMessage {
   created_at: string;
   updated_at: string;
   sender: Sender;
+  files?: {
+    id?: number | string;
+    url: string;
+    name: string;
+    type: string;
+    size?: number;
+    path?: string;
+  }[];
 }
+
+// ─── Empty state ──────────────────────────────────────────────────────────────
+
+function EmptyPins() {
+  return (
+    <div className="flex flex-col items-center justify-center py-24 text-center px-6">
+      <div className="w-16 h-16 rounded-2xl bg-amber-50 dark:bg-amber-900/20 flex items-center justify-center mb-4 border border-amber-100 dark:border-amber-800/40">
+        <TbPinFilled size={28} className="text-amber-400" />
+      </div>
+      <p className="text-sm font-semibold text-gray-600 dark:text-gray-300">No pinned messages</p>
+      <p className="text-xs text-gray-400 dark:text-gray-500 mt-1.5 max-w-[220px]">
+        Pin important messages in chat to find them quickly here
+      </p>
+    </div>
+  );
+}
+
+
+// ─── Main component ───────────────────────────────────────────────────────────
 
 export default function PinnedMessages() {
   const params = useParams();
@@ -30,8 +60,7 @@ export default function PinnedMessages() {
 
   useEffect(() => {
     if (!channelId) return;
-
-    const fetchPinnedMessages = async () => {
+    const fetch = async () => {
       try {
         const res = await axios.get(`/channels/${channelId}/pinned`);
         if (res.data.success) {
@@ -43,82 +72,86 @@ export default function PinnedMessages() {
         setLoading(false);
       }
     };
-
-    fetchPinnedMessages();
+    fetch();
   }, [channelId]);
 
-  /**
-   * Navigate to the chat tab and scroll to the specific message.
-   * We use a URL hash: /channels/<id>/chat#msg-<messageId>
-   * ChannelChat renders each message with id="msg-<messageId>",
-   * so the browser will auto-scroll on load, and we also do a
-   * manual scrollIntoView + highlight in case the tab is already open.
-   */
-  /**
-   * Navigate to the channel's root page (where ChannelChat lives)
-   * and pass the target message ID via a query param.
-   * ChannelChat reads ?scrollTo=<id> on mount and scrolls + highlights.
-   */
-  const handleMessageClick = (messageId: number) => {
-    router.push(`/channel/${channelId}?scrollTo=${messageId}`);
-  };
+  const handleJump = useCallback(
+    (messageId: number) => {
+      router.push(`/channel/${channelId}?scrollTo=${messageId}`);
+    },
+    [channelId, router]
+  );
 
-  if (loading)
+  // ── Loading ──────────────────────────────────────────────────────────────────
+
+  if (loading) {
     return (
-      <div className="max-w-5xl mx-auto space-y-4 p-4">
+      <div className="space-y-4 p-4">
         {[...Array(3)].map((_, i) => (
-          <div key={i} className="h-24 rounded-xl bg-gray-100 animate-pulse" />
+          <div
+            key={i}
+            className="rounded-2xl border border-gray-100 dark:border-zinc-800 bg-white dark:bg-zinc-900 overflow-hidden"
+          >
+            <div className="h-8 bg-amber-50/60 dark:bg-amber-900/10 border-b border-amber-100/60 dark:border-amber-800/20" />
+            <MessageSkeleton />
+          </div>
         ))}
       </div>
     );
+  }
 
-  if (messages.length === 0)
-    return <p className="p-6 text-gray-500">No pinned messages.</p>;
+  if (messages.length === 0) return <EmptyPins />;
 
   return (
-    <div className="max-w-5xl mx-auto space-y-6 p-4">
-      {messages.map((msg) => (
-        <div
-          key={msg.message_id}
-          onClick={() => handleMessageClick(msg.message_id)}
-          className="border rounded-xl p-4 shadow-sm bg-white cursor-pointer
-                     hover:border-blue-400 hover:shadow-md hover:bg-blue-50/40
-                     transition-all duration-150 group"
-        >
-          {/* Header */}
-          <div className="flex items-start gap-3">
-            <div className="p-4 h-10 w-10 rounded-md bg-green-600 text-white flex items-center justify-center font-semibold text-lg shrink-0">
-              {msg.sender.name[0].toUpperCase()}
-            </div>
+    <div className="p-4 space-y-3">
+      {/* Count header */}
+      <div className="flex items-center gap-2 px-1 mb-1">
+        <TbPinFilled size={14} className="text-amber-400" />
+        <span className="text-xs font-bold uppercase tracking-widest text-gray-400 dark:text-gray-500">
+          Pinned Messages
+        </span>
+        <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-50 dark:bg-amber-900/30 text-amber-500 dark:text-amber-400 border border-amber-100 dark:border-amber-800/40">
+          {messages.length}
+        </span>
+      </div>
 
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center justify-between gap-2">
-                <p className="font-semibold text-black">{msg.sender.name}</p>
-                {/* "Jump to message" hint */}
-                <span className="text-xs text-blue-500 opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
-                  Jump to message →
-                </span>
-              </div>
+      {/* Pinned message cards */}
+      {messages.map((msg) => {
+        // Build a MessageRowData-compatible object
+        const rowData: MessageRowData = {
+          id: msg.message_id,
+          sender_id: msg.sender.id,
+          sender_name: msg.sender.name,
+          avatar_url: msg.sender.avatar_url ?? null,
+          content: msg.content,
+          created_at: msg.created_at,
+          updated_at: msg.updated_at,
+          pinned: true,
+          files: msg.files ?? [],
+        };
 
-              <p className="text-gray-500 text-sm">
-                {new Date(msg.created_at).toLocaleString("en-US", {
-                  month: "short",
-                  day: "numeric",
-                  hour: "2-digit",
-                  minute: "2-digit",
-                })}
-              </p>
+        return (
+          <div
+            key={msg.message_id}
+            className="
+              group/card rounded-2xl border dark:border-amber-800/30
+              bg-white dark:bg-zinc-900
+              overflow-hidden
+              transition-all duration-150
+              cursor-pointer
+            "
+            onClick={() => handleJump(msg.message_id)}
+          >
 
-              <div
-                className="mt-2 text-gray-700 line-clamp-3"
-                dangerouslySetInnerHTML={{
-                  __html: DOMPurify.sanitize(msg.content),
-                }}
-              />
-            </div>
+            {/* MessageRow — read-only (isMember=false hides ChatHover) */}
+            <MessageRow
+              msg={rowData}
+              showHeader={true}
+              isMember={false}
+            />
           </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }

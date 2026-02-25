@@ -31,6 +31,7 @@ import {
   Crown,
 } from "lucide-react";
 import { useDebounce } from "@/hooks/useDebounce";
+import { UserAvatar } from "@/app/components/MessageMeta";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 interface MainHeaderProps {
@@ -276,15 +277,7 @@ function MembersPanel({
                     className="flex items-center justify-between px-3 py-2 hover:bg-muted transition-colors"
                   >
                     <div className="flex items-center gap-2.5">
-                      <img
-                        src={
-                          u.avatar_url
-                            ? `/avatar/${u.avatar_url}`
-                            : "/avatar/fallback.webp"
-                        }
-                        alt={u.name}
-                        className="w-7 h-7 rounded-sm object-cover"
-                      />
+                      <UserAvatar name={u.name} avatarUrl={u.avatar_url} size="sm" />
                       <span className="text-sm">{u.name}</span>
                     </div>
                     <Button
@@ -335,14 +328,10 @@ function MembersPanel({
               >
                 <div className="flex items-center gap-2.5 min-w-0">
                   <div className="relative shrink-0">
-                    <img
-                      src={
-                        member.avatar_url
-                          ? `/avatar/${member.avatar_url}`
-                          : "/avatar/fallback.webp"
-                      }
-                      alt={member.name}
-                      className="w-8 h-8 rounded-sm object-cover"
+                    <UserAvatar
+                      name={member.name}
+                      avatarUrl={member.avatar_url}
+                      size="md"
                     />
                     {isOwner && (
                       <Crown
@@ -516,14 +505,11 @@ export default function MainHeader({
         <div>
           <div className="flex gap-2">
             {type === "dm" && dmUser && (
-              <img
-                src={
-                  dmUser.avatar_url
-                    ? `/avatar/${dmUser.avatar_url}`
-                    : "/avatar/fallback.webp"
-                }
-                className="w-8 h-8 rounded-sm"
-                alt={dmUser.name ?? "User"}
+              <UserAvatar
+                name={dmUser.name}
+                avatarUrl={dmUser.avatar_url}
+                size="md"
+                rounded="sm"
               />
             )}
             <h2 className="mb-1 text-2xl font-semibold">

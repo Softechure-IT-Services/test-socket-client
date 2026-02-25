@@ -4,9 +4,6 @@ import * as React from "react";
 import api from "@/lib/axios";
 import {
   Frame,
-  GalleryVerticalEnd,
-  AudioWaveform,
-  Command,
   Map,
   PieChart,
 } from "lucide-react";
@@ -27,6 +24,7 @@ import { useAuth } from "@/app/components/context/userId_and_connection/provider
 import { usePathname, useRouter } from "next/navigation";
 import { UserType } from "@/app/components/context/userId_and_connection/provider";
 import { useUnread } from "@/app/components/context/UnreadContext";
+import { usePushNotifications } from "@/hooks/usePushNotifications";
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const [channels, setChannels] = React.useState<any[]>([]);
@@ -35,68 +33,132 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const [modalOpen, setModalOpen] = React.useState(false);
   const [modalType, setModalType] = React.useState<"channel" | "dm">("channel");
 
-  // Unread counts come from shared context — ChannelChat increments them via socket
+  // Unread counts come from shared context
   const { unreadCounts, seedFromStorage, incrementUnread, clearUnread } = useUnread();
+
+  // Push notifications
+  const { requestPermission, showNotification } = usePushNotifications();
 
   const pathname = usePathname();
   const router = useRouter();
 
+  // ─── Derive active channel from URL ─────────────────────────────────────────
   const currentChannelId = React.useMemo(() => {
     const match = pathname?.match(/^\/channel\/(\d+)/);
     return match ? match[1] : null;
   }, [pathname]);
 
-  // Always-fresh ref so the socket handler doesn't capture a stale closure
+  // Keep a ref so the socket handler doesn't capture a stale closure
   const currentChannelIdRef = React.useRef<string | null>(null);
   React.useEffect(() => {
     currentChannelIdRef.current = currentChannelId;
-    // Clear unread for the channel we just navigated into
+    // Clear unread when the user navigates into a channel
     if (currentChannelId) clearUnread(currentChannelId);
-  }, [currentChannelId]);
+  }, [currentChannelId, clearUnread]);
 
-  // ─── Re-join ALL channel rooms whenever navigation happens ───────────────────
-  // ChannelChat emits "leaveChannel" for the old channel on navigation, which
-  // removes the socket from that server-side room. We re-join all rooms here so
-  // the sidebar can keep receiving receiveMessage events for every channel.
-  const allChannelIdsRef = React.useRef<number[]>([]);
+  // ─── Request notification permission once on mount ───────────────────────────
   React.useEffect(() => {
-    allChannelIdsRef.current = [
-      ...channels.map((ch) => Number(ch.id)),
-      ...users.map((u) => {
-        const match = u.url?.match(/\/channel\/(\d+)/);
-        return match ? Number(match[1]) : null;
-      }).filter(Boolean) as number[],
-    ];
-  }, [channels, users]);
+    if (!user) return;
+    // Only ask if not already decided
+    if (typeof window !== "undefined" && "Notification" in window) {
+      if (Notification.permission === "default") {
+        // Small delay — don't ask immediately on page load
+        const t = setTimeout(() => requestPermission(), 3000);
+        return () => clearTimeout(t);
+      }
+    }
+  }, [user, requestPermission]);
 
-  React.useEffect(() => {
-    if (!socket) return;
-    // Re-join all rooms after every channel navigation (ChannelChat left the old one)
-    const timeout = setTimeout(() => {
-      allChannelIdsRef.current.forEach((id) => {
-        socket.emit("joinChannel", { channel_id: id });
-      });
-    }, 100); // small delay so ChannelChat's leaveChannel fires first
-    return () => clearTimeout(timeout);
-  }, [socket, currentChannelId]); // re-run on every channel change
-
-  // ─── Global receiveMessage → increment unread for background channels ─────────
+  // ─── Listen for newMessageNotification on the user's personal socket room ────
+  //
+  // WHY THIS WORKS:
+  //   Every connected socket is auto-joined to `user_${id}` in index.js.
+  //   That room never changes regardless of which channel the user is viewing.
+  //   The server now emits `newMessageNotification` to each member's user room
+  //   whenever a message is sent, so the sidebar ALWAYS receives it.
+  //
+  //   We no longer need to re-join channel rooms or fight ChannelChat's
+  //   leaveChannel cleanup. The receiveMessage listener on the sidebar is removed.
+  //
   React.useEffect(() => {
     if (!socket || !user) return;
 
-    const handleNewMessage = (msg: any) => {
-      const msgChannelId = String(msg.channel_id);
-      // Skip own messages
-      if (String(msg.sender_id) === String(user.id)) return;
-      // Skip the channel the user is currently viewing
-      if (currentChannelIdRef.current === msgChannelId) return;
-      // Increment via context (also persists to localStorage)
-      incrementUnread(msgChannelId);
+    const handleNotification = (notification: {
+      channel_id: string | number;
+      message_id: string | number;
+      sender_id: string | number;
+      sender_name: string;
+      avatar_url?: string;
+      preview: string;
+      channel_name: string | null;
+      is_dm: boolean;
+      created_at: string;
+    }) => {
+      const channelId = String(notification.channel_id);
+
+      // Skip if the user is currently viewing this channel
+      if (currentChannelIdRef.current === channelId) return;
+
+      // Increment badge in context + localStorage
+      incrementUnread(channelId);
+
+      // Show browser push notification
+      const channelLabel = notification.is_dm
+        ? notification.sender_name
+        : `#${notification.channel_name ?? channelId}`;
+
+      showNotification({
+        title: channelLabel,
+        body: `${notification.is_dm ? "" : `${notification.sender_name}: `}${notification.preview || "New message"}`,
+        icon: notification.avatar_url,
+        channelId,
+      });
     };
 
-    socket.on("receiveMessage", handleNewMessage);
-    return () => { socket.off("receiveMessage", handleNewMessage); };
-  }, [socket, user]); // no currentChannelId dep — use ref instead
+    // ── Thread reply notifications ────────────────────────────────────────────
+    // Same pattern: server emits to user_${id} room, sidebar catches it here.
+    // We reuse the same badge increment + push notification path.
+    const handleThreadNotification = (notification: {
+      channel_id: string | number;
+      channel_name: string | null;
+      is_dm: boolean;
+      parent_message_id: string | number;
+      sender_id: string | number;
+      sender_name: string;
+      avatar_url?: string;
+      preview: string;
+      created_at: string;
+    }) => {
+      const channelId = String(notification.channel_id);
+
+      // Skip if the user is actively viewing this channel (they can see the badge on the message)
+      if (currentChannelIdRef.current === channelId) return;
+
+      // Increment the channel's sidebar badge
+      incrementUnread(channelId);
+
+      // Push notification — label it clearly as a thread reply
+      const channelLabel = notification.is_dm
+        ? notification.sender_name
+        : `#${notification.channel_name ?? channelId}`;
+
+      showNotification({
+        title: `${notification.sender_name} replied in ${channelLabel}'s thread`,
+        body: notification.preview || "New thread reply",
+        icon: notification.avatar_url,
+        channelId,
+      });
+    };
+
+    socket.on("newMessageNotification", handleNotification);
+    socket.on("newThreadNotification", handleThreadNotification);
+    return () => {
+      socket.off("newMessageNotification", handleNotification);
+      socket.off("newThreadNotification", handleThreadNotification);
+    };
+  }, [socket, user, incrementUnread, showNotification]);
+  // Note: currentChannelId is intentionally NOT in deps — we use the ref instead
+  // so this effect never re-registers on navigation, avoiding any listener gaps.
 
   // ─── Initial data fetch + seed unread from localStorage ──────────────────────
   React.useEffect(() => {
@@ -132,7 +194,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       }
     };
     fetchData();
-  }, []);
+  }, [seedFromStorage]);
 
   // ─── Channel created ──────────────────────────────────────────────────────────
   React.useEffect(() => {
@@ -185,7 +247,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       }
     };
 
-    const handleAddedToChannel = (data: { channelId: number; channel?: any; channelName?: string }) => {
+    const handleAddedToChannel = (data: { channelId: number; channel?: any }) => {
       if (data.channel) {
         setChannels((prev) => {
           if (prev.some((ch) => String(ch.id) === String(data.channel.id))) return prev;
@@ -260,7 +322,6 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const projects = [
     { name: "Threads", url: "/threads", icon: Frame },
     { name: "Calls", url: "/calls", icon: PieChart },
-    { name: "Drafts", url: "/drafts", icon: Map },
   ];
 
   return (

@@ -112,7 +112,7 @@ export function NavMain({ items }: { items: NavItem[] }) {
                   <CollapsibleContent>
                     <SidebarMenuSub>
                       {item.items?.map((sub) => {
-                        const isActive = pathname === sub.url
+                        const isActive = pathname === sub.url || pathname.startsWith(sub.url + "/") 
                         return (
                           <SidebarMenuSubItem key={sub.url}>
                             <SidebarMenuSubButton
@@ -152,7 +152,7 @@ export function NavMain({ items }: { items: NavItem[] }) {
           {isCollapsed && (
             <SidebarMenu>
               {item.items?.map((sub) => {
-                const isActive = pathname === sub.url
+                const isActive = pathname === sub.url || pathname.startsWith(sub.url + "/") 
                 return (
                   <SidebarMenuItem key={sub.url}>
                     <SidebarMenuButton

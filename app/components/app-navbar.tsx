@@ -15,6 +15,8 @@ import {
 } from "@/app/components/ui/dropdown-menu";
 import { useSidebar } from "@/app/components/ui/sidebar";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
+import { useAuth } from "@/app/components/context/userId_and_connection/provider";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface ChannelResult {
@@ -121,6 +123,12 @@ function flattenResults(data: SearchData): AnyResult[] {
 export default function AppNavbar() {
   const { isMobile } = useSidebar();
   const router = useRouter();
+  const { user, logout } = useAuth();
+
+  function handleLogout() {
+    logout();
+    router.push("/login");
+  }
 
   const [query, setQuery] = useState("");
   const [data, setData] = useState<SearchData>({ channels: [], people: [], messages: [] });
@@ -265,21 +273,16 @@ export default function AppNavbar() {
                   align={isMobile ? "end" : "start"}
                 >
                 
-                  <DropdownMenuItem>Profile</DropdownMenuItem>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <DropdownMenuItem>
-                        <button className="p-0 rounded-md hover:bg-accent flex items-center gap-1">Help</button>
-                      </DropdownMenuItem>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent className="w-48 rounded-lg" side={isMobile ? "bottom" : "right"} align={isMobile ? "end" : "start"}>
-                      <DropdownMenuItem>Check for updates</DropdownMenuItem>
-                      <DropdownMenuItem>Clear Cache and Restart</DropdownMenuItem>
-                      <DropdownMenuItem>Open Help Center</DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+                  <DropdownMenuItem asChild>
+                    <Link href="/profile">Profile & Settings</Link>
+                  </DropdownMenuItem>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem>Log Out</DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={handleLogout}
+                    className="text-red-400 focus:text-red-400 focus:bg-red-500/10 cursor-pointer"
+                  >
+                    Log Out
+                  </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
 

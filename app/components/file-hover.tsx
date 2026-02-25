@@ -114,16 +114,12 @@ export default function FileHover({ fileId, onAction }: FileHoverProps) {
   ];
 
   return (
-    // data-filehover-bar mirrors data-chathover-bar — used for portal positioning if ever needed
-    // opacity-0 → group-hover:opacity-100 makes it only visible when the attachment is hovered
     <div
       data-filehover-bar
       className="
         flex items-center gap-0.5 px-1.5 py-1
         rounded-lg bg-white border border-[#e0e0e0]
         shadow-[0_4px_12px_0_rgba(0,0,0,0.12),0_1px_3px_0_rgba(0,0,0,0.08)]
-        absolute right-2 top-2
-        opacity-0 group-hover:opacity-100
         transition-opacity duration-150 ease-out
         z-10
       "

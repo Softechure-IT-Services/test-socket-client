@@ -97,6 +97,8 @@ type ChatHoverProps = {
   onAction: (action: string, messageId: string) => void;
   /** Called with true when any popup (emoji picker / dropdown) opens, false when all are closed */
   onOpenChange?: (open: boolean) => void;
+  /** When true, hides the "Reply in thread" button (already inside a thread) */
+  inThread?: boolean;
 };
 
 type ActionItem = {
@@ -428,6 +430,7 @@ export default function ChatHover({
   currentUserId,
   onAction,
   onOpenChange,
+  inThread = false,
 }: ChatHoverProps) {
   const isPinned = Boolean(Number(pinned));
 
@@ -498,11 +501,13 @@ export default function ChatHover({
         onOpenChange={onOpenChange}
       />
 
-      {/* ── Reply ── */}
-      <ActionButton
-        item={{ type: "reply", icon: <PiChatCircleTextBold />, label: "Reply in thread" }}
-        onClick={() => onAction("reply", messageId)}
-      />
+      {/* ── Reply — hidden when already inside a thread ── */}
+      {!inThread && (
+        <ActionButton
+          item={{ type: "reply", icon: <PiChatCircleTextBold />, label: "Reply in thread" }}
+          onClick={() => onAction("reply", messageId)}
+        />
+      )}
 
       {/* ── Forward ── */}
       <ActionButton

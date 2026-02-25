@@ -4,6 +4,7 @@
 
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { io, Socket } from "socket.io-client";
+import api from "@/lib/axios";
 
 export type UserType = {
   id: string;
@@ -40,11 +41,23 @@ const login = (newToken: string) => {
   setToken(newToken);
 };
 
-const logout = () => {
+const logout = async () => {
+  try {
+    // Tell server to invalidate refresh token
+    await api.post("/auth/logout");
+  } catch {
+    // Even if it fails, clean up client-side
+  }
   localStorage.removeItem("access_token");
+  // Clear any auth cookies the server may have set
+  document.cookie = "access_token=; Max-Age=0; path=/";
+  document.cookie = "refresh_token=; Max-Age=0; path=/";
+  document.cookie = "user_id=; Max-Age=0; path=/";
+  document.cookie = "username=; Max-Age=0; path=/";
   setToken(null);
   setUser(null);
   socket?.disconnect();
+  setSocket(null);
 };
 
   // useEffect(() => {
@@ -146,4 +159,3 @@ export const useAuth = () => {
   if (!ctx) throw new Error("useAuth must be used inside AuthProvider");
   return ctx;
 };
-

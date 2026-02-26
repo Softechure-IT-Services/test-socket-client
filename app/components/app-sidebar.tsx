@@ -112,6 +112,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         body: `${notification.is_dm ? "" : `${notification.sender_name}: `}${notification.preview || "New message"}`,
         icon: notification.avatar_url,
         channelId,
+        force: true, // tab may be visible but user is on a different channel
       });
     };
 
@@ -147,6 +148,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         body: notification.preview || "New thread reply",
         icon: notification.avatar_url,
         channelId,
+        force: true, // tab may be visible but user is on a different channel
       });
     };
 

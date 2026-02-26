@@ -13,7 +13,7 @@ import { getLastRead, setLastRead } from "@/hooks/useLastRead";
 import { useUnread } from "@/app/components/context/UnreadContext";
 import { MessageRow, MessageSkeleton } from "@/app/components/MessageRow";
 import DOMPurify from "dompurify";
-
+// At the top with your other hook imports
 type User = {
   name: string;
 };
@@ -124,8 +124,11 @@ export default function ChannelChat({ channelId }: ChannelChatProps) {
   const searchParams = useSearchParams();
   const router = useRouter();
 
+
+  // Inside the ChannelChat component, alongside your other hooks
   // ─── Member status tracking ──────────────────────────────────────────────────
   const [isMember, setIsMember] = useState(true);
+
 
   const formatDate = (date: string) =>
     new Date(date).toLocaleDateString("en-GB", {

@@ -22,6 +22,12 @@ export type PushNotificationPayload = {
   icon?: string;
   channelId?: string | number;
   url?: string;
+  /**
+   * If true, show the notification even when the tab is visible.
+   * Used by the sidebar for messages arriving in a channel the user
+   * is NOT currently viewing (tab open but on a different channel).
+   */
+  force?: boolean;
 };
 
 export function usePushNotifications() {
@@ -55,28 +61,28 @@ export function usePushNotifications() {
    * Show a notification.
    * - Uses the Service Worker if available (works when tab is backgrounded).
    * - Falls back to the Notification API directly.
-   * - Skips if the document is currently visible (user is actively looking).
+   * - Skips when the tab is visible UNLESS force=true (cross-channel message).
    */
   const showNotification = useCallback(
-    ({ title, body, icon, channelId, url }: PushNotificationPayload) => {
+    ({ title, body, icon, channelId, url, force = false }: PushNotificationPayload) => {
       if (typeof window === "undefined") return;
       if (!("Notification" in window)) return;
       if (Notification.permission !== "granted") return;
 
-      // Don't show notification if the user is actively viewing the page
-      if (document.visibilityState === "visible") return;
+      // Skip if the user is actively looking at the page —
+      // UNLESS force=true, which the sidebar sets for messages in other channels.
+      if (!force && document.visibilityState === "visible") return;
 
       const options: NotificationOptions = {
-  body,
-  icon: icon ?? "/favicon.ico",
-  badge: "/favicon.ico",
-  tag: channelId ? `channel-${channelId}` : "message",
-  data: { url: url ?? (channelId ? `/channel/${channelId}` : "/") },
-};
+        body,
+        icon: icon ?? "/favicon.ico",
+        badge: "/favicon.ico",
+        tag: channelId ? `channel-${channelId}` : "message",
+        data: { url: url ?? (channelId ? `/channel/${channelId}` : "/") },
+      };
 
       if (swRegistrationRef.current) {
         swRegistrationRef.current.showNotification(title, options).catch(() => {
-          // SW notification failed, fallback
           new Notification(title, options);
         });
       } else {
@@ -86,5 +92,12 @@ export function usePushNotifications() {
     []
   );
 
-  return { requestPermission, showNotification, permission: typeof window !== "undefined" && "Notification" in window ? Notification.permission : "denied" };
+  return {
+    requestPermission,
+    showNotification,
+    permission:
+      typeof window !== "undefined" && "Notification" in window
+        ? Notification.permission
+        : "denied",
+  };
 }

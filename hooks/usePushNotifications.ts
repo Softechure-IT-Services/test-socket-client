@@ -67,13 +67,12 @@ export function usePushNotifications() {
       if (document.visibilityState === "visible") return;
 
       const options: NotificationOptions = {
-        body,
-        icon: icon ?? "/favicon.ico",
-        badge: "/favicon.ico",
-        tag: channelId ? `channel-${channelId}` : "message",
-        renotify: true,
-        data: { url: url ?? (channelId ? `/channel/${channelId}` : "/") },
-      };
+  body,
+  icon: icon ?? "/favicon.ico",
+  badge: "/favicon.ico",
+  tag: channelId ? `channel-${channelId}` : "message",
+  data: { url: url ?? (channelId ? `/channel/${channelId}` : "/") },
+};
 
       if (swRegistrationRef.current) {
         swRegistrationRef.current.showNotification(title, options).catch(() => {

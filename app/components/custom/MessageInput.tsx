@@ -763,7 +763,9 @@ export default function MessageInput({
       // Use a short timeout to ensure the editor is fully mounted and ready
       const timer = setTimeout(() => {
         if (editor.isDestroyed) return;
-        editor.commands.setContent(editingInitialContent, false);
+        editor.commands.setContent(editingInitialContent,  {
+  emitUpdate: false,
+});
         // Move cursor to end
         editor.commands.focus("end");
       }, 0);

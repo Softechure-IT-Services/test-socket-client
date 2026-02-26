@@ -286,7 +286,9 @@ export default function ThreadPanel({
       );
     };
     socket.on("reactionUpdated", handleReactionUpdate);
-    return () => socket.off("reactionUpdated", handleReactionUpdate);
+return () => {
+  socket.off("reactionUpdated", handleReactionUpdate);
+};
   }, [socket]);
 
   // ─── Shared reaction helper (optimistic update + socket emit) ───────────

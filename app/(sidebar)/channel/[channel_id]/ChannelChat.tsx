@@ -12,6 +12,7 @@ import ThreadPanel from "@/app/components/custom/ThreadPanel";
 import { getLastRead, setLastRead } from "@/hooks/useLastRead";
 import { useUnread } from "@/app/components/context/UnreadContext";
 import { MessageRow, MessageSkeleton } from "@/app/components/MessageRow";
+import DOMPurify from "dompurify";
 
 type User = {
   name: string;
@@ -41,7 +42,7 @@ type ForwardedFrom = {
   channel_is_dm?: boolean;
 };
 type ChatMessage = {
-  id?: number | string;
+  id: number | string;
   sender_id: string;
   sender_name?: string;
   avatar_url?: string | null;

@@ -590,7 +590,7 @@ export default function ThreadPanel({
       </div>
 
       {/* ── Replies list ──────────────────────────────────────────────────── */}
-      <div className="flex-1 overflow-y-auto py-2">
+      <div className="flex-1 overflow-y-auto py-2 pt-[25px]">
         {loading ? (
           <div className="space-y-3 px-4 py-2 animate-pulse">
             {[1, 2, 3].map((i) => (

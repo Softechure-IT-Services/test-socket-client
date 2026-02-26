@@ -1017,12 +1017,25 @@ export default function MessageInput({
         <div className="flex justify-between mt-2 sticky bottom-0">
           <div className="flex flex-row gap-1 items-center">
             {!editingMessageId && (
-              <div className="upload-toggle-btn">
-                <ToolbarButton
-                  size="xxl"
-                  editor={editor}
-                  command="toggleFileUpload"
-                  label={<FiPlus />}
+              <div className="relative bg-gray-300 rounded-md group">
+                <label
+                  htmlFor="msg-file-input"
+                  title="Upload files"
+                  className="flex items-center justify-center w-8 h-8 rounded cursor-pointer hover:bg-gray-200 dark:hover:bg-zinc-700 text-gray-600 dark:text-gray-400 transition-colors"
+                >
+                  <FiPlus size={18} />
+                </label>
+                {/* Tooltip */}
+                <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-2 py-0.5 rounded bg-gray-800 text-white text-[11px] whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity z-50">
+                  Upload
+                </span>
+                <input
+                  id="msg-file-input"
+                  type="file"
+                  multiple
+                  accept={ALLOWED_TYPES.join(",")}
+                  className="hidden"
+                  onChange={handleFileChange}
                 />
               </div>
             )}

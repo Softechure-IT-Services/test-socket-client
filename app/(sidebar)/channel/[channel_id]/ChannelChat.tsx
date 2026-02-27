@@ -57,6 +57,7 @@ type ChatMessage = {
   forwarded_from?: ForwardedFrom | null;
   is_system?: boolean;
   thread_count?: number;
+  is_edited?: boolean;
 };
 type ChannelChatProps = {
   channelId: string;
@@ -222,14 +223,18 @@ export default function ChannelChat({ channelId }: ChannelChatProps) {
       .get(`/channels/${channelId}`)
       .then((res) => {
         const data = res.data;
-        setChannel(data.channel);
+        const ch = data.channel;
+        setChannel(ch);
 
-        // Check membership status from server
+        // Respect the is_member flag from the server for both public and private
+        // channels. A public channel user who has left will have is_member === false.
         if (data.is_member !== undefined) {
           setIsMember(data.is_member);
+        } else {
+          setIsMember(true); // fallback: server didn't send the flag
         }
 
-        if (data.channel?.is_dm) {
+        if (ch?.is_dm) {
           setIsDm(true);
           setDmOtherUser(data.dm_user);
         } else {
@@ -253,6 +258,19 @@ export default function ChannelChat({ channelId }: ChannelChatProps) {
       channelName?: string;
     }) => {
       if (String(data.channelId) === String(channelId)) {
+        setIsMember(false);
+      }
+    };
+
+    // Fires when any user leaves — check if it's the current user
+    const handleUserLeftChannel = (data: {
+      channelId: number;
+      userId: number | string;
+    }) => {
+      if (
+        String(data.channelId) === String(channelId) &&
+        String(data.userId) === String(userId)
+      ) {
         setIsMember(false);
       }
     };
@@ -282,11 +300,13 @@ export default function ChannelChat({ channelId }: ChannelChatProps) {
     };
 
     socket.on("removedFromChannel", handleRemovedFromChannel);
+    socket.on("userLeftChannel", handleUserLeftChannel);
     socket.on("addedToChannel", handleAddedToChannel);
     socket.on("messageSendError", handleMessageSendError);
 
     return () => {
       socket.off("removedFromChannel", handleRemovedFromChannel);
+      socket.off("userLeftChannel", handleUserLeftChannel);
       socket.off("addedToChannel", handleAddedToChannel);
       socket.off("messageSendError", handleMessageSendError);
     };
@@ -375,6 +395,7 @@ export default function ChannelChat({ channelId }: ChannelChatProps) {
         is_forwarded: msg.is_forwarded ?? false,
         forwarded_from: msg.forwarded_from ?? null,
         is_system: msg.is_system ?? false,
+        is_edited: false,
       };
 
       setMessages((prev) => {
@@ -437,6 +458,7 @@ export default function ChannelChat({ channelId }: ChannelChatProps) {
         is_forwarded: msg.is_forwarded ?? false,
         forwarded_from: msg.forwarded_from ?? null,
         is_system: msg.is_system ?? false,
+        is_edited: false,
       };
       setMessages((prev) => {
         const tempIdx = prev.findIndex(
@@ -496,6 +518,7 @@ export default function ChannelChat({ channelId }: ChannelChatProps) {
                 ...m,
                 content: msg.content,
                 updated_at: msg.updated_at ?? m.updated_at,
+                is_edited: true,
               }
             : m
         )
@@ -589,6 +612,7 @@ export default function ChannelChat({ channelId }: ChannelChatProps) {
             pinned: msg.pinned === true,
             is_forwarded: msg.is_forwarded ?? false,
             forwarded_from: msg.forwarded_from ?? null,
+            is_edited: msg.is_edited ?? false,
             is_system: msg.is_system ?? false,
             thread_count: msg.thread_count ?? 0,
           };
@@ -839,6 +863,15 @@ export default function ChannelChat({ channelId }: ChannelChatProps) {
   const handleSendMessage = async (content: string, files?: any[]) => {
     if (!socket || !socket.connected) return;
     if (!isMember) return;
+
+    // Auto-join public channel on first message (creates channel_members row)
+    if (channel && !channel.is_private && !channel.is_dm) {
+      try {
+        await api.post(`/channels/${channelId}/join`);
+      } catch {
+        // Already a member or join failed — not fatal, continue sending
+      }
+    }
 
     let fileMetadata: any[] = [];
 

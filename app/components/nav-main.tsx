@@ -46,18 +46,19 @@ function DMAvatar({ sub }: { sub: SubItem }) {
     return (
       <img
         src={sub.avatar_url}
-        alt={sub.title}
+        alt={sub.title ?? ""}
         className="h-5 w-5 rounded-full object-cover shrink-0"
       />
     )
   }
+  const initials = (sub.title ?? "")
+    .split(" ")
+    .map((word) => word.charAt(0).toUpperCase())
+    .join("")
+    .slice(0, 2) || "?"
   return (
     <div className="h-5 w-5 rounded-sm bg-muted flex items-center justify-center text-black text-[10px] font-medium shrink-0">
-      {sub.title
-        .split(" ")
-        .map((word) => word.charAt(0).toUpperCase())
-        .join("")
-        .slice(0, 2)}
+      {initials}
     </div>
   )
 }

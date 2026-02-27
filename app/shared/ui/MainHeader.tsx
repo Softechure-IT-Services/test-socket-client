@@ -295,21 +295,21 @@ function MembersPanel({
               </div>
             )}
             {searching && (
-              <p className="text-xs text-muted-foreground px-0.5">
+              <p className="text-xs  px-0.5">
                 Searching…
               </p>
             )}
             {!searching &&
               debouncedSearch.trim() &&
               searchResults.length === 0 && (
-                <p className="text-xs text-muted-foreground px-0.5">
+                <p className="text-xs  px-0.5">
                   No users found
                 </p>
               )}
           </div>
         )}
 
-        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground -mb-1">
+        <p className="text-xs font-semibold uppercase tracking-wider  -mb-1">
           {loadingMembers
             ? "Loading…"
             : `${members.length} member${members.length !== 1 ? "s" : ""}`}
@@ -356,7 +356,7 @@ function MembersPanel({
                         </span>
                       )}
                     </div>
-                    <p className="text-[11px] text-muted-foreground truncate">
+                    <p className="text-[11px] truncate">
                       {member.email}
                     </p>
                   </div>
@@ -398,7 +398,8 @@ export default function MainHeader({
   const [channel, setChannel] = useState<Channel | null>(null);
   const [loading, setLoading] = useState(true);
   const [membersOpen, setMembersOpen] = useState(false);
-  const [isMember, setIsMember] = useState(true);
+  // null = loading (API hasn't responded yet), true/false = known
+  const [isMember, setIsMember] = useState<boolean | null>(null);
   const headerRef = useRef<HTMLDivElement | null>(null);
 
   const buttons = [
@@ -441,11 +442,11 @@ export default function MainHeader({
       try {
         const res = await api.get(`/channels/${id}`);
         setChannel(res.data.channel);
-        if (res.data.is_member !== undefined) {
-          setIsMember(res.data.is_member);
-        }
+        // Always set from API — backend now returns is_member for all channel types
+        setIsMember(res.data.is_member ?? true);
       } catch (err) {
         console.error(err);
+        setIsMember(true); // assume member on error to avoid blocking UI
       } finally {
         setLoading(false);
       }
@@ -519,9 +520,9 @@ export default function MainHeader({
                   ? (dmUser?.name ?? "Direct Message")
                   : `# ${channel?.name ?? "Unnamed Channel"}`}
             </h2>
-            {/* Show "removed" badge */}
-            {!isMember &&
-              isPrivate &&
+            {/* Show "removed" badge — only for private channels, only when confirmed non-member */}
+            {isMember === false &&
+              channel?.is_private === true &&
               type === "channel" &&
               !loading && (
                 <span className="self-center text-xs bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400 px-2 py-0.5 rounded-full font-medium">
@@ -567,17 +568,22 @@ export default function MainHeader({
             <IoSearchOutline size={18} />
           </IconButton>
 
-          {type === "channel" && isMember && (
+          {type === "channel" && isMember === true && (
             <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <IconButton>
-                  <MoreVertical size={18} />
-                </IconButton>
+              <DropdownMenuTrigger
+                title="Channel options"
+                className="rounded-sm p-2 border border-[var(--border-color)] hover:bg-[var(--accent)] text-[var(--sidebar-foreground)] transition-colors duration-150 cursor-pointer outline-none"
+              >
+                <MoreVertical size={18} />
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
                 <DropdownMenuItem
                   className="text-red-600 focus:text-red-600 cursor-pointer"
-                  onClick={handleLeaveChannel}
+                  onClick={() => {
+                    if (confirm(`Leave #${channel?.name ?? "this channel"}?`)) {
+                      handleLeaveChannel();
+                    }
+                  }}
                 >
                   Leave Channel
                 </DropdownMenuItem>
@@ -587,9 +593,9 @@ export default function MainHeader({
         </div>
       </div>
 
-      {/* Removed banner */}
-      {!isMember &&
-        isPrivate &&
+      {/* Removed banner — only for private channels, only when confirmed non-member */}
+      {isMember === false &&
+        channel?.is_private === true &&
         type === "channel" &&
         !loading && (
           <div className="bg-red-50 dark:bg-red-950/30 border-b border-red-200 dark:border-red-800 px-4 py-3 text-center">

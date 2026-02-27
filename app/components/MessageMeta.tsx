@@ -5,7 +5,7 @@
  *   • Avatar  — w-8 h-8, rounded-sm, coloured initial tile as fallback
  *   • Name    — text-sm font-semibold, gray-900 dark:gray-100
  *   • Time    — text-[11px], gray-400, opacity-0 by default, shows on group-hover
- *   • "(edited)" — italic, same size as time, inline after timestamp
+ *   • "(edited)" — small muted badge, inline after timestamp
  *
  * Save at: @/app/components/MessageMeta.tsx
  */
@@ -99,6 +99,21 @@ export function SenderName({
   );
 }
 
+// ─── EditedBadge ──────────────────────────────────────────────────────────────
+/**
+ * Reusable "(edited)" label — used inside MessageTimestamp and standalone
+ * in MessageRow for compact (no-header) messages.
+ */
+export function EditedBadge({ className = "" }: { className?: string }) {
+  return (
+    <span
+      className={`text-[10px] italic text-gray-400 dark:text-gray-500 whitespace-nowrap ${className}`}
+    >
+      (edited)
+    </span>
+  );
+}
+
 // ─── MessageTimestamp ─────────────────────────────────────────────────────────
 /**
  * Renders a formatted time string (e.g. "3:42 PM").
@@ -137,7 +152,7 @@ export function MessageTimestamp({
       } ${className}`}
     >
       {formatted}
-      {edited && <span className="italic ml-1">(edited)</span>}
+      {edited && <EditedBadge className="ml-1" />}
     </span>
   );
 }

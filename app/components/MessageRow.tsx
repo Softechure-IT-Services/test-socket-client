@@ -8,7 +8,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/app/components/ui/too
 import { TbPinFilled } from "react-icons/tb";
 
 import ChatHover, { type Reaction as ChatHoverReaction } from "@/app/components/chat-hover";
-import { UserAvatar, MessageTimestamp, ReplyCountPill } from "@/app/components/MessageMeta";
+import { UserAvatar, MessageTimestamp, ReplyCountPill, EditedBadge } from "@/app/components/MessageMeta";
 
 import { FileAttachmentList, type AttachmentFile } from "@/app/components/FileAttachment";
 
@@ -51,6 +51,7 @@ export type MessageRowData = {
   is_forwarded?: boolean;
   forwarded_from?: MsgForwardedFrom | null;
   thread_count?: number;
+  is_edited?: boolean;
 };
 
 export type MessageRowProps = {
@@ -277,7 +278,7 @@ export const MessageRow = memo(function MessageRow({
   onMouseLeave,
 }: MessageRowProps) {
   const msgId = String(msg.id);
-  const isEdited = !!msg.updated_at && msg.updated_at !== msg.created_at;
+  const isEdited = !!msg.is_edited;
   const showChatHover = isMember && (isLocked ? isLocked : isHovered);
 
   const contentNode = msg.is_forwarded ? (
@@ -304,7 +305,7 @@ export const MessageRow = memo(function MessageRow({
         onToggle={(emoji) => onToggleReaction?.(msg.id, emoji)}
       />
 
-      {!showHeader && isEdited && <span className="inline text-[10px] italic opacity-60 whitespace-nowrap">(edited)</span>}
+      {!showHeader && isEdited && <EditedBadge />}
     </>
   );
 

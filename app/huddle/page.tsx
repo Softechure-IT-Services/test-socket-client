@@ -2349,9 +2349,8 @@ const autoJoinRoomIdRef = React.useRef<string | null>(meetingId);
             // Add silent audio track
             audioContext = new AudioContext();
             const oscillator = audioContext.createOscillator();
-            const dst = oscillator.connect(
-              audioContext.createMediaStreamDestination()
-            );
+            const dst = audioContext.createMediaStreamDestination();
+            oscillator.connect(dst);
             oscillator.start();
             silentAudioTrack = dst.stream.getAudioTracks()[0];
             silentAudioTrack.enabled = false;

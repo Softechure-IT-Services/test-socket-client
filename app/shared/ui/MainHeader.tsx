@@ -663,7 +663,7 @@ import {
   X,
   Crown,
 } from "lucide-react";
-import { v4 as uuidv4 } from "uuid";
+const uuidv4 = () => crypto.randomUUID();
 import { useDebounce } from "@/hooks/useDebounce";
 import { UserAvatar } from "@/app/components/MessageMeta";
 

@@ -58,7 +58,6 @@
     "tailwindcss": "^4.2.1"
   },
   "devDependencies": {
-    "@prisma/client": "^6.19.2",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^20",
     "@types/react": "^19",

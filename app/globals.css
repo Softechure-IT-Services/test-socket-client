@@ -398,14 +398,14 @@ ol {
   outline-offset: 2px;
 }
 .message code,.tiptap code{
+  width: fit-content !important;
   background-color: rgb(222, 222, 222) !important;
   border: 1px solid darkgray !important;
   border-radius: 2px !important;
   font-size: small !important;
   font-family: monospace !important;
   padding: 2px 4px !important;
-  display: block !important;
-  width: 100% !important;
+  display: inline-block !important;
 }
 body{
   overflow: hidden !important;
@@ -475,4 +475,8 @@ button[data-slot="sidebar-menu-button"]:hover{
 }
 .top_most_message{
   grid-template-rows: auto 1fr;
+}
+
+.dm_container .mainheader{
+  top:0 !important;
 }

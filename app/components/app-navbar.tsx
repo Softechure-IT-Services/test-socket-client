@@ -55,6 +55,21 @@ interface SearchData {
   messages: MessageResult[];
 }
 
+// ─── Add this helper alongside the existing helpers ───────────────────────────
+function stripHtml(html: string): string {
+  if (!html) return "";
+  return html
+    .replace(/<[^>]*>/g, " ")   // replace tags with a space
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/\s+/g, " ")       // collapse multiple spaces
+    .trim();
+}
+
 // ─── Debounce ─────────────────────────────────────────────────────────────────
 function useDebounce<T>(value: T, delay: number): T {
   const [d, setD] = useState(value);
@@ -450,7 +465,7 @@ export default function AppNavbar() {
                                   </div>
                                   {/* Snippet */}
                                   <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed">
-                                    {highlight(m.content, searchTerm)}
+                                      {highlight(stripHtml(m.content), searchTerm)}
                                   </p>
                                 </div>
                               </ResultRow>

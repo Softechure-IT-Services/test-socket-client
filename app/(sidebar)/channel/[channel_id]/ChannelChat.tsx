@@ -129,6 +129,9 @@ export default function ChannelChat({ channelId }: ChannelChatProps) {
   // Inside the ChannelChat component, alongside your other hooks
   // ─── Member status tracking ──────────────────────────────────────────────────
   const [isMember, setIsMember] = useState(true);
+  const isPublicChannel =
+    !!(channel && !channel.is_private && !channel.is_dm);
+const canSendMessages = isMember;
 
 
   const formatDate = (date: string) =>
@@ -184,7 +187,7 @@ export default function ChannelChat({ channelId }: ChannelChatProps) {
   };
 
   const handleDragEnter = (e: React.DragEvent<HTMLDivElement>) => {
-    if (!isFileDrag(e) || !isMember) return;
+    if (!isFileDrag(e) || !canSendMessages) return;
     e.preventDefault();
     dragCounter.current += 1;
     setDragging(true);
@@ -200,12 +203,12 @@ export default function ChannelChat({ channelId }: ChannelChatProps) {
   };
 
   const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
-    if (!isFileDrag(e) || !isMember) return;
+    if (!isFileDrag(e) || !canSendMessages) return;
     e.preventDefault();
   };
 
   const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
-    if (!isFileDrag(e) || !isMember) return;
+    if (!isFileDrag(e) || !canSendMessages) return;
     e.preventDefault();
     dragCounter.current = 0;
     setDragging(false);
@@ -862,14 +865,15 @@ export default function ChannelChat({ channelId }: ChannelChatProps) {
 
   const handleSendMessage = async (content: string, files?: any[]) => {
     if (!socket || !socket.connected) return;
-    if (!isMember) return;
+    if (!canSendMessages) return;
 
-    // Auto-join public channel on first message (creates channel_members row)
-    if (channel && !channel.is_private && !channel.is_dm) {
+    // Auto-join public channel on first send (creates channel_members row)
+    if (!isMember && isPublicChannel) {
       try {
         await api.post(`/channels/${channelId}/join`);
-      } catch {
-        // Already a member or join failed — not fatal, continue sending
+        setIsMember(true);
+      } catch (err) {
+        console.error("Failed to auto-join public channel:", err);
       }
     }
 
@@ -1217,7 +1221,7 @@ export default function ChannelChat({ channelId }: ChannelChatProps) {
         onDrop={handleDrop}
         ref={containerRef}
       >
-      {dragging && isMember && (
+      {dragging && canSendMessages && (
         <div className="absolute top-0 left-0 w-full h-[100%]  bg-opacity-50 flex items-center justify-center z-500 transition-opacity duration-300 order-1">
           <FileBg />
         </div>
@@ -1335,7 +1339,7 @@ export default function ChannelChat({ channelId }: ChannelChatProps) {
           className="pb-2 px-[25px] pt-0 relative sticky bottom-0 right-0 bg-[var(--chat_bg)] dark:bg-zinc-900"
           ref={messageBoxRef}
         >
-          {isMember ? (
+          {canSendMessages ? (
             <>
               <div className="relative">
                 <FileUploadToggle />
@@ -1373,7 +1377,7 @@ export default function ChannelChat({ channelId }: ChannelChatProps) {
                     y2="19.07"
                   />
                 </svg>
-                <span>
+                <span className="text-black">
                   You have been removed from this channel and
                   cannot send messages.
                 </span>

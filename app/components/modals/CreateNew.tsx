@@ -1,3 +1,4 @@
+
 "use client";
 import api from "@/lib/axios";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/app/components/ui/dialog";
@@ -8,9 +9,7 @@ import { Label } from "@/app/components/ui/label";
 import { useEffect, useState } from "react";
 import { useAuth } from "@/app/components/context/userId_and_connection/provider";
 import { useDebounce } from "@/hooks/useDebounce";
-import { Router } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { channel } from "process";
 
 type User = {
   id: string;
@@ -30,404 +29,371 @@ export default function CreateModal({ open, onClose, type, forwardMessageId }: P
   const [search, setSearch] = useState("");
   const [users, setUsers] = useState<User[]>([]);
   const [selectedUsers, setSelectedUsers] = useState<User[]>([]);
-const {  user } = useAuth();
-const router = useRouter();
-const [nameStatus, setNameStatus] = useState<"idle" | "checking" | "available" | "taken">("idle");
-const [channels, setChannels] = useState<any[]>([]);
-const [selectedForward, setSelectedForward] = useState<any[]>([]);
-const [forwarding, setForwarding] = useState(false);
-const debouncedSearch = useDebounce(search, 300);
-const debouncedChannelName = useDebounce(channelName, 400);
+  const { user } = useAuth();
+  const router = useRouter();
+  const [nameStatus, setNameStatus] = useState<"idle" | "checking" | "available" | "taken">("idle");
+  const [channels, setChannels] = useState<any[]>([]);
+  const [selectedForward, setSelectedForward] = useState<any[]>([]);
+  const [forwarding, setForwarding] = useState(false);
+  const debouncedSearch = useDebounce(search, 300);
+  const debouncedChannelName = useDebounce(channelName, 400);
 
-
-useEffect(() => {
-  if (!isPrivate) {
-    setSelectedUsers([]);
-    setSearch("");
-  }
-}, [isPrivate]);
-
-
-
-useEffect(() => {
-  if (type !== "forward") return;
-
-  if (!debouncedSearch.trim()) {
-    setChannels([]);
-    return;
-  }
-
-  const controller = new AbortController();
-
-  const fetchSearch = async () => {
-    try {
-      const res = await api.get("/channels/search-user-and-channel", {
-        params: { q: debouncedSearch },
-        signal: controller.signal
-      });
-
-      setChannels(res.data ?? []);
-    } catch (err: any) {
-      if (err.name !== "AbortError") {
-        console.error("Forward search failed", err);
-      }
+  // Reset user search list when private toggle turned off
+  useEffect(() => {
+    if (!isPrivate) {
+      setSelectedUsers([]);
+      setSearch("");
+      setUsers([]);
     }
-  };
+  }, [isPrivate]);
 
-  fetchSearch();
+  // ── Forward search (default list on open, filtered on type) ────────────────
+  useEffect(() => {
+     if (!open) return;  
+    if (type !== "forward") return;
 
-  return () => controller.abort();
-}, [debouncedSearch, type]);
+    const controller = new AbortController();
 
-useEffect(() => {
-  if (!debouncedSearch) {
-    setUsers([]);
-    return;
-  }
-
-  if (!(type === "dm" || isPrivate)) return;
-
-  const controller = new AbortController();
-
-  const fetchUsers = async () => {
-    try {
-        const res = await api.get(`/users/search`, {
-          params: { q: debouncedSearch, exclude: user?.id },
+    const fetchSearch = async () => {
+      try {
+        const res = await api.get("/channels/search-user-and-channel", {
+          params: debouncedSearch.trim() ? { q: debouncedSearch } : {},
           signal: controller.signal,
         });
+        setChannels(res.data ?? []);
+      } catch (err: any) {
+        if (err.name !== "AbortError") console.error("Forward search failed", err);
+      }
+    };
 
+    fetchSearch();
+    return () => controller.abort();
+  }, [open,debouncedSearch, type]);
+
+  // ── DM / private channel user search (default list on open) ───────────────
+  useEffect(() => {
+     if (!open) return;  
+    if (!(type === "dm" || (type === "channel" && isPrivate))) return;
+
+    const controller = new AbortController();
+
+    const fetchUsers = async () => {
+      try {
+        const res = await api.get(`/users/search`, {
+          params: {
+            ...(debouncedSearch.trim() ? { q: debouncedSearch } : {}),
+            exclude: user?.id,
+          },
+          signal: controller.signal,
+        });
         setUsers(res.data);
-    } catch (err: any) {
-      if (err.name !== "AbortError") {
-        console.error("User search error", err);
+      } catch (err: any) {
+        if (err.name !== "AbortError") console.error("User search error", err);
       }
-    }
-  };
+    };
 
-  fetchUsers();
+    fetchUsers();
+    return () => controller.abort();
+  }, [open,debouncedSearch, type, isPrivate, user?.id]);
 
-  return () => controller.abort();
-}, [debouncedSearch, type, isPrivate, user?.id]);
+  // ── Channel name availability check ───────────────────────────────────────
+  useEffect(() => {
+    if (type !== "channel") return;
 
-useEffect(() => {
-  if (type !== "channel") return;
-
-  if (!debouncedChannelName.trim()) {
-    setNameStatus("idle");
-    return;
-  }
-
-  const controller = new AbortController();
-
-  const checkName = async () => {
-    try {
-      setNameStatus("checking");
-
-      const res = await api.post(
-        "/channels",
-        {
-          name: debouncedChannelName.trim(),
-          create: false, // 🔥 ONLY CHECK
-        },
-        { signal: controller.signal }
-      );
-
-      if (res.data.data.available) {
-        setNameStatus("available");
-      } else {
-        setNameStatus("taken");
-      }
-    } catch (err: any) {
-      if (err.name !== "AbortError") {
-        console.error("Name check failed", err);
-        setNameStatus("idle");
-      }
-    }
-  };
-
-  checkName();
-
-  return () => controller.abort();
-}, [debouncedChannelName, type]);
-
-
-
-  const filteredUsers = users;
-
-
-  const toggleUser = (user: User) => {
-    if (type === "dm") {
-      setSelectedUsers([user]);
+    if (!debouncedChannelName.trim()) {
+      setNameStatus("idle");
       return;
     }
 
+    const controller = new AbortController();
+
+    const checkName = async () => {
+      try {
+        setNameStatus("checking");
+        const res = await api.post(
+          "/channels",
+          { name: debouncedChannelName.trim(), create: false },
+          { signal: controller.signal }
+        );
+        setNameStatus(res.data.data.available ? "available" : "taken");
+      } catch (err: any) {
+        if (err.name !== "AbortError") {
+          console.error("Name check failed", err);
+          setNameStatus("idle");
+        }
+      }
+    };
+
+    checkName();
+    return () => controller.abort();
+  }, [debouncedChannelName, type]);
+
+  const toggleUser = (u: User) => {
+    if (type === "dm") {
+      setSelectedUsers([u]);
+      return;
+    }
     setSelectedUsers((prev) =>
-      prev.some((u) => u.id === user.id)
-        ? prev.filter((u) => u.id !== user.id)
-        : [...prev, user]
+      prev.some((x) => x.id === u.id)
+        ? prev.filter((x) => x.id !== u.id)
+        : [...prev, u]
     );
   };
 
-const handleSubmit = async () => {
-  try {
-    if (type === "channel") {
-    if (!channelName.trim()) return;
-    if (nameStatus !== "available") return; // 👈 block
+  const handleSubmit = async () => {
+    try {
+      if (type === "channel") {
+        if (!channelName.trim() || nameStatus !== "available") return;
 
-    const res = await api.post("/channels", {
-      name: channelName,
-      isPrivate,
-      memberIds: isPrivate ? selectedUsers.map(u => Number(u.id)) : [],
-      create: true, // 👈 REAL CREATE
-    });
+        const res = await api.post("/channels", {
+          name: channelName,
+          isPrivate,
+          memberIds: isPrivate ? selectedUsers.map((u) => Number(u.id)) : [],
+          create: true,
+        });
 
-    const channelId = res.data.data.id;
+        router.push(`/channel/${res.data.data.id}`);
+        resetAndClose();
+        return;
+      }
 
-    router.push(`/channel/${channelId}`);
-    resetAndClose();
-    return;
-  }
+      if (type === "dm") {
+        if (selectedUsers.length !== 1) return;
 
+        const res = await api.post(`/dm/with/${selectedUsers[0].id}`);
+        if (!res.data.dm_id) throw new Error("Failed to create DM");
 
-    // ✅ DM CREATE FLOW
-    if (type === "dm") {
-      if (selectedUsers.length !== 1) return;
-
-      const otherUserId = selectedUsers[0].id;
-
-        const res = await api.post(`/dm/with/${otherUserId}`);
-
-        const data = res.data;
-
-        if (!data.dm_id) throw new Error("Failed to create DM");
-
-      // ✅ Redirect to REAL DM channel
-      router.push(`/channel/${data.dm_id}`);
-
-      resetAndClose();
+        router.push(`/channel/${res.data.dm_id}`);
+        resetAndClose();
+      }
+    } catch (err) {
+      console.error("Create failed", err);
     }
-  } catch (err) {
-    console.error("Create failed", err);
-  }
-}; 
+  };
 
-
-
-  // const resetAndClose = () => {
-  //   setChannelName("");
-  //   setSearch("");
-  //   setIsPrivate(false);
-  //   setSelectedUsers([]);
-  //   onClose();
-  // };
-
-const resetAndClose = () => {
-  setChannelName("");
-  setSearch("");
-  setIsPrivate(false);
-  setSelectedUsers([]);
-  setSelectedForward([]);
-  setForwarding(false);
-  setNameStatus("idle");
-  onClose();
-};
-
+  const resetAndClose = () => {
+    setChannelName("");
+    setSearch("");
+    setIsPrivate(false);
+    setSelectedUsers([]);
+    setUsers([]);
+    setChannels([]);
+    setSelectedForward([]);
+    setForwarding(false);
+    setNameStatus("idle");
+    onClose();
+  };
 
   return (
     <Dialog open={open} onOpenChange={resetAndClose}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>
-  {type === "channel" && "Create New Channel"}
-  {type === "dm" && "New Direct Message"}
-  {type === "forward" && "Forward Message"}
-</DialogTitle>
+            {type === "channel" && "Create New Channel"}
+            {type === "dm" && "New Direct Message"}
+            {type === "forward" && "Forward Message"}
+          </DialogTitle>
         </DialogHeader>
 
-        {/* CHANNEL NAME */}
+        {/* ── Channel name ───────────────────────────────────────────────── */}
         {type === "channel" && (
-        <div className="space-y-1">
-          <Input
-            placeholder="Channel name"
-            value={channelName}
-            onChange={(e) => setChannelName(e.target.value)}
-          />
-
-          {nameStatus === "checking" && (
-            <p className="text-xs text-muted-foreground">Checking availability...</p>
-          )}
-
-          {nameStatus === "available" && (
-            <p className="text-xs text-green-600">Channel name is available</p>
-          )}
-
-          {nameStatus === "taken" && (
-            <p className="text-xs text-red-600">Channel name already exists</p>
-          )}
-        </div>
+          <div className="space-y-1">
+            <Input
+              placeholder="Channel name"
+              value={channelName}
+              onChange={(e) => setChannelName(e.target.value)}
+            />
+            {nameStatus === "checking" && (
+              <p className="text-xs text-muted-foreground">Checking availability...</p>
+            )}
+            {nameStatus === "available" && (
+              <p className="text-xs text-green-600">Channel name is available</p>
+            )}
+            {nameStatus === "taken" && (
+              <p className="text-xs text-red-600">Channel name already exists</p>
+            )}
+          </div>
         )}
 
-
-
-        {/* PRIVATE TOGGLE */}
+        {/* ── Private toggle ─────────────────────────────────────────────── */}
         {type === "channel" && (
           <div className="flex items-center justify-between">
             <Label htmlFor="private">Private channel</Label>
-            <Switch
-              id="private"
-              checked={isPrivate}
-              onCheckedChange={setIsPrivate}
-            />
+            <Switch id="private" checked={isPrivate} onCheckedChange={setIsPrivate} />
           </div>
         )}
 
-        {/* USER SEARCH */}
-      {(type === "dm" || (type === "channel" && isPrivate)) && (
-  <>
-    <Input
-      placeholder="Search users..."
-      value={search}
-      onChange={(e) => setSearch(e.target.value)}
-    />
+        {/* ── DM / private channel user picker ──────────────────────────── */}
+        {(type === "dm" || (type === "channel" && isPrivate)) && (
+          <>
+            <Input
+              placeholder="Search users..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
 
-    <div className="max-h-48 overflow-y-auto rounded-md border p-2 space-y-1">
-      {filteredUsers.map((user) => {
-        const active = selectedUsers.some((u) => u.id === user.id);
-
-        return (
-          <div
-            key={user.id}
-            onClick={() => toggleUser(user)}
-            className={`cursor-pointer rounded px-3 py-2 text-sm
-              ${active ? "bg-primary text-primary-foreground" : "hover:bg-muted"}
-            `}
-          >
-            {user.name}
-          </div>
-        );
-      })}
-    </div>
-  </>
-)}
-
-{type === "forward" && (
-  <>
-    <Input
-      placeholder="Search channels or people..."
-      value={search}
-      onChange={(e) => setSearch(e.target.value)}
-    />
-
-    <div className="max-h-60 overflow-y-auto rounded-md border p-2 space-y-1">
-      {channels.length === 0 && search.trim() && (
-        <p className="text-xs text-muted-foreground text-center py-4">No results found</p>
-      )}
-      {channels.length === 0 && !search.trim() && (
-        <p className="text-xs text-muted-foreground text-center py-4">Start typing to search</p>
-      )}
-      {channels.map((item) => {
-        const isSelected = selectedForward.some((s) => s.id === item.id);
-        return (
-          <div
-            key={item.id}
-            onClick={() => {
-              setSelectedForward((prev) =>
-                isSelected
-                  ? prev.filter((s) => s.id !== item.id)
-                  : [...prev, item]
-              );
-            }}
-            className={`cursor-pointer rounded px-3 py-2 text-sm flex items-center justify-between transition-colors ${
-              isSelected
-                ? "bg-primary text-primary-foreground"
-                : "hover:bg-muted"
-            }`}
-          >
-            <span>
-              {item.kind === "channel" ? "# " : "👤 "}
-              {item.name}
-            </span>
-            {isSelected && (
-              <span className="text-xs font-semibold opacity-80">✓</span>
+            {/* Selected badges */}
+            {selectedUsers.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {selectedUsers.map((u) => (
+                  <span
+                    key={u.id}
+                    className="inline-flex items-center gap-1 text-xs bg-muted rounded-full px-2.5 py-1"
+                  >
+                    👤 {u.name}
+                    <button
+                      onClick={() =>
+                        setSelectedUsers((prev) => prev.filter((x) => x.id !== u.id))
+                      }
+                      className="ml-0.5 opacity-60 hover:opacity-100 cursor-pointer"
+                    >
+                      ×
+                    </button>
+                  </span>
+                ))}
+              </div>
             )}
-          </div>
-        );
-      })}
-    </div>
 
-    {/* Selected chips */}
-    {selectedForward.length > 0 && (
-      <div className="flex flex-wrap gap-1.5">
-        {selectedForward.map((item) => (
-          <span
-            key={item.id}
-            className="inline-flex items-center gap-1 text-xs bg-muted rounded-full px-2.5 py-1"
-          >
-            {item.kind === "channel" ? "#" : "👤"} {item.name}
-            <button
-              onClick={() =>
-                setSelectedForward((prev) => prev.filter((s) => s.id !== item.id))
-              }
-              className="ml-0.5 opacity-60 hover:opacity-100 cursor-pointer"
+            <div className="max-h-48 overflow-y-auto rounded-md border p-2 space-y-1">
+              {users.length === 0 && (
+                <p className="text-xs text-black text-center py-4">
+                  {search.trim() ? "No users found" : "Loading users..."}
+                </p>
+              )}
+              {users.map((u) => {
+                const active = selectedUsers.some((x) => x.id === u.id);
+                return (
+                  <div
+                    key={u.id}
+                    onClick={() => toggleUser(u)}
+                    className={`cursor-pointer rounded px-3 py-2 text-sm transition-colors ${
+                      active ? "bg-primary text-primary-foreground" : "hover:bg-muted"
+                    }`}
+                  >
+                    {u.name}
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        )}
+
+        {/* ── Forward picker ─────────────────────────────────────────────── */}
+        {type === "forward" && (
+          <>
+            <Input
+              placeholder="Search channels or people..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+
+            <div className="max-h-60 overflow-y-auto rounded-md border p-2 space-y-1">
+              {channels.length === 0 ? (
+                <p className="text-xs text-black text-center py-4">
+                  {search.trim() ? "No results found" : "Loading..."}
+                </p>
+              ) : (
+                channels.map((item) => {
+                  const isSelected = selectedForward.some((s) => s.id === item.id);
+                  return (
+                    <div
+                      key={item.id}
+                      onClick={() =>
+                        setSelectedForward((prev) =>
+                          isSelected
+                            ? prev.filter((s) => s.id !== item.id)
+                            : [...prev, item]
+                        )
+                      }
+                      className={`cursor-pointer rounded px-3 py-2 text-sm flex items-center justify-between transition-colors ${
+                        isSelected ? "bg-primary text-primary-foreground" : "hover:bg-muted"
+                      }`}
+                    >
+                      <span>
+                        {item.kind === "channel" ? "# " : "👤 "}
+                        {item.name}
+                      </span>
+                      {isSelected && <span className="text-xs font-semibold opacity-80">✓</span>}
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            {/* Selected chips */}
+            {selectedForward.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {selectedForward.map((item) => (
+                  <span
+                    key={item.id}
+                    className="inline-flex items-center gap-1 text-xs bg-muted rounded-full px-2.5 py-1"
+                  >
+                    {item.kind === "channel" ? "#" : "👤"} {item.name}
+                    <button
+                      onClick={() =>
+                        setSelectedForward((prev) => prev.filter((s) => s.id !== item.id))
+                      }
+                      className="ml-0.5 opacity-60 hover:opacity-100 cursor-pointer"
+                    >
+                      ×
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+
+            <Button
+              onClick={async () => {
+                if (!forwardMessageId || selectedForward.length === 0) return;
+                setForwarding(true);
+                try {
+                  await Promise.all(
+                    selectedForward.map(async (item) => {
+                      let targetId = item.id;
+                      if (item.kind === "user") {
+                        const dmRes = await api.post(`/dm/with/${item.userId}`);
+                        targetId = dmRes.data.dm_id;
+                      }
+                      return api.post(
+                        `/channels/messages/${forwardMessageId}/forward/${targetId}`
+                      );
+                    })
+                  );
+                  const last = selectedForward[selectedForward.length - 1];
+                  resetAndClose();
+                  if (last.kind !== "user") router.push(`/channel/${last.id}`);
+                } catch (err) {
+                  console.error("Forward failed", err);
+                } finally {
+                  setForwarding(false);
+                }
+              }}
+              disabled={selectedForward.length === 0 || forwarding}
+              className="w-full cursor-pointer"
             >
-              ×
-            </button>
-          </span>
-        ))}
-      </div>
-    )}
+              {forwarding
+                ? "Forwarding..."
+                : selectedForward.length > 1
+                ? `Forward to ${selectedForward.length}`
+                : "Forward"}
+            </Button>
+          </>
+        )}
 
-    <Button
-      onClick={async () => {
-        if (!forwardMessageId || selectedForward.length === 0) return;
-        setForwarding(true);
-        try {
-          await Promise.all(
-            selectedForward.map((item) =>
-              api.post(`/channels/messages/${forwardMessageId}/forward/${item.id}`)
-            )
-          );
-          // Navigate to the last selected channel
-          const last = selectedForward[selectedForward.length - 1];
-          resetAndClose();
-          router.push(`/channel/${last.id}`);
-        } catch (err) {
-          console.error("Forward failed", err);
-        } finally {
-          setForwarding(false);
-        }
-      }}
-      disabled={selectedForward.length === 0 || forwarding}
-      className="w-full cursor-pointer"
-    >
-      {forwarding
-        ? "Forwarding..."
-        : selectedForward.length > 1
-        ? `Forward to ${selectedForward.length} channels`
-        : "Forward"}
-    </Button>
-  </>
-)}
-
-        {/* ACTION */}
-        {/* <Button onClick={handleSubmit}>
-          {type === "channel" ? "Create Channel" : "Start Chat"}
-        </Button> */}
-{type !== "forward" && (
-  <Button
-    onClick={handleSubmit}
-    disabled={
-      (type === "channel" &&
-        (nameStatus !== "available" || !channelName.trim())) ||
-      (type === "dm" && selectedUsers.length !== 1)
-    }
-    className="cursor-pointer"
-  >
-    {type === "channel" ? "Create Channel" : "Start Chat"}
-  </Button>
-)}
-
-
+        {/* ── Submit (channel / dm) ──────────────────────────────────────── */}
+        {type !== "forward" && (
+          <Button
+            onClick={handleSubmit}
+            disabled={
+              (type === "channel" &&
+                (nameStatus !== "available" || !channelName.trim())) ||
+              (type === "dm" && selectedUsers.length !== 1)
+            }
+            className="cursor-pointer"
+          >
+            {type === "channel" ? "Create Channel" : "Start Chat"}
+          </Button>
+        )}
       </DialogContent>
     </Dialog>
   );

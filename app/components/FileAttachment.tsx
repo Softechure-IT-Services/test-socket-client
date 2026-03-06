@@ -5,6 +5,7 @@ import {
   Download, Share2, Eye, Film, Music,
   FileText, FileArchive, FileCode, FileSpreadsheet, File as FileIcon2,
 } from "lucide-react";
+import { createPortal } from "react-dom";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -27,6 +28,7 @@ type FileAttachmentProps = {
   onShare?: (file: AttachmentFile) => void;
   /** Disable hover actions (e.g. for read-only parent message previews) */
   readOnly?: boolean;
+  customClass?: string;
 };
 
 type FileAttachmentListProps = {
@@ -131,8 +133,31 @@ function ActionBtn({
 
 // ─── Lightbox ─────────────────────────────────────────────────────────────────
 
+// function Lightbox({ url, name, onClose }: { url: string; name: string; onClose: () => void }) {
+//   return (
+//     <div
+//       className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 backdrop-blur-sm"
+//       onClick={onClose}
+//     >
+//       <div
+//         className="relative max-w-[90vw] max-h-[90vh] flex flex-col items-center"
+//         onClick={(e) => e.stopPropagation()}
+//       >
+//         {/* eslint-disable-next-line @next/next/no-img-element */}
+//         <img src={url} alt={name} className="max-w-full max-h-[80vh] rounded-lg object-contain shadow-2xl" />
+//         <p className="mt-3 text-sm text-white/70 truncate max-w-[60vw]">{name}</p>
+//         <button
+//           onClick={onClose}
+//           className="absolute -top-3 -right-3 w-7 h-7 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center text-lg leading-none transition-colors"
+//           aria-label="Close preview"
+//         >×</button>
+//       </div>
+//     </div>
+//   );
+// }
+
 function Lightbox({ url, name, onClose }: { url: string; name: string; onClose: () => void }) {
-  return (
+  return createPortal(
     <div
       className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 backdrop-blur-sm"
       onClick={onClose}
@@ -150,22 +175,24 @@ function Lightbox({ url, name, onClose }: { url: string; name: string; onClose: 
           aria-label="Close preview"
         >×</button>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 // INLINE CHAT VARIANTS (compact, shown inside message bubbles)
 // ─────────────────────────────────────────────────────────────────────────────
 
-function InlineImageAttachment({ file, onDownload, onShare, readOnly }: FileAttachmentProps) {
+function InlineImageAttachment({ file, onDownload, onShare, readOnly, customClass }: FileAttachmentProps) {
   const [hovered, setHovered] = useState(false);
   const [lightboxOpen, setLightboxOpen] = useState(false);
 
   return (
     <>
       <div
-        className="relative inline-block rounded-lg overflow-hidden group max-w-[280px] max-h-[200px] cursor-pointer"
+        className={`relative inline-block rounded-lg overflow-hidden group max-w-[280px] max-h-[280px] cursor-pointer ${customClass}`}
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
       >
@@ -173,7 +200,7 @@ function InlineImageAttachment({ file, onDownload, onShare, readOnly }: FileAtta
         <img
           src={file.url}
           alt={file.name}
-          className="block max-w-[280px] max-h-[200px] w-auto h-auto object-cover rounded-lg"
+          className="block max-w-[280px] max-h-[280px] w-full h-full object-cover rounded-lg"
           draggable={false}
         />
         {!readOnly && hovered && (
@@ -403,30 +430,37 @@ export function FileAttachmentList({
   const images = files.filter((f) => isImage(f.type));
   const others  = files.filter((f) => !isImage(f.type));
 
-  return (
-    <div className="mt-1.5 flex flex-col gap-1.5">
-      {images.length > 0 && (
-        <div className={images.length === 1 ? "flex" : "grid grid-cols-2 gap-1.5"}>
-          {images.map((file, i) => (
-            <InlineImageAttachment
-              key={file.id ?? i}
-              file={file}
-              onDownload={onDownload}
-              onShare={onShare}
-              readOnly={readOnly}
-            />
-          ))}
-        </div>
-      )}
-      {others.map((file, i) => (
-        <InlineGenericAttachment
-          key={file.id ?? i}
-          file={file}
-          onDownload={onDownload}
-          onShare={onShare}
-          readOnly={readOnly}
-        />
-      ))}
-    </div>
-  );
+const imageWrapperClass =
+  images.length === 1
+    ? "flex"
+    : images.length > 2 ? "flex gap-1.5 flex-wrap": "flex gap-1.5"; // 2 images: side by side, 3+ images: 2 per row
+
+return (
+  <div className="mt-1.5 flex flex-col gap-1.5">
+    {images.length > 0 && (
+      <div className={imageWrapperClass}>
+        {images.map((file, i) => (
+          <InlineImageAttachment
+            key={file.id ?? i}
+            file={file}
+            onDownload={onDownload}
+            onShare={onShare}
+            readOnly={readOnly}
+            customClass={images.length > 2 ? "w-[calc(33.333%-0.375rem)]" : ""}
+          />
+        ))}
+      </div>
+    )}
+
+    {others.map((file, i) => (
+      <InlineGenericAttachment
+        key={file.id ?? i}
+        file={file}
+        onDownload={onDownload}
+        onShare={onShare}
+        readOnly={readOnly}
+      />
+    ))}
+  </div>
+);
 }

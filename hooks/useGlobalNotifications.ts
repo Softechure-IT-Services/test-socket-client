@@ -19,15 +19,32 @@ export function useGlobalNotifications({
     if (!socket || !userId) return;
 
 // useGlobalNotifications.ts
+// const handleReceive = (msg: any) => {
+//   if (String(msg.sender_id) === String(userId)) return;
+//   if (String(msg.channel_id) === String(activeChannelId)) return; // already handled by ChannelChat
+
+//   showNotification({
+//     title: msg.sender_name ?? "New message",
+//     body: msg.content?.replace(/<[^>]+>/g, "").slice(0, 100) ?? "",
+//     channelId: msg.channel_id,
+//     force: true, // ← tab may be visible but user is on a different channel
+//   });
+// };
+
 const handleReceive = (msg: any) => {
   if (String(msg.sender_id) === String(userId)) return;
-  if (String(msg.channel_id) === String(activeChannelId)) return; // already handled by ChannelChat
+  if (String(msg.channel_id) === String(activeChannelId)) return;
 
   showNotification({
     title: msg.sender_name ?? "New message",
-    body: msg.content?.replace(/<[^>]+>/g, "").slice(0, 100) ?? "",
+    body: (msg.content ?? "")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/&nbsp;/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 100),
     channelId: msg.channel_id,
-    force: true, // ← tab may be visible but user is on a different channel
+    force: true,
   });
 };
 

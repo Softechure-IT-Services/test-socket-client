@@ -17,14 +17,17 @@ export default function ChannelLayout({
   children: React.ReactNode;
 }) {
   const params = useParams();
-  const channelId = params.channel_id as string;
+  const channelId = params.dm_id as string;
 
   const [channel, setChannel] = useState<Channel | null>(null);
   const [isDm, setIsDm] = useState(false);
   const [dmUser, setDmUser] = useState<any>(null);
+  const [layoutReady, setLayoutReady] = useState(false);
 
   useEffect(() => {
     if (!channelId) return;
+
+    setLayoutReady(false); // reset when channel changes
 
     api.get(`/channels/${channelId}`).then((res) => {
       const data = res.data;
@@ -35,18 +38,23 @@ export default function ChannelLayout({
         setDmUser(data.dm_user);
       } else {
         setIsDm(false);
+        setDmUser(null);
       }
+    }).finally(() => {
+      setLayoutReady(true);
     });
   }, [channelId]);
 
   return (
-    <div className="flex flex-col h-full">
-      <MainHeader
-        id={channelId}
-        type={isDm ? "dm" : "channel"}
-        dmUser={dmUser}
-        isPrivate={channel?.is_private ?? false}
-      />
+    <div className="flex flex-col h-full dm_container">
+      {layoutReady && (
+        <MainHeader
+          id={channelId}
+          type={isDm ? "dm" : "channel"}
+          dmUser={dmUser}
+          isPrivate={channel?.is_private ?? false}
+        />
+      )}
 
       {/* Page content (messages / files / pins) */}
       <div className="flex-1 min-h-0">{children}</div>

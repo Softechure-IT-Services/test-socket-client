@@ -77,7 +77,7 @@ export function usePushNotifications() {
         body,
         icon: icon ?? "/favicon.ico",
         badge: "/favicon.ico",
-        tag: channelId ? `channel-${channelId}` : "message",
+        tag: channelId ? `channel-${channelId}-${Date.now()}` : `message-${Date.now()}`,
         data: { url: url ?? (channelId ? `/channel/${channelId}` : "/") },
       };
 

@@ -41,6 +41,8 @@ type NavItem = {
   items?: SubItem[]
 }
 
+// ─── Helpers ────────────────────────────────────────────────────────────────
+
 function DMAvatar({ sub }: { sub: SubItem }) {
   if (sub.avatar_url) {
     return (
@@ -51,11 +53,12 @@ function DMAvatar({ sub }: { sub: SubItem }) {
       />
     )
   }
-  const initials = (sub.title ?? "")
-    .split(" ")
-    .map((word) => word.charAt(0).toUpperCase())
-    .join("")
-    .slice(0, 2) || "?"
+  const initials =
+    (sub.title ?? "")
+      .split(" ")
+      .map((w) => w.charAt(0).toUpperCase())
+      .join("")
+      .slice(0, 2) || "?"
   return (
     <div className="h-5 w-5 rounded-sm bg-muted flex items-center justify-center text-black text-[10px] font-medium shrink-0">
       {initials}
@@ -64,11 +67,61 @@ function DMAvatar({ sub }: { sub: SubItem }) {
 }
 
 function ChannelIcon({ sub }: { sub: SubItem }) {
-  if (sub.is_private) {
-    return <Lock className="h-3 w-3 shrink-0 text-inherit" />
-  }
+  if (sub.is_private) return <Lock className="h-3 w-3 shrink-0 text-inherit" />
   return <Hash className="h-3 w-3 shrink-0 text-inherit" />
 }
+
+/**
+ * Slack-style unread badge.
+ * Expanded sidebar → right-aligned pill with count.
+ * Collapsed sidebar → tiny dot/count in corner.
+ */
+function UnreadBadge({
+  count,
+  collapsed = false,
+}: {
+  count: number
+  collapsed?: boolean
+}) {
+  if (count <= 0) return null
+
+  if (collapsed) {
+    return (
+      <span
+        aria-label={`${count} unread`}
+        className="
+          pointer-events-none absolute -top-0.5 -right-0.5
+          min-w-[16px] h-4 rounded-full
+          bg-sidebar-primary text-sidebar-primary-foreground
+          text-[9px] font-bold
+          flex items-center justify-center px-1 leading-none
+          ring-2 ring-sidebar
+          z-10
+        "
+      >
+        {count > 9 ? "9+" : count}
+      </span>
+    )
+  }
+
+  return (
+    <span
+      aria-label={`${count} unread`}
+      className="
+        pointer-events-none absolute right-2 top-1/2 -translate-y-1/2
+        min-w-[18px] h-[18px] rounded-full
+        bg-sidebar-primary text-sidebar-primary-foreground
+        text-[10px] font-bold
+        flex items-center justify-center px-1 leading-none
+        z-10
+      "
+    >
+      {count > 99 ? "99+" : count}
+    </span>
+  )
+}
+
+// ─── Component ───────────────────────────────────────────────────────────────
 
 export function NavMain({ items }: { items: NavItem[] }) {
   const { state } = useSidebar()
@@ -79,7 +132,8 @@ export function NavMain({ items }: { items: NavItem[] }) {
     <>
       {items.map((item) => (
         <SidebarGroup key={item.title}>
-          {/* When sidebar is expanded: show full collapsible group */}
+
+          {/* ── Expanded sidebar ─────────────────────────────────── */}
           {!isCollapsed && (
             <>
               <div className="relative flex items-center border-b border-[var(--border-color)]">
@@ -112,64 +166,66 @@ export function NavMain({ items }: { items: NavItem[] }) {
 
                   <CollapsibleContent>
                     <SidebarMenuSub>
-                      {/* {item.items?.map((sub) => {
-                        const isActive = pathname === sub.url || pathname.startsWith(sub.url + "/") 
+                      {item.items?.map((sub) => {
+                        const isActive =
+                          pathname === sub.url || pathname.startsWith(sub.url + "/")
+                        const unread = sub.unread ?? 0
+                        const hasUnread = unread > 0
+
                         return (
-                          <SidebarMenuSubItem key={sub.url}>
+                          <SidebarMenuSubItem key={sub.url} className="relative">
+                            {/*
+                              Slack-style left accent bar:
+                              visible when there are unread messages and the
+                              item is NOT currently active.
+                            */}
+                            {hasUnread && !isActive && (
+                              <span
+                                aria-hidden
+                                className="
+                                  absolute left-0 top-1/2 -translate-y-1/2
+                                  w-[3px] h-[60%] rounded-r-full
+                                  bg-sidebar-primary
+                                  transition-all duration-150
+                                "
+                              />
+                            )}
+
                             <SidebarMenuSubButton
                               asChild
                               isActive={isActive}
+                              className={
+                                hasUnread && !isActive
+                                  ? "bg-accent"
+                                  : ""
+                              }
                             >
-                              <Link
-                                href={sub.url}
-                                className="flex items-center gap-2"
-                              >
+                              {/*
+                                pr-8 leaves room for the badge so text
+                                never overlaps it.
+                              */}
+                              <Link href={sub.url} className="flex items-center gap-2 pr-8">
                                 {item.type === "dm" ? (
                                   <DMAvatar sub={sub} />
                                 ) : (
                                   sub.is_dm === false && <ChannelIcon sub={sub} />
                                 )}
-                                <span className={`truncate ${(sub.unread ?? 0) > 0 ? "font-semibold text-foreground" : ""}`}>
+                                <span
+                                  className={
+                                    hasUnread
+                                      ? "truncate font-semibold"
+                                      : "truncate"
+                                  }
+                                >
                                   {sub.title}
                                 </span>
-                                {(sub.unread ?? 0) > 0 && (
-                                  <span className="ml-auto shrink-0 min-w-[18px] h-[18px] rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center px-1 leading-none">
-                                    {sub.unread! > 99 ? "99+" : sub.unread}
-                                  </span>
-                                )}
                               </Link>
                             </SidebarMenuSubButton>
+
+                            <UnreadBadge count={unread} />
                           </SidebarMenuSubItem>
                         )
-                      })} */}
-
-{item.items?.map((sub) => {
-  const isActive = pathname === sub.url || pathname.startsWith(sub.url + "/")
-  const hasUnread = (sub.unread ?? 0) > 0
-
-  return (
-    <SidebarMenuSubItem key={sub.url} className="relative">
-      <SidebarMenuSubButton asChild isActive={isActive}>
-        <Link href={sub.url} className="flex items-center gap-2 pr-7">
-          {item.type === "dm" ? (
-            <DMAvatar sub={sub} />
-          ) : (
-            sub.is_dm === false && <ChannelIcon sub={sub} />
-          )}
-          <span className={`truncate ${hasUnread ? "font-semibold text-foreground" : ""}`}>
-            {sub.title}
-          </span>
-        </Link>
-      </SidebarMenuSubButton>
-      {/* Badge outside the overflow-hidden button so it's never clipped */}
-      {hasUnread && (
-        <span className="pointer-events-none absolute right-1 top-1/2 -translate-y-1/2 min-w-[18px] h-[18px] rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center px-1 leading-none z-10">
-          {sub.unread! > 99 ? "99+" : sub.unread}
-        </span>
-      )}
-    </SidebarMenuSubItem>
-  )
-})}
+                      })}
                     </SidebarMenuSub>
                   </CollapsibleContent>
                 </Collapsible>
@@ -177,19 +233,19 @@ export function NavMain({ items }: { items: NavItem[] }) {
             </>
           )}
 
-          {/* When sidebar is collapsed: show icon-only buttons for each item */}
+          {/* ── Collapsed sidebar (icon-only) ────────────────────── */}
           {isCollapsed && (
             <SidebarMenu>
-              {/* {item.items?.map((sub) => {
-                const isActive = pathname === sub.url || pathname.startsWith(sub.url + "/") 
+              {item.items?.map((sub) => {
+                const isActive =
+                  pathname === sub.url || pathname.startsWith(sub.url + "/")
+                const unread = sub.unread ?? 0
+                const hasUnread = unread > 0
+
                 return (
-                  <SidebarMenuItem key={sub.url}>
-                    <SidebarMenuButton
-                      asChild
-                      tooltip={sub.title}
-                      isActive={isActive}
-                    >
-                      <Link href={sub.url} className="flex items-center justify-center relative">
+                  <SidebarMenuItem key={sub.url} className="relative">
+                    <SidebarMenuButton asChild tooltip={sub.title} isActive={isActive}>
+                      <Link href={sub.url} className="flex items-center justify-center">
                         {item.type === "dm" ? (
                           <DMAvatar sub={sub} />
                         ) : sub.is_private ? (
@@ -197,45 +253,17 @@ export function NavMain({ items }: { items: NavItem[] }) {
                         ) : (
                           <Hash className="h-4 w-4" />
                         )}
-                        {(sub.unread ?? 0) > 0 && (
-                          <span className="absolute -top-0.5 -right-0.5 min-w-[14px] h-[14px] rounded-full bg-red-500 text-white text-[9px] font-bold flex items-center justify-center px-0.5 leading-none">
-                            {sub.unread! > 9 ? "9+" : sub.unread}
-                          </span>
-                        )}
                         <span className="sr-only">{sub.title}</span>
                       </Link>
                     </SidebarMenuButton>
+
+                    {hasUnread && <UnreadBadge count={unread} collapsed />}
                   </SidebarMenuItem>
                 )
-              })} */}
-              {item.items?.map((sub) => {
-  const isActive = pathname === sub.url || pathname.startsWith(sub.url + "/")
-  const hasUnread = (sub.unread ?? 0) > 0
-
-  return (
-    <SidebarMenuItem key={sub.url} className="relative">
-      <SidebarMenuButton asChild tooltip={sub.title} isActive={isActive}>
-        <Link href={sub.url} className="flex items-center justify-center">
-          {item.type === "dm" ? (
-            <DMAvatar sub={sub} />
-          ) : sub.is_private ? (
-            <Lock className="h-4 w-4" />
-          ) : (
-            <Hash className="h-4 w-4" />
-          )}
-          <span className="sr-only">{sub.title}</span>
-        </Link>
-      </SidebarMenuButton>
-      {hasUnread && (
-        <span className="pointer-events-none absolute -top-0.5 -right-0.5 min-w-[14px] h-[14px] rounded-full bg-red-500 text-white text-[9px] font-bold flex items-center justify-center px-0.5 leading-none z-10">
-          {sub.unread! > 9 ? "9+" : sub.unread}
-        </span>
-      )}
-    </SidebarMenuItem>
-  )
-})}
+              })}
             </SidebarMenu>
           )}
+
         </SidebarGroup>
       ))}
     </>

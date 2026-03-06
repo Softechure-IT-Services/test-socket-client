@@ -1207,9 +1207,6 @@ export default function MainHeader({
           <IconButton onClick={handleHuddleClick} title="Start Huddle">
             <FaHeadphones size={18} />
           </IconButton>
-          <IconButton>
-            <FaRegBell size={18} />
-          </IconButton>
 
           <IconButton
             onClick={handleSearchClick}

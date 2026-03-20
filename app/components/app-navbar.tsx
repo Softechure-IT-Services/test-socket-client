@@ -14,7 +14,7 @@ import {
   DropdownMenuTrigger,
 } from "@/app/components/ui/dropdown-menu";
 import { useSidebar } from "@/app/components/ui/sidebar";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/app/components/context/userId_and_connection/provider";
 
@@ -40,6 +40,7 @@ interface MessageResult {
   content: string;
   created_at: string;
   channel_id: number;
+  thread_parent_id: number | null;
   channel_name: string | null;
   is_dm_channel: boolean;
   sender_name: string | null;
@@ -138,7 +139,48 @@ function flattenResults(data: SearchData): AnyResult[] {
 export default function AppNavbar() {
   const { isMobile } = useSidebar();
   const router = useRouter();
+  const pathname = usePathname();
   const { user, logout } = useAuth();
+  const navStack = useRef<string[]>([]);
+
+  useEffect(() => {
+    if (!pathname) return;
+
+    const stack = navStack.current;
+    const last = stack[stack.length - 1];
+    if (pathname === last) return;
+
+    const existingIndex = stack.lastIndexOf(pathname);
+    if (existingIndex !== -1) {
+      // Navigated back/forward: keep history consistent
+      navStack.current = stack.slice(0, existingIndex + 1);
+    } else {
+      navStack.current = [...stack, pathname];
+    }
+  }, [pathname]);
+
+  const isLoginPath = (p: string) => p === "/login" || p.startsWith("/login?");
+
+  function handleBack() {
+    const stack = navStack.current;
+    if (stack.length <= 1) {
+      return;
+    }
+
+    // Find the last non-login entry before the current page
+    let idx = stack.length - 2;
+    while (idx >= 0 && isLoginPath(stack[idx])) {
+      idx -= 1;
+    }
+
+    if (idx >= 0) {
+      const target = stack[idx];
+      navStack.current = stack.slice(0, idx + 1);
+      router.push(target);
+    }
+    // If there is no non-login page to go back to, do nothing.
+    // This prevents going back into the login screen.
+  }
 
   function handleLogout() {
     logout();
@@ -239,8 +281,15 @@ export default function AppNavbar() {
           router.push(`/dashboard/dm/new?userId=${result.id}`);
         }
       } else if (result.kind === "message") {
-        // Navigate to channel, highlight the message via hash
-        router.push(`/channel/${result.channel_id}?scrollTo=${result.id}`);
+        // Navigate to channel/dm, highlight the message via hash, open thread if applicable
+        const baseRoute = result.is_dm_channel ? `/dm/${result.channel_id}` : `/channel/${result.channel_id}`;
+        let url = `${baseRoute}?`;
+        if (result.thread_parent_id) {
+          url += `threadId=${result.thread_parent_id}&scrollTo=${result.id}`;
+        } else {
+          url += `scrollTo=${result.id}`;
+        }
+        router.push(url);
       }
     },
     [router]
@@ -303,7 +352,7 @@ export default function AppNavbar() {
 
               {/* Back / Forward */}
               <div>
-                <button className="p-2 rounded-md hover:bg-accent" aria-label="back" onClick={() => router.back()}>
+                <button className="p-2 rounded-md hover:bg-accent" aria-label="back" onClick={handleBack}>
                   <FaArrowLeft size={16} />
                 </button>
                 <button className="p-2 rounded-md hover:bg-accent" aria-label="forward" onClick={() => router.forward()}>

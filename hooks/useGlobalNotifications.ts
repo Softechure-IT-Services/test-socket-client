@@ -81,42 +81,112 @@ export function useGlobalNotifications({
 
     // ── 1. Cross-channel notifications (user is NOT in this channel room) ──
     // Fired by _notifyChannelMembers → user_${id} personal room
+    // const handleNotification = (msg: any) => {
+    //   const cid = String(msg.channel_id);
+    //   const isActive = String(activeChannelId) === cid;
+
+    //   if (isActive) {
+    //     // They're looking at this channel — clear any stale count
+    //     clearStoredUnread(cid);
+    //     onUnreadChange(cid, 0);
+    //     return;
+    //   }
+
+    //   // Increment persisted count and tell the sidebar
+    //   const next = incrementStoredUnread(cid);
+    //   onUnreadChange(cid, next);
+
+    //   // Also fire a browser push notification
+    //   showNotification({
+    //     title: msg.sender_name ?? "New message",
+    //     body: (msg.preview ?? "")
+    //       .replace(/\s+/g, " ")
+    //       .trim()
+    //       .slice(0, 100),
+    //     channelId: msg.channel_id,
+    //     force: true,
+    //   });
+    // };
+
     const handleNotification = (msg: any) => {
-      const cid = String(msg.channel_id);
-      const isActive = String(activeChannelId) === cid;
+  const cid = String(msg.channel_id);
+  const isActive = String(activeChannelId) === cid;
 
-      if (isActive) {
-        // They're looking at this channel — clear any stale count
-        clearStoredUnread(cid);
-        onUnreadChange(cid, 0);
-        return;
-      }
+  if (isActive) {
+    clearStoredUnread(cid);
+    onUnreadChange(cid, 0);
+    return;
+  }
 
-      // Increment persisted count and tell the sidebar
-      const next = incrementStoredUnread(cid);
-      onUnreadChange(cid, next);
+  // Mark this message as counted so handleReceive skips it
+  const dedupKey = `notif-seen:${msg.id}`;    // ← add this
+  if (sessionStorage.getItem(dedupKey)) return; // ← add this
+  sessionStorage.setItem(dedupKey, "1");        // ← add this
 
-      // Also fire a browser push notification
-      showNotification({
-        title: msg.sender_name ?? "New message",
-        body: (msg.preview ?? "")
-          .replace(/\s+/g, " ")
-          .trim()
-          .slice(0, 100),
-        channelId: msg.channel_id,
-        force: true,
-      });
-    };
+  const next = incrementStoredUnread(cid);
+  onUnreadChange(cid, next);
+
+  showNotification({
+    title: msg.sender_name ?? "New message",
+    body: (msg.preview ?? "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 100),
+    channelId: msg.channel_id,
+    force: true,
+  });
+};
 
     // ── 2. Same-channel messages (user IS in the channel room) ──────────────
     // receiveMessage still fires for the active channel; use it to clear badge.
-    const handleReceive = (msg: any) => {
-      const cid = String(msg.channel_id);
-      if (String(activeChannelId) === cid) {
-        clearStoredUnread(cid);
-        onUnreadChange(cid, 0);
-      }
-    };
+    // const handleReceive = (msg: any) => {
+    //   const cid = String(msg.channel_id);
+    //   if (String(activeChannelId) === cid) {
+    //     clearStoredUnread(cid);
+    //     onUnreadChange(cid, 0);
+    //   }
+    // };
+
+    // useGlobalNotifications.ts
+
+const handleReceive = (msg: any) => {
+  const cid = String(msg.channel_id);
+  const isActive = String(activeChannelId) === cid;
+  const isOwnMessage = String(msg.sender_id) === String(userId);
+
+  if (isActive) {
+    clearStoredUnread(cid);
+    onUnreadChange(cid, 0);
+    return;
+  }
+
+  // Skip own messages
+  if (isOwnMessage) return;
+
+  // This fires for public channels where the user is in the socket room
+  // but has no channel_members row (so newMessageNotification never arrives).
+  // We only increment here if newMessageNotification hasn't already done so.
+  // Use the message ID as a dedup key to avoid double-counting for explicit members
+  // who receive both events.
+  const dedupKey = `notif-seen:${msg.id}`;
+  if (sessionStorage.getItem(dedupKey)) return;
+  sessionStorage.setItem(dedupKey, "1");
+
+  const next = incrementStoredUnread(cid);
+  onUnreadChange(cid, next);
+
+  showNotification({
+    title: msg.sender_name ?? "New message",
+    body: (msg.content ?? "")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/&nbsp;/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 100),
+    channelId: msg.channel_id,
+    force: true,
+  });
+};
 
     socket.on("newMessageNotification", handleNotification);
     socket.on("receiveMessage", handleReceive);

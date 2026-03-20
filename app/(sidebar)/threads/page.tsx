@@ -9,6 +9,7 @@ import { MessageRow, MessageSkeleton } from "@/app/components/MessageRow";
 import type { MsgFile } from "@/app/components/MessageRow";
 import CreateNew from "@/app/components/modals/CreateNew";
 import FileBg from "@/app/components/ui/file-bg";
+import { sweetConfirm } from "@/lib/sweetalert";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -278,7 +279,13 @@ const [editContent, setEditContent] = useState<string>("");
   break;
 }
         case "delete": {
-          if (!window.confirm("Delete this reply?")) return;
+          const confirmed = await sweetConfirm({
+            title: "Delete reply",
+            text: "Are you sure you want to delete this reply?",
+            confirmButtonText: "Delete",
+            cancelButtonText: "Keep",
+          });
+          if (!confirmed) return;
           // Optimistic update
           setReplies((prev) => prev.filter((r) => String(r.id) !== messageId));
           if (socket) {

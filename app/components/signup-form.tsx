@@ -33,6 +33,8 @@ export function SignupForm({ className, ...props }: React.ComponentProps<"div">)
     avatar_url: "",
   });
 
+  const stripSpaces = (value: string) => value.replace(/\s/g, "");
+
   const [errors, setErrors] = useState<any>({});
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -42,25 +44,30 @@ export function SignupForm({ className, ...props }: React.ComponentProps<"div">)
     const newErrors: any = {};
     let valid = true;
 
-    if (!formData.name.trim()) {
+    const trimmedName = formData.name.trim();
+    const trimmedEmail = formData.email.trim();
+    const trimmedPassword = formData.password.trim();
+    const trimmedConfirm = formData.confirmPassword.trim();
+
+    if (!trimmedName) {
       newErrors.name = "Full name is required.";
       valid = false;
     }
 
-    if (!formData.email.trim()) {
+    if (!trimmedEmail) {
       newErrors.email = "Email is required.";
       valid = false;
-    } else if (!/^\S+@\S+\.\S+$/.test(formData.email)) {
+    } else if (!/^\S+@\S+\.\S+$/.test(trimmedEmail)) {
       newErrors.email = "Invalid email format.";
       valid = false;
     }
 
-    if (!formData.password || formData.password.length < 8) {
+    if (!trimmedPassword || trimmedPassword.length < 8) {
       newErrors.password = "Password must be at least 8 characters.";
       valid = false;
     }
 
-    if (formData.confirmPassword !== formData.password) {
+    if (trimmedConfirm !== trimmedPassword) {
       newErrors.confirmPassword = "Passwords do not match.";
       valid = false;
     }
@@ -76,11 +83,15 @@ export function SignupForm({ className, ...props }: React.ComponentProps<"div">)
     setLoading(true);
 
     try {
+      const trimmedName = formData.name.trim();
+      const trimmedEmail = formData.email.trim();
+      const trimmedPassword = formData.password.trim();
+
       const res = await (await import("@/lib/axios")).default.post(`/auth/register`, {
         external_id: null,
-        name: formData.name,
-        email: formData.email,
-        password: formData.password,
+        name: trimmedName,
+        email: trimmedEmail,
+        password: trimmedPassword,
         avatar_url: formData.avatar_url || null,
       });
 
@@ -150,7 +161,18 @@ export function SignupForm({ className, ...props }: React.ComponentProps<"div">)
                   <Input
                     type={showPassword ? "text" : "password"}
                     value={formData.password}
-                    onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                    onChange={(e) => setFormData({ ...formData, password: stripSpaces(e.target.value) })}
+                    onKeyDown={(e) => {
+                      if (e.key === " " || e.code === "Space") {
+                        e.preventDefault();
+                      }
+                    }}
+                    onPaste={(e) => {
+                      const pasted = e.clipboardData.getData("text");
+                      const cleaned = stripSpaces(pasted);
+                      e.preventDefault();
+                      setFormData({ ...formData, password: cleaned });
+                    }}
                     className="pr-10"
                   />
                   <button
@@ -174,7 +196,18 @@ export function SignupForm({ className, ...props }: React.ComponentProps<"div">)
                   <Input
                     type={showConfirm ? "text" : "password"}
                     value={formData.confirmPassword}
-                    onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
+                    onChange={(e) => setFormData({ ...formData, confirmPassword: stripSpaces(e.target.value) })}
+                    onKeyDown={(e) => {
+                      if (e.key === " " || e.code === "Space") {
+                        e.preventDefault();
+                      }
+                    }}
+                    onPaste={(e) => {
+                      const pasted = e.clipboardData.getData("text");
+                      const cleaned = stripSpaces(pasted);
+                      e.preventDefault();
+                      setFormData({ ...formData, confirmPassword: cleaned });
+                    }}
                     className="pr-10"
                   />
                   <button

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
+import { useSearchParams } from "next/navigation";
 import { useAuth } from "@/app/components/context/userId_and_connection/provider";
 import MessageInput from "@/app/components/custom/MessageInput";
 import api from "@/lib/axios";
@@ -9,6 +10,7 @@ import { MessageRow } from "@/app/components/MessageRow";
 import type { MsgFile } from "@/app/components/MessageRow";
 import CreateNew from "@/app/components/modals/CreateNew";
 import FileBg from "@/app/components/ui/file-bg";
+import { sweetConfirm } from "@/lib/sweetalert";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -95,6 +97,52 @@ export default function ThreadPanel({
   // ─── Edit mode (mirrors ChannelChat) ─────────────────────────────────────
   const [editMessageId, setEditMessageId] = useState<string | null>(null);
   const [editContent, setEditContent] = useState<string>("");
+
+  const searchParams = useSearchParams();
+  const highlightedScrollIds = useRef(new Set<string>());
+
+  // Clear the dedup set whenever the thread changes, so the highlight fires fresh
+  useEffect(() => {
+    highlightedScrollIds.current.clear();
+  }, [parentMessage?.id]);
+
+  useEffect(() => {
+    const scrollToId = searchParams?.get("scrollTo");
+    if (!scrollToId || replies.length === 0) return;
+
+    if (highlightedScrollIds.current.has(scrollToId)) return;
+
+    // Only highlight replies — never highlight the parent/header message
+    const isReply = replies.some((r) => String(r.id) === scrollToId);
+    if (!isReply) return;
+
+    // Look for the element inside the thread panel only (not in the channel chat)
+    const panelEl = panelRef.current;
+    const el = panelEl?.querySelector<HTMLElement>(`#msg-${scrollToId}`) ?? document.getElementById(`msg-${scrollToId}`);
+    if (!el) return;
+
+    highlightedScrollIds.current.add(scrollToId);
+
+    setTimeout(() => {
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+
+      el.style.transition = "none";
+      el.style.backgroundColor = "#fef08a";
+      el.style.borderRadius = "6px";
+      el.style.outline = "2px solid #facc15";
+
+      setTimeout(() => {
+        el.style.transition = "background-color 1s ease, outline 1s ease";
+        el.style.backgroundColor = "";
+        el.style.outline = "2px solid transparent";
+        setTimeout(() => {
+          el.style.transition = "";
+          el.style.outline = "";
+          el.style.borderRadius = "";
+        }, 1000);
+      }, 1800);
+    }, 150);
+  }, [searchParams, replies, parentMessage?.id]);
 
   // ─── Drag-and-drop (thread-local — stops propagation to ChannelChat) ────────
   const [threadDragging, setThreadDragging] = useState(false);
@@ -196,8 +244,11 @@ export default function ThreadPanel({
     fetchReplies();
   }, [fetchReplies]);
 
-  // Auto-scroll to bottom when replies change
+  // Auto-scroll to bottom when replies change — but NOT when we need to
+  // scroll to a specific reply (e.g. navigating from pinned messages page).
   useEffect(() => {
+    const scrollToId = searchParams?.get("scrollTo");
+    if (scrollToId) return; // let the highlight effect handle positioning
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [replies.length]);
 
@@ -377,16 +428,33 @@ return () => {
       );
     };
 
+    const handleUserUpdated = (updatedUser: any) => {
+      setReplies((prev) =>
+        prev.map((r) => {
+          if (String(r.sender_id) === String(updatedUser.id)) {
+            return {
+              ...r,
+              sender_name: updatedUser.name !== undefined ? updatedUser.name : r.sender_name,
+              avatar_url: updatedUser.avatar_url !== undefined ? updatedUser.avatar_url : r.avatar_url,
+            };
+          }
+          return r;
+        })
+      );
+    };
+
     socket.on("messageEdited", handleEdited);
     socket.on("messageDeleted", handleDeleted);
     socket.on("messagePinned", handlePinned);
     socket.on("messageUnpinned", handleUnpinned);
+    socket.on("userUpdated", handleUserUpdated);
 
     return () => {
       socket.off("messageEdited", handleEdited);
       socket.off("messageDeleted", handleDeleted);
       socket.off("messagePinned", handlePinned);
       socket.off("messageUnpinned", handleUnpinned);
+      socket.off("userUpdated", handleUserUpdated);
     };
   }, [socket, parentMessage, onReplyCountChange]);
 
@@ -432,7 +500,13 @@ return () => {
           break;
         }
         case "delete": {
-          if (!window.confirm("Delete this reply?")) return;
+          const confirmed = await sweetConfirm({
+            title: "Delete reply",
+            text: "Are you sure you want to delete this reply?",
+            confirmButtonText: "Delete",
+            cancelButtonText: "Keep",
+          });
+          if (!confirmed) return;
           // Optimistic update
           setReplies((prev) => {
             const next = prev.filter((r) => String(r.id) !== messageId);
@@ -592,7 +666,7 @@ return () => {
       </div>
 
       {/* ── Replies list ──────────────────────────────────────────────────── */}
-      <div className="flex-1 overflow-y-auto py-2 pt-[25px]">
+      <div className="flex-1 min-h-0 overflow-y-auto py-2 pt-[25px]">
         {loading ? (
           <div className="space-y-3 px-4 py-2 animate-pulse">
             {[1, 2, 3].map((i) => (
@@ -633,8 +707,8 @@ return () => {
                     String(prevReply.sender_id) !== String(reply.sender_id);
 
                   return (
+                    <div key={reply.id} id={`msg-${reply.id}`}>
                     <MessageRow
-                      key={reply.id}
                       msg={{
                         id: reply.id,
                         sender_id: reply.sender_id,
@@ -673,6 +747,7 @@ return () => {
                         if (lockedId !== replyId) setHoveredId(null);
                       }}
                     />
+                    </div>
                   );
                 })}
               </div>

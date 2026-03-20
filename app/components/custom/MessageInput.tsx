@@ -28,6 +28,7 @@ import { HiXMark } from "react-icons/hi2";
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type UploadedFile = {
+  id: string;
   name: string;
   url: string;
   type: string;
@@ -42,6 +43,10 @@ type UploadingPreview = {
   preview: string; // blob URL — stable, created once per file
   progress: number;
 };
+
+const MAX_FILE_SIZE = 25 * 1024 * 1024; // 25MB
+const MAX_FILE_SIZE_LABEL = "25MB";
+
 
 type UploadedPreview = {
   uploading: false;
@@ -68,7 +73,27 @@ const ALLOWED_TYPES = [
 ];
 const ALLOWED_LABEL = "JPEG, PNG, GIF, WEBP, SVG, MP4, WEBM, PDF, TXT";
 
-const isAllowedType = (file: File) => ALLOWED_TYPES.includes(file.type);
+const isAllowedType = (file: File) => {
+  if (ALLOWED_TYPES.includes(file.type)) return true;
+  // Some browsers (e.g. iOS) may not provide a MIME type for certain files.
+  // Fall back to extension-based detection.
+  const ext = file.name.split(".").pop()?.toLowerCase();
+  if (!ext) return false;
+  return [
+    "jpg",
+    "jpeg",
+    "png",
+    "gif",
+    "webp",
+    "svg",
+    "mp4",
+    "webm",
+    "pdf",
+    "txt",
+  ].includes(ext);
+};
+
+const isAllowedSize = (file: File) => file.size <= MAX_FILE_SIZE;
 
 const getFileKind = (type: string, name: string) => {
   if (type.startsWith("image/")) return "image";
@@ -214,6 +239,9 @@ export default function MessageInput({
   const editorWrapperRef = useRef<HTMLDivElement>(null);
   const [, forceUpdate] = useState(0);
 
+  // Keep abort controllers to cancel uploads while in-flight
+  const uploadControllers = useRef(new Map<string, AbortController>());
+
   // uploading: files currently in-flight (have stable preview blob URL)
   const [uploading, setUploading] = useState<UploadingPreview[]>([]);
   // uploadedFiles: server-confirmed metadata
@@ -333,6 +361,11 @@ export default function MessageInput({
       setFileError(`File type not allowed. Allowed: ${ALLOWED_LABEL}`);
       return;
     }
+    if (!isAllowedSize(file)) {
+      setFileError(`File exceeds the ${MAX_FILE_SIZE_LABEL} limit.`);
+      return;
+    }
+
     const formData = new FormData();
     formData.append("files", file);
     try {
@@ -340,33 +373,105 @@ export default function MessageInput({
       const data = res.data;
       if (!data.success || !Array.isArray(data.files) || data.files.length === 0) return;
       const uploaded = data.files[0];
-      setUploadedFiles((prev) => [...prev, uploaded]);
+      const id = crypto.randomUUID();
+      setUploadedFiles((prev) => [...prev, { ...uploaded, id }]);
       if (uploaded.url && !editor.isDestroyed) {
         editor.chain().focus().setImage({ src: uploaded.url }).run();
       }
     } catch (err) {
       console.error("insertImageFile upload error", err);
+      const msg =
+        (err as any)?.response?.data?.error ||
+        (err as any)?.message ||
+        "Upload failed. Please try again.";
+      setFileError(msg);
     }
   };
 
   // ─── File input change ─────────────────────────────────────────────────────
 
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const cancelUpload = (id: string) => {
+    const controller = uploadControllers.current.get(id);
+    if (!controller) return;
+    controller.abort();
+    uploadControllers.current.delete(id);
+    setUploading((prev) => prev.filter((u) => u.id !== id));
+  };
+
+  const uploadFile = async (file: File, id: string, preview: string) => {
+    setUploading((prev) => [
+      ...prev,
+      { uploading: true as const, id, name: file.name, preview, progress: 0 },
+    ]);
+
+    const controller = new AbortController();
+    uploadControllers.current.set(id, controller);
+
+    const formData = new FormData();
+    formData.append("files", file);
+
+    try {
+      const res = await api.post(`${SERVER_URL}/upload`, formData, {
+        signal: controller.signal,
+        onUploadProgress: (progressEvent) => {
+          const percent = Math.round(
+            (progressEvent.loaded * 100) / (progressEvent.total || 1)
+          );
+          setUploading((prev) =>
+            prev.map((u) => (u.id === id ? { ...u, progress: percent } : u))
+          );
+        },
+      });
+
+      const uploaded = res.data.files?.[0];
+      if (uploaded) {
+        setUploadedFiles((prev) => [...prev, { ...uploaded, id }]);
+      }
+    } catch (err: any) {
+      // Ignore if the upload was intentionally cancelled
+      const isAbort = err?.name === "CanceledError" || err?.code === "ERR_CANCELED";
+      if (!isAbort) {
+        console.error("Upload error:", err);
+        const msg =
+          err?.response?.data?.error ||
+          err?.message ||
+          "Upload failed. Please try again.";
+        setFileError(msg);
+      }
+    } finally {
+      uploadControllers.current.delete(id);
+      // Revoke the blob URL only after we've moved to the server URL
+      URL.revokeObjectURL(preview);
+      setUploading((prev) => prev.filter((u) => u.id !== id));
+    }
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files) return;
     window.dispatchEvent(new Event("closeFileUpload"));
     setFileError(null);
 
     const files = Array.from(e.target.files);
 
-    // Validate all files first
-    const rejected = files.filter((f) => !isAllowedType(f));
-    if (rejected.length > 0) {
-      setFileError(
-        `${rejected.map((f) => f.name).join(", ")} cannot be sent. Allowed: ${ALLOWED_LABEL}`
-      );
+    const rejectedType = files.filter((f) => !isAllowedType(f));
+    const rejectedSize = files.filter((f) => isAllowedType(f) && !isAllowedSize(f));
+
+    if (rejectedType.length || rejectedSize.length) {
+      const parts: string[] = [];
+      if (rejectedType.length) {
+        parts.push(
+          `${rejectedType.map((f) => f.name).join(", ")} cannot be sent. Allowed: ${ALLOWED_LABEL}`
+        );
+      }
+      if (rejectedSize.length) {
+        parts.push(
+          `${rejectedSize.map((f) => f.name).join(", ")} exceed the ${MAX_FILE_SIZE_LABEL} limit.`
+        );
+      }
+      setFileError(parts.join(" "));
     }
 
-    const accepted = files.filter(isAllowedType);
+    const accepted = files.filter((f) => isAllowedType(f) && isAllowedSize(f));
     if (accepted.length === 0) {
       e.target.value = "";
       return;
@@ -374,41 +479,8 @@ export default function MessageInput({
 
     for (const file of accepted) {
       const id = crypto.randomUUID();
-      // Create blob URL ONCE and never recreate it (fixes double-image flash)
       const preview = URL.createObjectURL(file);
-
-      setUploading((prev) => [
-        ...prev,
-        { uploading: true as const, id, name: file.name, preview, progress: 0 },
-      ]);
-
-      const formData = new FormData();
-      formData.append("files", file);
-
-      try {
-        const res = await api.post(`${SERVER_URL}/upload`, formData, {
-          onUploadProgress: (progressEvent) => {
-            const percent = Math.round(
-              (progressEvent.loaded * 100) / (progressEvent.total || 1)
-            );
-            setUploading((prev) =>
-              prev.map((u) => (u.id === id ? { ...u, progress: percent } : u))
-            );
-          },
-        });
-
-        const uploaded = res.data.files?.[0];
-        if (uploaded) {
-          setUploadedFiles((prev) => [...prev, uploaded]);
-        }
-      } catch (err) {
-        console.error("Upload error:", err);
-        setFileError("Upload failed. Please try again.");
-      } finally {
-        // Revoke the blob URL only after we've moved to the server URL
-        URL.revokeObjectURL(preview);
-        setUploading((prev) => prev.filter((u) => u.id !== id));
-      }
+      void uploadFile(file, id, preview);
     }
 
     e.target.value = "";
@@ -423,66 +495,46 @@ export default function MessageInput({
 
     setFileError(null);
 
-    const rejected = dropFiles.filter((f) => !isAllowedType(f));
-    if (rejected.length > 0) {
-      setFileError(
-        `${rejected.map((f) => f.name).join(", ")} cannot be sent. Allowed: ${ALLOWED_LABEL}`
-      );
+    const rejectedType = dropFiles.filter((f) => !isAllowedType(f));
+    const rejectedSize = dropFiles.filter((f) => isAllowedType(f) && !isAllowedSize(f));
+
+    if (rejectedType.length || rejectedSize.length) {
+      const parts: string[] = [];
+      if (rejectedType.length) {
+        parts.push(
+          `${rejectedType.map((f) => f.name).join(", ")} cannot be sent. Allowed: ${ALLOWED_LABEL}`
+        );
+      }
+      if (rejectedSize.length) {
+        parts.push(
+          `${rejectedSize.map((f) => f.name).join(", ")} exceed the ${MAX_FILE_SIZE_LABEL} limit.`
+        );
+      }
+      setFileError(parts.join(" "));
     }
 
-    const accepted = dropFiles.filter(isAllowedType);
+    const accepted = dropFiles.filter((f) => isAllowedType(f) && isAllowedSize(f));
 
     // Tell parent we've consumed the files so it can clear its state
     onDropFilesConsumed?.();
 
     if (accepted.length === 0) return;
 
-    (async () => {
-      for (const file of accepted) {
-        const id = crypto.randomUUID();
-        const preview = URL.createObjectURL(file);
-
-        setUploading((prev) => [
-          ...prev,
-          { uploading: true as const, id, name: file.name, preview, progress: 0 },
-        ]);
-
-        const formData = new FormData();
-        formData.append("files", file);
-
-        try {
-          const res = await api.post(`${SERVER_URL}/upload`, formData, {
-            onUploadProgress: (progressEvent) => {
-              const percent = Math.round(
-                (progressEvent.loaded * 100) / (progressEvent.total || 1)
-              );
-              setUploading((prev) =>
-                prev.map((u) => (u.id === id ? { ...u, progress: percent } : u))
-              );
-            },
-          });
-
-          const uploaded = res.data.files?.[0];
-          if (uploaded) setUploadedFiles((prev) => [...prev, uploaded]);
-        } catch (err) {
-          console.error("Drop upload error:", err);
-          setFileError("Upload failed. Please try again.");
-        } finally {
-          URL.revokeObjectURL(preview);
-          setUploading((prev) => prev.filter((u) => u.id !== id));
-        }
-      }
-    })();
+    for (const file of accepted) {
+      const id = crypto.randomUUID();
+      const preview = URL.createObjectURL(file);
+      void uploadFile(file, id, preview);
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dropFiles]);
 
-  const deleteUploadedFile = async (index: number) => {
-    const file = uploadedFiles[index];
+  const deleteUploadedFile = async (id: string) => {
+    const file = uploadedFiles.find((f) => f.id === id);
     if (!file) return;
     try {
       const res = await api.post(`${SERVER_URL}/upload/delete`, { path: file.path });
       if (res.data.success) {
-        setUploadedFiles((prev) => prev.filter((_, i) => i !== index));
+        setUploadedFiles((prev) => prev.filter((f) => f.id !== id));
         if (file.url) removeImageFromEditor(file.url);
       }
     } catch (err) {
@@ -812,9 +864,7 @@ export default function MessageInput({
 
   const previewFiles: PreviewFile[] = [
     ...uploading,
-    ...uploadedFiles.map(
-      (file): UploadedPreview => ({ ...file, uploading: false as const })
-    ),
+    ...uploadedFiles.map((file): UploadedPreview => ({ ...file, uploading: false as const })),
   ];
 
   // ─── Render ────────────────────────────────────────────────────────────────
@@ -941,14 +991,25 @@ export default function MessageInput({
                   ? "image"
                   : getFileKind(file.type, file.name);
 
-                // Index into uploadedFiles array (excludes in-flight items)
-                const uploadedIndex = i - uploading.length;
+                const entryId = file.uploading ? file.preview : `uploaded-${i}`;
 
                 return (
                   <div
-                    key={file.uploading ? file.id : `uploaded-${i}`}
+                    key={entryId}
                     className="relative flex flex-col items-center px-2 py-2 rounded-lg cursor-pointer"
                   >
+                    {/* Cancel/delete button — keep the same icon and position for both states */}
+                    <button
+                      type="button"
+                      onClick={() =>
+                        file.uploading ? cancelUpload(file.id) : deleteUploadedFile(entryId)
+                      }
+                      className="absolute top-0 right-0 bg-gray-600 hover:bg-black hover:scale-[1.15] w-6 h-6 rounded-full text-white flex items-center justify-center text-sm cursor-pointer transition-all duration-300 z-10"
+                      title={file.uploading ? "Cancel upload" : "Remove file"}
+                    >
+                      <HiXMark />
+                    </button>
+
                     {file.uploading ? (
                       /* ── Uploading skeleton ── */
                       <div className="relative w-22 h-22 rounded-md overflow-hidden bg-gray-200">
@@ -966,19 +1027,11 @@ export default function MessageInput({
                         </div>
                       </div>
                     ) : kind === "image" ? (
-                      <>
-                        <button
-                          onClick={() => deleteUploadedFile(uploadedIndex)}
-                          className="absolute top-0 right-0 bg-gray-600 hover:bg-black hover:scale-[1.15] w-6 h-6 rounded-full text-white flex items-center justify-center text-sm cursor-pointer transition-all duration-300 z-10"
-                        >
-                          <HiXMark />
-                        </button>
-                        <img
-                          src={(file as UploadedPreview).url}
-                          alt={file.name}
-                          className="w-22 h-22 object-cover rounded-md border border-black"
-                        />
-                      </>
+                      <img
+                        src={(file as UploadedPreview).url}
+                        alt={file.name}
+                        className="w-22 h-22 object-cover rounded-md border border-black"
+                      />
                     ) : kind === "video" ? (
                       <video
                         src={(file as UploadedPreview).url}

@@ -16,6 +16,7 @@ import {
   FieldLabel,
 } from "@/app/components/ui/field";
 import { Input } from "@/app/components/ui/input";
+
 import Link from "next/link";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
@@ -32,15 +33,32 @@ export function LoginForm({ className, ...props }: React.ComponentProps<"div">) 
   const router = useRouter();
   const { login } = useAuth();
 
+  const stripSpaces = (value: string) => value.replace(/\s/g, "");
+
 
   async function handleSubmit(e: React.FormEvent) {
-  e.preventDefault();
-  setError("");
-  setLoading(true);
+    e.preventDefault();
+    setError("");
+    setLoading(true);
 
-  try {
-    const res = await api.post(`/auth/login`, { email, password });
-    const data = res.data;
+    const trimmedEmail = email.trim();
+    const trimmedPassword = password.trim();
+
+    if (!trimmedEmail) {
+      setError("Email is required.");
+      setLoading(false);
+      return;
+    }
+
+    if (!trimmedPassword) {
+      setError("Password is required.");
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const res = await api.post(`/auth/login`, { email: trimmedEmail, password: trimmedPassword });
+      const data = res.data;
 
     // ✅ Show server response in console
     console.log("Server response:", data);
@@ -79,7 +97,6 @@ export function LoginForm({ className, ...props }: React.ComponentProps<"div">) 
   }
 }
 
-
   return (
     <div className={cn("flex flex-col gap-6", className)} {...props}>
       <Card>
@@ -105,19 +122,30 @@ export function LoginForm({ className, ...props }: React.ComponentProps<"div">) 
               <Field>
                 <div className="flex items-center">
                   <FieldLabel htmlFor="password">Password</FieldLabel>
-                  <a
-                    href="#"
+                  <Link
+                    href="/forgot-password"
                     className="ml-auto text-sm underline-offset-4 hover:underline"
                   >
                     Forgot your password?
-                  </a>
+                  </Link>
                 </div>
                 <Input
                   id="password"
                   type="password"
                   required
                   value={password}
-                  onChange={(e) => setPassword(e.target.value)}
+                  onChange={(e) => setPassword(stripSpaces(e.target.value))}
+                  onKeyDown={(e) => {
+                    if (e.key === " " || e.code === "Space") {
+                      e.preventDefault();
+                    }
+                  }}
+                  onPaste={(e) => {
+                    const pasted = e.clipboardData.getData("text");
+                    const cleaned = stripSpaces(pasted);
+                    e.preventDefault();
+                    setPassword(cleaned);
+                  }}
                 />
               </Field>
 
@@ -132,7 +160,9 @@ export function LoginForm({ className, ...props }: React.ComponentProps<"div">) 
 
                 <FieldDescription className="text-center">
                   Don&apos;t have an account?{" "}
-                  <Link href="/register">Sign up</Link>
+                    <Link href="/register" replace>
+                      Sign up
+                    </Link>
                 </FieldDescription>
               </Field>
             </FieldGroup>

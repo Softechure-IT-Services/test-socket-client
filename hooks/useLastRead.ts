@@ -1,9 +1,12 @@
 /**
  * localStorage helpers for read/unread state per channel.
  *
- *   lastRead:<channelId>     → highest message ID the user has read
- *   unreadCount:<channelId>  → persisted unread count (survives refresh)
+ *   lastRead:<channelId>      → highest message ID the user has read
+ *   unreadCount:<channelId>   → persisted unread count (survives refresh)
+ *   mentionCount:<channelId>  → persisted mention count (survives refresh)
  */
+
+// ─── Last-read ─────────────────────────────────────────────────────────────
 
 export function getLastRead(channelId: string | number): number | null {
   try {
@@ -23,6 +26,8 @@ export function setLastRead(channelId: string | number, messageId: string | numb
     localStorage.setItem(`lastRead:${channelId}`, String(n));
   } catch {}
 }
+
+// ─── Unread count ──────────────────────────────────────────────────────────
 
 export function getStoredUnread(channelId: string | number): number {
   try {
@@ -48,4 +53,32 @@ export function incrementStoredUnread(channelId: string | number): number {
 
 export function clearStoredUnread(channelId: string | number): void {
   setStoredUnread(channelId, 0);
+}
+
+// ─── Mention count ─────────────────────────────────────────────────────────
+
+export function getStoredMentionCount(channelId: string | number): number {
+  try {
+    const val = localStorage.getItem(`mentionCount:${channelId}`);
+    if (val === null) return 0;
+    const n = Number(val);
+    return isNaN(n) ? 0 : Math.max(0, n);
+  } catch { return 0; }
+}
+
+export function setStoredMentionCount(channelId: string | number, count: number): void {
+  try {
+    if (count <= 0) localStorage.removeItem(`mentionCount:${channelId}`);
+    else localStorage.setItem(`mentionCount:${channelId}`, String(count));
+  } catch {}
+}
+
+export function incrementStoredMentionCount(channelId: string | number): number {
+  const next = getStoredMentionCount(channelId) + 1;
+  setStoredMentionCount(channelId, next);
+  return next;
+}
+
+export function clearStoredMentionCount(channelId: string | number): void {
+  setStoredMentionCount(channelId, 0);
 }

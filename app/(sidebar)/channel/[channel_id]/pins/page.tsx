@@ -29,6 +29,8 @@ interface PinnedMessage {
     size?: number;
     path?: string;
   }[];
+  is_thread_reply?: boolean;
+  thread_parent_id?: number | null;
 }
 
 // ─── Empty state ──────────────────────────────────────────────────────────────
@@ -76,8 +78,14 @@ export default function PinnedMessages() {
   }, [channelId]);
 
   const handleJump = useCallback(
-    (messageId: number) => {
-      router.push(`/channel/${channelId}?scrollTo=${messageId}`);
+    (msg: PinnedMessage) => {
+      let url = `/channel/${channelId}?`;
+      if (msg.is_thread_reply && msg.thread_parent_id) {
+        url += `threadId=${msg.thread_parent_id}&scrollTo=${msg.message_id}`;
+      } else {
+        url += `scrollTo=${msg.message_id}`;
+      }
+      router.push(url);
     },
     [channelId, router]
   );
@@ -140,7 +148,7 @@ export default function PinnedMessages() {
               transition-all duration-150
               cursor-pointer
             "
-            onClick={() => handleJump(msg.message_id)}
+            onClick={() => handleJump(msg)}
           >
 
             {/* MessageRow — read-only (isMember=false hides ChatHover) */}

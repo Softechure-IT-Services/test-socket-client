@@ -849,8 +849,15 @@ function MembersPanel({
   };
 
   const handleRemove = async (member: Member) => {
-    if (!confirm(`Remove ${member.name} from #${channelName}?`))
-      return;
+    const { sweetConfirm } = await import("@/lib/sweetalert");
+    const confirmed = await sweetConfirm({
+      title: "Remove member",
+      text: `Remove ${member.name} from #${channelName}?`,
+      confirmButtonText: "Remove",
+      cancelButtonText: "Keep",
+    });
+    if (!confirmed) return;
+
     setRemovingId(member.id);
     try {
       await api.delete(
@@ -1030,16 +1037,28 @@ export default function MainHeader({
 }: MainHeaderProps) {
   const { socket, user } = useAuth();
   const [channel, setChannel] = useState<Channel | null>(null);
+  const [localDmUser, setLocalDmUser] = useState(dmUser);
   const [loading, setLoading] = useState(true);
   const [membersOpen, setMembersOpen] = useState(false);
   // null = loading (API hasn't responded yet), true/false = known
   const [isMember, setIsMember] = useState<boolean | null>(null);
   const headerRef = useRef<HTMLDivElement | null>(null);
 
+  const basePath = type === "dm" ? "/dm" : "/channel";
   const buttons = [
-    { label: "Message", href: `/channel/${id}` },
-    { label: "Files", href: `/channel/${id}/files` },
-    { label: "Pins", href: `/channel/${id}/pins` },
+    ...(type === "channel"
+      ? [
+          { label: "Message", href: `${basePath}/${id}` },
+          { label: "Files", href: `${basePath}/${id}/files` },
+          { label: "Pins", href: `${basePath}/${id}/pins` },
+        ]
+      : 
+        [
+          { label: "Message", href: `${basePath}/${id}` },
+          { label: "Files", href: `${basePath}/${id}/files` },
+          { label: "Pins", href: `${basePath}/${id}/pins` },
+        ]
+    ),
   ];
 
   const isCreator =
@@ -1132,6 +1151,23 @@ export default function MainHeader({
     };
   }, [socket, id]);
 
+  useEffect(() => setLocalDmUser(dmUser), [dmUser]);
+
+  useEffect(() => {
+    if (!socket) return;
+    const handleUserUpdated = (updatedUser: any) => {
+      if (localDmUser && String(localDmUser.id) === String(updatedUser.id)) {
+        setLocalDmUser((prev: any) => ({
+          ...prev,
+          name: updatedUser.name ?? prev.name,
+          avatar_url: updatedUser.avatar_url !== undefined ? updatedUser.avatar_url : prev.avatar_url,
+        }));
+      }
+    };
+    socket.on("userUpdated", handleUserUpdated);
+    return () => { socket.off("userUpdated", handleUserUpdated); };
+  }, [socket, localDmUser]);
+
   useEffect(() => {
     if (!headerRef.current) return;
     const el = headerRef.current;
@@ -1155,10 +1191,10 @@ export default function MainHeader({
       >
         <div>
           <div className="flex gap-2">
-            {type === "dm" && dmUser && (
+            {type === "dm" && localDmUser && (
               <UserAvatar
-                name={dmUser.name}
-                avatarUrl={dmUser.avatar_url}
+                name={localDmUser.name}
+                avatarUrl={localDmUser.avatar_url}
                 size="md"
                 rounded="sm"
               />
@@ -1167,7 +1203,7 @@ export default function MainHeader({
               {loading
                 ? "Loading..."
                 : type === "dm"
-                  ? (dmUser?.name ?? "Direct Message")
+                  ? (localDmUser?.name ?? "Direct Message")
                   : `# ${channel?.name ?? "Unnamed Channel"}`}
             </h2>
             {/* Show "removed" badge — only for private channels, only when confirmed non-member */}
@@ -1226,8 +1262,15 @@ export default function MainHeader({
               <DropdownMenuContent align="end">
                 <DropdownMenuItem
                   className="text-red-600 focus:text-red-600 cursor-pointer"
-                  onClick={() => {
-                    if (confirm(`Leave #${channel?.name ?? "this channel"}?`)) {
+                  onClick={async () => {
+                    const { sweetConfirm } = await import("@/lib/sweetalert");
+                    const confirmed = await sweetConfirm({
+                      title: "Leave channel",
+                      text: `Leave #${channel?.name ?? "this channel"}?`,
+                      confirmButtonText: "Leave",
+                      cancelButtonText: "Stay",
+                    });
+                    if (confirmed) {
                       handleLeaveChannel();
                     }
                   }}

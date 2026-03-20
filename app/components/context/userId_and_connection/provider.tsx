@@ -19,6 +19,7 @@ type AuthContextType = {
   socket: Socket | null;
   login: (token: string) => void;   // 👈 add this
   logout: () => void;
+  updateUser: (partial: Partial<UserType>) => void;
 };
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -39,6 +40,13 @@ useEffect(() => {
 const login = (newToken: string) => {
   localStorage.setItem("access_token", newToken);
   setToken(newToken);
+};
+
+const updateUser = (partial: Partial<UserType>) => {
+  setUser((prev) => {
+    if (!prev) return prev;
+    return { ...prev, ...partial };
+  });
 };
 
 const logout = async () => {
@@ -146,6 +154,7 @@ const logout = async () => {
         socket,
         login,
         logout,
+        updateUser,
         // socket: socketRef.current,
       }}
     >

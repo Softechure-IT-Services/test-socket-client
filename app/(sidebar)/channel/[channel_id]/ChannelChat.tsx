@@ -13,6 +13,7 @@ import { getLastRead, setLastRead } from "@/hooks/useLastRead";
 import { useUnread } from "@/app/components/context/UnreadContext";
 import { MessageRow, MessageSkeleton } from "@/app/components/MessageRow";
 import DOMPurify from "dompurify";
+import { sweetConfirm, sweetToast } from "@/lib/sweetalert";
 // At the top with your other hook imports
 type User = {
   name: string;
@@ -67,12 +68,11 @@ type ChannelChatProps = {
 // ─── New message divider ───────────────────────────────────────────────────────
 function NewMessageDivider() {
   return (
-    <div className="flex items-end gap-2 px-6 py-1 select-none">
+    <div className="flex items-center justify-end gap-2 px-6 py-2 select-none">
       <div className="flex-1 h-px bg-red-400/60" />
       <span className="text-[10px] font-bold tracking-widest text-red-500 uppercase px-2 py-0.5 rounded-full bg-red-50 dark:bg-red-950/30 border border-red-300 dark:border-red-700 shrink-0">
         New
       </span>
-      <div className="flex-1 h-px bg-red-400/60" />
     </div>
   );
 }
@@ -118,6 +118,11 @@ export default function ChannelChat({ channelId }: ChannelChatProps) {
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [nextCursor, setNextCursor] = useState<number | null>(null);
   const [hasMore, setHasMore] = useState(true);
+  const [hasMoreNewer, setHasMoreNewer] = useState(false);
+  const [nextAfterCursor, setNextAfterCursor] = useState<number | null>(null);
+  const [isLoadingNewer, setIsLoadingNewer] = useState(false);
+  const loadingNewerRef = useRef(false);
+  const bottomMessageRef = useRef<HTMLDivElement | null>(null);
 
   const [forwardMessageId, setForwardMessageId] = useState<string | null>(
     null
@@ -159,6 +164,7 @@ const canSendMessages = isMember;
   const didInitialScrollRef = useRef(false);
   const loadingMoreRef = useRef(false);
   const highlightedScrollIds = useRef<Set<string>>(new Set());
+  const prevScrollToRef = useRef<string | null>(null);
 
   const [hasNewMessages, setHasNewMessages] = useState(false);
   const [newMessageCount, setNewMessageCount] = useState(0);
@@ -313,20 +319,22 @@ const canSendMessages = isMember;
       socket.off("addedToChannel", handleAddedToChannel);
       socket.off("messageSendError", handleMessageSendError);
     };
-  }, [socket, channelId]);
+  }, [socket, channelId, userId]);
 
   useEffect(() => {
-    const scrollToId = searchParams?.get("scrollTo");
+    const threadId = searchParams?.get("threadId");
+    const paramScrollTo = searchParams?.get("scrollTo");
+    const scrollToId = threadId || paramScrollTo;
     if (!scrollToId || messages.length === 0 || initialLoading) return;
 
     if (highlightedScrollIds.current.has(scrollToId)) return;
 
-    const timer = setTimeout(() => {
-      const el = document.getElementById(`msg-${scrollToId}`);
-      if (!el) return;
+    const el = document.getElementById(`msg-${scrollToId}`);
+    if (!el) return;
 
-      highlightedScrollIds.current.add(scrollToId);
+    highlightedScrollIds.current.add(scrollToId);
 
+    setTimeout(() => {
       el.scrollIntoView({ behavior: "smooth", block: "center" });
 
       el.style.transition = "none";
@@ -344,13 +352,88 @@ const canSendMessages = isMember;
           el.style.borderRadius = "";
         }, 1000);
       }, 1800);
-    }, 500);
-
-    return () => clearTimeout(timer);
+    }, 100);
   }, [searchParams, messages, initialLoading]);
+
+  // ─── Shared thread auto-open logic ──────────────────────────────────────────
+  // Split into two effects to avoid the race where messages loading re-triggers
+  // the effect but prevThreadIdRef has already been set, blocking the open.
+  const prevThreadIdRef = useRef<string | null>(null);
+  const pendingThreadIdRef = useRef<string | null>(null);
+
+  // Effect 1: responds to URL changes (searchParams). Always fetches the parent
+  // via API so the thread opens reliably regardless of whether messages are loaded.
+  useEffect(() => {
+    const threadId = searchParams?.get("threadId");
+
+    if (!threadId) {
+      prevThreadIdRef.current = null;
+      pendingThreadIdRef.current = null;
+      return;
+    }
+
+    // Same threadId as before — check if we already have a thread open with it.
+    // If threadMessage is still showing this thread, skip. If not (user closed it
+    // and re-opened), we should re-open it.
+    if (threadId === prevThreadIdRef.current) return;
+    prevThreadIdRef.current = threadId;
+    pendingThreadIdRef.current = threadId;
+
+    // Check messages already in state first (avoids unnecessary API round-trip)
+    const parentMsgInView = messages.find((m) => String(m.id) === threadId);
+    if (parentMsgInView) {
+      pendingThreadIdRef.current = null;
+      setThreadMessage({
+        id: parentMsgInView.id!,
+        content: parentMsgInView.content,
+        sender_name: parentMsgInView.sender_name,
+        avatar_url: parentMsgInView.avatar_url,
+        created_at: parentMsgInView.created_at,
+      });
+      return;
+    }
+
+    // Not in view yet — call API directly. This is the reliable path for when
+    // ChannelChat just mounted (messages array is empty on initial render).
+    api
+      .get(`/threads/${threadId}`)
+      .then((res) => {
+        if (res.data.parent_message) {
+          pendingThreadIdRef.current = null;
+          setThreadMessage(res.data.parent_message);
+        }
+      })
+      .catch((err) => console.error("Auto Open Thread failed:", err));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]); // ← intentionally omit `messages` — see Effect 2
+
+  // Effect 2: If messages loaded and there's still a pending thread to open
+  // (the API call hasn't resolved yet), use the local data as a fast path.
+  useEffect(() => {
+    const threadId = pendingThreadIdRef.current;
+    if (!threadId || messages.length === 0) return;
+
+    const parentMsgInView = messages.find((m) => String(m.id) === threadId);
+    if (!parentMsgInView) return;
+
+    pendingThreadIdRef.current = null;
+    setThreadMessage({
+      id: parentMsgInView.id!,
+      content: parentMsgInView.content,
+      sender_name: parentMsgInView.sender_name,
+      avatar_url: parentMsgInView.avatar_url,
+      created_at: parentMsgInView.created_at,
+    });
+  }, [messages]);
+
 
   useEffect(() => {
     if (!socket || !channelId) return;
+    // Only join the socket room if the user is actually a member.
+    // isMember starts as true (optimistic) and is corrected by the
+    // membership fetch above. We re-run whenever isMember changes so
+    // that a user who leaves mid-session stops receiving messages.
+    if (!isMember) return;
 
     socket.emit("joinChannel", { channel_id: Number(channelId) });
 
@@ -359,7 +442,7 @@ const canSendMessages = isMember;
         socket.emit("leaveChannel", { channel_id: Number(channelId) });
       }
     };
-  }, [socket, channelId]);
+  }, [socket, channelId, isMember]);
 
   useEffect(() => {
     if (!socket) return;
@@ -539,11 +622,37 @@ const canSendMessages = isMember;
       );
     };
 
+    const handleUserUpdated = (updatedUser: any) => {
+      setMessages((prev) =>
+        prev.map((msg) => {
+          if (String(msg.sender_id) === String(updatedUser.id)) {
+            return {
+              ...msg,
+              sender_name: updatedUser.name !== undefined ? updatedUser.name : msg.sender_name,
+              avatar_url: updatedUser.avatar_url !== undefined ? updatedUser.avatar_url : msg.avatar_url,
+            };
+          }
+          return msg;
+        })
+      );
+      setDmOtherUser((prev: any) => {
+        if (prev && String(prev.id) === String(updatedUser.id)) {
+          return {
+            ...prev,
+            name: updatedUser.name !== undefined ? updatedUser.name : prev.name,
+            avatar_url: updatedUser.avatar_url !== undefined ? updatedUser.avatar_url : prev.avatar_url,
+          };
+        }
+        return prev;
+      });
+    };
+
     socket.on("receiveMessage", handleReceive);
     socket.on("messageAck", handleAck);
     socket.on("reactionUpdated", handleReactionsUpdate);
     socket.on("messageEdited", handleMessageEdited);
     socket.on("threadReplyAdded", handleThreadReply);
+    socket.on("userUpdated", handleUserUpdated);
 
     return () => {
       socket.off("receiveMessage", handleReceive);
@@ -551,6 +660,7 @@ const canSendMessages = isMember;
       socket.off("reactionUpdated", handleReactionsUpdate);
       socket.off("messageEdited", handleMessageEdited);
       socket.off("threadReplyAdded", handleThreadReply);
+      socket.off("userUpdated", handleUserUpdated);
     };
   }, [socket, userId, channelId]);
 
@@ -659,30 +769,76 @@ const canSendMessages = isMember;
     async (targetId: string) => {
       if (!channelId || !userId) return;
       setInitialLoading(true);
+      setHasMoreNewer(false);
+      setNextAfterCursor(null);
       try {
-        const cursorAbove = Number(targetId) + 1;
-        const res = await api.get(`/channels/${channelId}/messages`, {
-          params: { limit: 30, cursor: cursorAbove },
+        const target = Number(targetId);
+        const [beforeRes, afterRes] = await Promise.all([
+          api.get(`/channels/${channelId}/messages`, {
+            params: { limit: 20, cursor: target + 1 },
+          }),
+          api.get(`/channels/${channelId}/messages`, {
+            params: { limit: 15, after: target },
+          }),
+        ]);
+
+        const mapMsg = (msg: any): ChatMessage => {
+          let files: ChatFile[] = [];
+          if (Array.isArray(msg.files)) files = msg.files;
+          else if (typeof msg.files === "string" && msg.files) {
+            try { files = JSON.parse(msg.files); } catch { files = []; }
+          }
+          let reactions: Reaction[] = [];
+          if (Array.isArray(msg.reactions)) reactions = msg.reactions;
+          else if (typeof msg.reactions === "string" && msg.reactions) {
+            try { reactions = JSON.parse(msg.reactions); } catch { reactions = []; }
+          }
+          return {
+            id: msg.id,
+            sender_id: String(msg.sender_id),
+            sender_name: msg.sender_name,
+            content: msg.content,
+            files,
+            self: String(msg.sender_id) === String(userId),
+            created_at: msg.created_at,
+            updated_at: msg.updated_at,
+            reactions,
+            avatar_url: msg.avatar_url ?? null,
+            pinned: msg.pinned === true,
+            is_forwarded: msg.is_forwarded ?? false,
+            forwarded_from: msg.forwarded_from ?? null,
+            is_system: msg.is_system ?? false,
+            is_edited: msg.is_edited ?? false,
+            thread_count: msg.thread_count ?? 0,
+          };
+        };
+
+        const beforeMsgs: ChatMessage[] = (beforeRes.data.messages ?? []).map(mapMsg);
+        const afterMsgs: ChatMessage[] = (afterRes.data.messages ?? [])
+          .map(mapMsg)
+          .filter((m: ChatMessage) => Number(m.id) > target);
+
+        const seen = new Set<string>();
+        const merged = [...beforeMsgs, ...afterMsgs].filter((m) => {
+          const k = String(m.id);
+          if (seen.has(k)) return false;
+          seen.add(k);
+          return true;
         });
-        const mapped: ChatMessage[] = res.data.messages.map((msg: any) => ({
-          id: msg.id,
-          sender_id: String(msg.sender_id),
-          sender_name: msg.sender_name,
-          content: msg.content,
-          files: msg.files ? JSON.parse(msg.files) : [],
-          self: String(msg.sender_id) === String(userId),
-          created_at: msg.created_at,
-          updated_at: msg.updated_at,
-          reactions: msg.reactions ? JSON.parse(msg.reactions) : [],
-          avatar_url: msg.avatar_url ?? null,
-          pinned: msg.pinned === true,
-          is_forwarded: msg.is_forwarded ?? false,
-          forwarded_from: msg.forwarded_from ?? null,
-          is_system: msg.is_system ?? false,
-        }));
-        setMessages(mapped);
-        setNextCursor(res.data.nextCursor ?? null);
-        setHasMore(!!res.data.nextCursor);
+        merged.sort((a, b) => Number(a.id) - Number(b.id));
+
+        setMessages(merged);
+        setNextCursor(beforeRes.data.nextCursor ?? null);
+        setHasMore(!!beforeRes.data.nextCursor);
+
+        if (afterMsgs.length >= 15) {
+          const newestId = Math.max(...afterMsgs.map((m) => Number(m.id)));
+          setNextAfterCursor(newestId);
+          setHasMoreNewer(true);
+        } else {
+          setHasMoreNewer(false);
+          setNextAfterCursor(null);
+        }
       } catch (err) {
         console.error("Failed to load messages around id:", err);
         loadMessages(true);
@@ -692,6 +848,46 @@ const canSendMessages = isMember;
     },
     [channelId, userId]
   );
+
+  // ─── Handle scrollTo when already on the same channel ──────────────────────
+  // The [channelId, userId] effect handles the initial load. But if the user
+  // is already on the channel and clicks a pinned message, channelId doesn't
+  // change so loadMessagesAroundId is never called. This effect fills that gap.
+  useEffect(() => {
+    const threadId = searchParams?.get("threadId");
+    const paramScrollTo = searchParams?.get("scrollTo");
+
+    // When both threadId and scrollTo are present (pinned thread reply), use
+    // a compound key so clicking a different reply in the same thread is handled.
+    const dedupeKey = threadId && paramScrollTo
+      ? `${threadId}:${paramScrollTo}`
+      : threadId || paramScrollTo;
+
+    if (!dedupeKey) {
+      prevScrollToRef.current = null;
+      return;
+    }
+
+    // Already processed this exact combination — skip
+    if (dedupeKey === prevScrollToRef.current) return;
+    prevScrollToRef.current = dedupeKey;
+
+    // The channel-level message to scroll to is the thread parent (threadId) or
+    // the plain message (paramScrollTo). Allow highlight to re-fire for both.
+    if (threadId) highlightedScrollIds.current.delete(threadId);
+    if (paramScrollTo) highlightedScrollIds.current.delete(paramScrollTo);
+
+    // For a thread-pinned-reply: the channel only needs to show/scroll to the
+    // parent message (threadId). The reply-level scroll happens in ThreadPanel.
+    const channelScrollTarget = threadId || paramScrollTo!;
+
+    // If the target is already in the DOM, the existing highlight effect handles it
+    if (document.getElementById(`msg-${channelScrollTarget}`)) return;
+
+    // Target not in DOM — load the message bundle that contains it
+    shouldAutoScrollRef.current = false;
+    loadMessagesAroundId(channelScrollTarget);
+  }, [searchParams, loadMessagesAroundId]);
 
   useEffect(() => {
     if (!channelId || !userId) return;
@@ -706,14 +902,20 @@ const canSendMessages = isMember;
     setMessages([]);
     setNextCursor(null);
     setHasMore(true);
+    setHasMoreNewer(false);
+    setNextAfterCursor(null);
     setHasNewMessages(false);
     setNewMessageCount(0);
     setNewMessageSeparatorId(null);
     setHighlightedIds(new Set());
     highlightedScrollIds.current.clear();
+    prevScrollToRef.current = null;
 
-    const scrollToId = searchParams?.get("scrollTo");
+    const threadId = searchParams?.get("threadId");
+    const paramScrollTo = searchParams?.get("scrollTo");
+    const scrollToId = threadId || paramScrollTo;
     if (scrollToId) {
+      shouldAutoScrollRef.current = false;
       loadMessagesAroundId(scrollToId);
     } else {
       loadMessages(true);
@@ -726,7 +928,9 @@ const canSendMessages = isMember;
     const el = containerRef.current;
     if (!el) return;
 
-    const scrollToId = searchParams?.get("scrollTo");
+    const threadId = searchParams?.get("threadId");
+    const paramScrollTo = searchParams?.get("scrollTo");
+    const scrollToId = threadId || paramScrollTo;
     if (scrollToId) return;
 
     requestAnimationFrame(() => {
@@ -800,6 +1004,9 @@ const canSendMessages = isMember;
 
   useEffect(() => {
     if (isLoadingMore) return;
+    // Don't auto-scroll when we're paginating newer messages (jump-to-pinned mode)
+    // or when there are still older-than-latest messages to load below
+    if (isLoadingNewer || hasMoreNewer) return;
     if (!shouldAutoScrollRef.current) return;
 
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -833,8 +1040,12 @@ const canSendMessages = isMember;
         console.log("Share cancelled");
       }
     } else {
-      navigator.clipboard.writeText(file.url);
-      alert("Link copied to clipboard");
+      await navigator.clipboard.writeText(file.url);
+      await sweetToast({
+        text: "Link copied to clipboard",
+        icon: "success",
+        timer: 1200,
+      });
     }
   };
 
@@ -862,6 +1073,99 @@ const canSendMessages = isMember;
     };
   }, [hasMore, isLoadingMore, initialLoading, loadMessages]);
 
+  const loadNewerMessages = useCallback(async () => {
+    if (!channelId || !userId || !nextAfterCursor) return;
+    if (loadingNewerRef.current) return;
+    loadingNewerRef.current = true;
+    setIsLoadingNewer(true);
+
+    const el = containerRef.current;
+    const savedScrollTop = el?.scrollTop ?? 0;
+
+    try {
+      const res = await api.get(`/channels/${channelId}/messages`, {
+        params: { limit: 20, after: nextAfterCursor },
+      });
+      const newMsgs: ChatMessage[] = (res.data.messages ?? []).map((msg: any) => {
+        let files: ChatFile[] = [];
+        if (Array.isArray(msg.files)) files = msg.files;
+        else if (typeof msg.files === "string" && msg.files) {
+          try { files = JSON.parse(msg.files); } catch { files = []; }
+        }
+        let reactions: Reaction[] = [];
+        if (Array.isArray(msg.reactions)) reactions = msg.reactions;
+        else if (typeof msg.reactions === "string" && msg.reactions) {
+          try { reactions = JSON.parse(msg.reactions); } catch { reactions = []; }
+        }
+        return {
+          id: msg.id,
+          sender_id: String(msg.sender_id),
+          sender_name: msg.sender_name,
+          content: msg.content,
+          files,
+          self: String(msg.sender_id) === String(userId),
+          created_at: msg.created_at,
+          updated_at: msg.updated_at,
+          reactions,
+          avatar_url: msg.avatar_url ?? null,
+          pinned: msg.pinned === true,
+          is_forwarded: msg.is_forwarded ?? false,
+          forwarded_from: msg.forwarded_from ?? null,
+          is_system: msg.is_system ?? false,
+          is_edited: msg.is_edited ?? false,
+          thread_count: msg.thread_count ?? 0,
+        };
+      });
+
+      if (newMsgs.length === 0) {
+        setHasMoreNewer(false);
+        setNextAfterCursor(null);
+        return;
+      }
+
+      setMessages((prev) => {
+        const existingIds = new Set(prev.map((m) => String(m.id)));
+        const fresh = newMsgs.filter((m) => !existingIds.has(String(m.id)));
+        if (!fresh.length) return prev;
+        return [...prev, ...fresh].sort((a, b) => Number(a.id) - Number(b.id));
+      });
+
+      // Restore scroll position — don't let appending content jump the view
+      requestAnimationFrame(() => {
+        if (el) el.scrollTop = savedScrollTop;
+      });
+
+      if (newMsgs.length >= 20) {
+        const newestId = Math.max(...newMsgs.map((m) => Number(m.id)));
+        setNextAfterCursor(newestId);
+        setHasMoreNewer(true);
+      } else {
+        // Reached live tip — socket takes over from here
+        setHasMoreNewer(false);
+        setNextAfterCursor(null);
+      }
+    } catch (err) {
+      console.error("Failed to load newer messages:", err);
+    } finally {
+      setIsLoadingNewer(false);
+      loadingNewerRef.current = false;
+    }
+  }, [channelId, userId, nextAfterCursor]);
+
+  useEffect(() => {
+    if (!bottomMessageRef.current || !containerRef.current) return;
+    if (!hasMoreNewer) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && !loadingNewerRef.current && !initialLoading) {
+          loadNewerMessages();
+        }
+      },
+      { root: containerRef.current, threshold: 0.1 }
+    );
+    observer.observe(bottomMessageRef.current);
+    return () => observer.disconnect();
+  }, [hasMoreNewer, isLoadingNewer, initialLoading, loadNewerMessages]);
 
   const handleSendMessage = async (content: string, files?: any[]) => {
     if (!socket || !socket.connected) return;
@@ -1140,15 +1444,22 @@ const canSendMessages = isMember;
         enableEditMode(messageId);
         break;
       case "delete":
-        deleteMessage(messageId);
+        void deleteMessage(messageId);
         break;
       default:
         break;
     }
   }
 
-  function deleteMessage(messageId: string) {
-    if (!confirm("Delete this message?")) return;
+  async function deleteMessage(messageId: string) {
+    const confirmed = await sweetConfirm({
+      title: "Delete message",
+      text: "Are you sure you want to delete this message?",
+      confirmButtonText: "Delete",
+      cancelButtonText: "Keep",
+    });
+    if (!confirmed) return;
+
     if (!socket || !isMember) return;
     socket.emit("deleteMessage", { id: messageId });
     setMessages((prev) =>
@@ -1197,7 +1508,7 @@ const canSendMessages = isMember;
     >
       {/* Thread panel — 1/3 width, slides in from the right */}
       {threadMessage && (
-        <div className="hidden md:flex md:w-[33vw]  shrink-0 flex-col h-[calc(100vh-var(--main-header-height)-var(--chat-header-height)+33px)] sticky top-0 order-2 animate-in slide-in-from-right duration-200">
+        <div className="hidden md:flex md:w-[33vw]  shrink-0 flex-col max-h-[calc(100vh-var(--main-header-height)-var(--chat-header-height)+33px)] sticky top-0 order-2 animate-in slide-in-from-right duration-200">
           <ThreadPanel
             parentMessage={threadMessage}
             channelId={channelId}
@@ -1272,11 +1583,15 @@ const canSendMessages = isMember;
             const isHighlighted = highlightedIds.has(msgId);
             const isNewSeparator = newMessageSeparatorId && msgId === newMessageSeparatorId;
             const showDateSep = shouldShowDateSeparator(messages, index);
+            const isFirst = index === 0;
+            const isLast = index === messages.length - 1;
 
-            // System messages use a different pill layout
             if (msg.is_system) {
               return (
-                <div className="relative" key={msgId} id={`msg-${msgId}`} ref={index === 0 ? topMessageRef : null}>
+                <div
+                  className="relative" key={msgId} id={`msg-${msgId}`}
+                  ref={isFirst ? topMessageRef : (isLast && hasMoreNewer ? bottomMessageRef : null)}
+                >
                   {isNewSeparator && <NewMessageDivider />}
                   {showDateSep && <Dateseparator date={msg.created_at} />}
                   <SystemMessage content={msg.content} created_at={msg.created_at} />
@@ -1293,7 +1608,10 @@ const canSendMessages = isMember;
               showDateSep;
 
             return (
-              <div className="relative" key={msgId} ref={index === 0 ? topMessageRef : null}>
+              <div
+                className="relative" key={msgId} id={`msg-${msgId}`}
+                ref={isFirst ? topMessageRef : (isLast && hasMoreNewer ? bottomMessageRef : null)}
+              >
                 {isNewSeparator && <NewMessageDivider />}
                 {showDateSep && <Dateseparator date={msg.created_at} />}
                 <MessageRow
@@ -1332,6 +1650,13 @@ const canSendMessages = isMember;
               </div>
             );
           })}
+
+          {isLoadingNewer && (
+            <div className="px-4 pb-2">
+              <MessageSkeleton />
+              <MessageSkeleton />
+            </div>
+          )}
         </div>
 
         {/* ─── Message input area ─────────────────────────────────── */}

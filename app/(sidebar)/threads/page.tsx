@@ -58,7 +58,7 @@ function ThreadCard({
 }) {
   const [replies, setReplies] = useState<Reply[]>(thread.replies);
   const [expanded, setExpanded] = useState(false);
-  const [replying, setReplying] = useState(true);
+  const [replying, setReplying] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
 const [editMessageId, setEditMessageId] = useState<string | null>(null);
 const [editContent, setEditContent] = useState<string>("");

@@ -128,11 +128,22 @@ const logout = async () => {
 
   s.on("auth-success", ({ user }) => {
     setUser(user);
+    // JWT-based auth sets socket.user from the token, which may not carry
+    // avatar_url (or carries a stale one). Immediately refresh from the DB so
+    // the sidebar footer and socket message avatars are always up-to-date.
+    s.emit("refreshUserProfile");
   });
 
   s.on("disconnect", () => {
     setIsOnline(false);
     setUser(null);
+  });
+
+  // When the user saves their profile, the server refreshes socket.user and
+  // echoes the updated data back. Keep the React auth context in sync so
+  // avatar/name changes are reflected immediately without a page reload.
+  s.on("userProfileRefreshed", (fresh: Partial<UserType>) => {
+    setUser((prev) => prev ? { ...prev, ...fresh } : prev);
   });
 
   s.on("connect_error", (err) => {

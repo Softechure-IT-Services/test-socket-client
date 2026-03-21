@@ -666,6 +666,8 @@ import {
 const uuidv4 = () => crypto.randomUUID();
 import { useDebounce } from "@/hooks/useDebounce";
 import { UserAvatar } from "@/app/components/MessageMeta";
+import { usePresence } from "@/app/components/context/PresenceContext";
+import { formatRelativeTime } from "@/lib/utils";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 interface MainHeaderProps {
@@ -675,6 +677,8 @@ interface MainHeaderProps {
     id: number;
     name: string;
     avatar_url?: string;
+    is_online?: boolean | null;
+    last_seen?: string | null;
   } | null;
   isPrivate?: boolean;
 }
@@ -1043,6 +1047,18 @@ export default function MainHeader({
   // null = loading (API hasn't responded yet), true/false = known
   const [isMember, setIsMember] = useState<boolean | null>(null);
   const headerRef = useRef<HTMLDivElement | null>(null);
+  const { seedUsers, isOnline: presenceIsOnline, getLastSeen } = usePresence();
+  const dmUserId = localDmUser?.id ?? null;
+  const dmPresenceOnline = dmUserId
+    ? presenceIsOnline(dmUserId)
+    : localDmUser?.is_online ?? false;
+  const dmPresenceLastSeen =
+    (dmUserId ? getLastSeen(dmUserId) : null) ?? localDmUser?.last_seen ?? null;
+  const dmPresenceSubtitle = dmPresenceOnline
+    ? ""
+    : dmPresenceLastSeen
+    ? `Last seen ${formatRelativeTime(dmPresenceLastSeen) ?? ""}`
+    : "Offline";
 
   const basePath = type === "dm" ? "/dm" : "/channel";
   const buttons = [
@@ -1152,6 +1168,11 @@ export default function MainHeader({
   }, [socket, id]);
 
   useEffect(() => setLocalDmUser(dmUser), [dmUser]);
+  useEffect(() => {
+    if (localDmUser) {
+      seedUsers([localDmUser]);
+    }
+  }, [localDmUser, seedUsers]);
 
   useEffect(() => {
     if (!socket) return;
@@ -1162,6 +1183,7 @@ export default function MainHeader({
           name: updatedUser.name ?? prev.name,
           avatar_url: updatedUser.avatar_url !== undefined ? updatedUser.avatar_url : prev.avatar_url,
         }));
+        seedUsers([updatedUser]);
       }
     };
     socket.on("userUpdated", handleUserUpdated);
@@ -1192,18 +1214,47 @@ export default function MainHeader({
         <div>
           <div className="flex gap-2">
             {type === "dm" && localDmUser && (
-              <UserAvatar
-                name={localDmUser.name}
-                avatarUrl={localDmUser.avatar_url}
-                size="md"
-                rounded="sm"
-              />
+              <div className="flex items-center gap-3">
+                <div className="relative">
+                  <UserAvatar
+                    name={localDmUser.name}
+                    avatarUrl={localDmUser.avatar_url}
+                    size="md"
+                    rounded="sm"
+                    className="shrink-0"
+                  />
+                  <span
+                    className={`absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border border-[var(--sidebar)] ${
+                      dmPresenceOnline ? "bg-emerald-500" : "bg-muted-foreground/50"
+                    }`}
+                  />
+                </div>
+                <div className="flex flex-col min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="text-base font-semibold truncate">
+                      {localDmUser.name}
+                    </span>
+                    <span
+                      className={`text-[10px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-full ${
+                        dmPresenceOnline ? "bg-emerald-100 text-emerald-700" : "bg-muted text-black"
+                      }`}
+                    >
+                      {dmPresenceOnline ? "Online" : "Offline"}
+                    </span>
+                  </div>
+                  <span className="text-xs text-muted-foreground truncate">
+                    {dmPresenceSubtitle}
+                  </span>
+                </div>
+              </div>
             )}
             <h2 className="mb-1 text-2xl font-semibold">
               {loading
                 ? "Loading..."
                 : type === "dm"
-                  ? (localDmUser?.name ?? "Direct Message")
+                  ? 
+                  //(localDmUser?.name ?? "Direct Message")
+                  ""
                   : `# ${channel?.name ?? "Unnamed Channel"}`}
             </h2>
             {/* Show "removed" badge — only for private channels, only when confirmed non-member */}

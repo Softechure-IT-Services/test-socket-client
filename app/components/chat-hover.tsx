@@ -461,7 +461,7 @@ export default function ChatHover({
   ];
 
   return (
-    <div data-chathover-bar className="flex items-center gap-0.5 px-1.5 py-1 rounded-lg bg-white border border-[#e0e0e0] shadow-[0_4px_12px_0_rgba(0,0,0,0.12),0_1px_3px_0_rgba(0,0,0,0.08)] w-fit h-fit absolute right-0 top-0 -translate-y-[50%] -translate-x-[2rem]">
+    <div data-chathover-bar className="flex items-center gap-0.5 px-1.5 py-1 rounded-lg bg-white border border-[#e0e0e0] shadow-[0_4px_12px_0_rgba(0,0,0,0.12),0_1px_3px_0_rgba(0,0,0,0.08)] w-fit h-fit absolute right-0 top-0 -translate-y-[50%] -translate-x-[2rem] z-3">
 
       {/* ── Quick emoji reactions ── */}
       {DEFAULT_REACTIONS.map(({ emoji, label }) => {

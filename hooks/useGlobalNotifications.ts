@@ -119,7 +119,7 @@ export function useGlobalNotifications({
   }
 
   // Mark this message as counted so handleReceive skips it
-  const dedupKey = `notif-seen:${msg.id}`;    // ← add this
+  const dedupKey = `notif-seen:${msg.message_id ?? msg.id}`;    // ← use message_id (notification field)
   if (sessionStorage.getItem(dedupKey)) return; // ← add this
   sessionStorage.setItem(dedupKey, "1");        // ← add this
 

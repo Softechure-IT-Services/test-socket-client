@@ -1,6 +1,7 @@
 import "@/app/globals.css"
-  import { Toaster } from "@/app/components/ui/sonner"
+import { Toaster } from "@/app/components/ui/sonner"
 import { AuthProvider } from "@/app/components/context/userId_and_connection/provider";
+import { PresenceProvider } from "@/app/components/context/PresenceContext";
 import { Inter, Roboto } from "next/font/google";
 
 
@@ -21,8 +22,10 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={`${inter.variable} ${roboto.variable} antialiased`}>
-                <AuthProvider>
-        {children}
+        <AuthProvider>
+          <PresenceProvider>
+            {children}
+          </PresenceProvider>
         </AuthProvider>
         <Toaster position="top-right" />
       </body>

@@ -334,7 +334,7 @@ export const MessageRow = memo(function MessageRow({
 
             {/* Name + timestamp */}
             <div className="flex items-baseline gap-2 flex-wrap h-fit">
-              {msg.sender_name && <span className="text-sm font-semibold leading-none text-gray-900 dark:text-gray-100">{msg.sender_name}</span>}
+              {msg.sender_name && <span className="text-sm font-bold leading-none text-gray-900 dark:text-gray-100">{msg.sender_name}</span>}
               <MessageTimestamp dateStr={msg.created_at} edited={isEdited} alwaysShow />
             </div>
 

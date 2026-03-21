@@ -22,6 +22,9 @@ import {
   SidebarMenuSubItem,
   useSidebar,
 } from "@/app/components/ui/sidebar"
+import { UserAvatar } from "@/app/components/MessageMeta"
+import { usePresence } from "@/app/components/context/PresenceContext"
+import { formatRelativeTime } from "@/lib/utils"
 
 type SubItem = {
   title: string
@@ -29,6 +32,9 @@ type SubItem = {
   is_private?: boolean
   is_dm?: boolean
   avatar_url?: string
+  target_user_id?: string | number | null
+  last_seen?: string | null
+  is_online?: boolean
   unread?: number
   /** Number of times the current user was @mentioned in this channel */
   mentions?: number
@@ -45,25 +51,23 @@ type NavItem = {
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
-function DMAvatar({ sub }: { sub: SubItem }) {
-  if (sub.avatar_url) {
-    return (
-      <img
-        src={sub.avatar_url}
-        alt={sub.title ?? ""}
-        className="h-5 w-5 rounded-full object-cover shrink-0"
-      />
-    )
-  }
-  const initials =
-    (sub.title ?? "")
-      .split(" ")
-      .map((w) => w.charAt(0).toUpperCase())
-      .join("")
-      .slice(0, 2) || "?"
+function DMAvatar({ sub, online }: { sub: SubItem; online: boolean }) {
+  const avatarUrl = sub.avatar_url ?? (sub as any)?.avatar ?? null
   return (
-    <div className="h-5 w-5 rounded-sm bg-muted flex items-center justify-center text-black text-[10px] font-medium shrink-0">
-      {initials}
+    <div className="relative">
+      <UserAvatar
+        name={sub.title ?? ""}
+        avatarUrl={avatarUrl ?? null}
+        size="xs"
+        rounded="full"
+        className="shrink-0"
+      />
+      <span
+        aria-label={online ? "Online" : "Offline"}
+        className={`absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border border-background ${
+          online ? "bg-emerald-500" : "bg-muted-foreground/50"
+        }`}
+      />
     </div>
   )
 }
@@ -186,6 +190,7 @@ export function NavMain({ items }: { items: NavItem[] }) {
   const { state } = useSidebar()
   const isCollapsed = state === "collapsed"
   const pathname = usePathname()
+  const presence = usePresence()
 
   return (
     <>
@@ -234,6 +239,24 @@ export function NavMain({ items }: { items: NavItem[] }) {
                         const hasUnread = unread > 0
                         const hasMention = mentions > 0
                         const hasActivity = hasUnread || hasMention
+                        const targetId =
+                          sub.target_user_id ??
+                          (sub as any)?.other_user_id ??
+                          (sub as any)?.user_id ??
+                          null
+                        const online = targetId
+                          ? presence.isOnline(targetId)
+                          : sub.is_online ?? false
+                        const lastSeen =
+                          (targetId ? presence.getLastSeen(targetId) : null) ??
+                          sub.last_seen ??
+                          null
+                        const relativeLastSeen = lastSeen ? formatRelativeTime(lastSeen) : null
+                        const statusLabel = online
+                          ? ""
+                          : relativeLastSeen
+                          ? `Last seen ${relativeLastSeen}`
+                          : "Offline"
 
                         return (
                           <SidebarMenuSubItem key={sub.url} className="relative">
@@ -271,16 +294,23 @@ export function NavMain({ items }: { items: NavItem[] }) {
                                 }`}
                               >
                                 {item.type === "dm" ? (
-                                  <DMAvatar sub={sub} />
+                                  <DMAvatar sub={sub} online={online} />
                                 ) : (
                                   sub.is_dm === false && <ChannelIcon sub={sub} />
                                 )}
-                                <span
-                                  className={
-                                    hasActivity ? "truncate font-semibold" : "truncate"
-                                  }
-                                >
-                                  {sub.title}
+                                <span className="flex flex-row items-center min-w-0">
+                                  <span
+                                    className={
+                                      hasActivity ? "truncate font-semibold" : "truncate"
+                                    }
+                                  >
+                                    {sub.title}
+                                  </span>
+                                  {item.type === "dm" && (
+                                    <span className="text-[11px] ps-1 truncate">
+                                      {statusLabel}
+                                    </span>
+                                  )}
                                 </span>
                               </Link>
                             </SidebarMenuSubButton>
@@ -311,13 +341,21 @@ export function NavMain({ items }: { items: NavItem[] }) {
                 const mentions = sub.mentions ?? 0
                 const hasUnread = unread > 0
                 const hasMention = mentions > 0
+                const targetId =
+                  sub.target_user_id ??
+                  (sub as any)?.other_user_id ??
+                  (sub as any)?.user_id ??
+                  null
+                const online = targetId
+                  ? presence.isOnline(targetId)
+                  : sub.is_online ?? false
 
                 return (
                   <SidebarMenuItem key={sub.url} className="relative">
                     <SidebarMenuButton asChild tooltip={sub.title} isActive={isActive}>
                       <Link href={sub.url} className="flex items-center justify-center">
                         {item.type === "dm" ? (
-                          <DMAvatar sub={sub} />
+                          <DMAvatar sub={sub} online={online} />
                         ) : sub.is_private ? (
                           <Lock className="h-4 w-4" />
                         ) : (

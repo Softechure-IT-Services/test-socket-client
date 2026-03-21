@@ -21,6 +21,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { UserType } from "@/app/components/context/userId_and_connection/provider";
 import { useUnread } from "@/app/components/context/UnreadContext";
 import { usePushNotifications } from "@/hooks/usePushNotifications";
+import { usePresence } from "@/app/components/context/PresenceContext";
 import {
   incrementStoredMentionCount,
   clearStoredMentionCount,
@@ -59,6 +60,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
 
   const { unreadCounts, seedFromStorage, incrementUnread, clearUnread } = useUnread();
   const { requestPermission, showNotification } = usePushNotifications();
+  const { seedUsers } = usePresence();
 
   // ─── Mention counts (channelId → count) ─────────────────────────────────
   const [mentionCounts, setMentionCounts] = React.useState<Record<string, number>>({});
@@ -262,9 +264,21 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
           id: d.id,
           title: d.name,
           url: `/dm/${d.id}`,
-          avatar: d.avatar_url,
+          avatar_url: d.avatar_url ?? null,
+          target_user_id: d.other_user_id ?? null,
+          is_online: d.is_online ?? false,
+          last_seen: d.last_seen ?? null,
         }));
         setUsers(userList);
+        seedUsers(
+          dm.data
+            .map((d: any) => ({
+              id: d.other_user_id ?? null,
+              is_online: d.is_online,
+              last_seen: d.last_seen,
+            }))
+            .filter((entry: any) => entry.id !== null)
+        );
 
         const allIds = [
           ...channelList.map((c: any) => String(c.id)),
@@ -277,7 +291,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       }
     };
     fetchData();
-  }, [seedFromStorage, seedMentionsFromStorage]);
+  }, [seedFromStorage, seedMentionsFromStorage, seedUsers]);
 
   // ─── Socket: channel created ─────────────────────────────────────────────
   React.useEffect(() => {
@@ -311,11 +325,15 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
           (m: any) => String(m.id) !== String(user.id)
         );
         if (otherMember) {
+          seedUsers(data.members ?? []);
           const newDm = {
             id: data.channel_id,
             title: otherMember.name,
             url: `/dm/${data.channel_id}`,
-            avatar: otherMember.avatar_url ?? null,
+            avatar_url: otherMember.avatar_url ?? null,
+            target_user_id: otherMember.id ?? null,
+            is_online: otherMember.is_online ?? false,
+            last_seen: otherMember.last_seen ?? null,
           };
           setUsers((prev) => {
             if (prev.some((u) => String(u.id) === String(data.channel_id))) return prev;
@@ -331,9 +349,21 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         id: d.id,
         title: d.name,
         url: `/dm/${d.id}`,
-        avatar: d.avatar_url,
+        avatar_url: d.avatar_url ?? null,
+        target_user_id: d.other_user_id ?? null,
+        is_online: d.is_online ?? false,
+        last_seen: d.last_seen ?? null,
       }));
       setUsers(userList);
+      seedUsers(
+        dm.data
+          .map((d: any) => ({
+            id: d.other_user_id ?? null,
+            is_online: d.is_online,
+            last_seen: d.last_seen,
+          }))
+          .filter((entry: any) => entry.id !== null)
+      );
       const ids = userList.map((u: any) => String(u.id));
       seedFromStorage(ids);
       seedMentionsFromStorage(ids);
@@ -341,7 +371,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
 
     socket.on("dmCreated", dmHandler);
     return () => { socket.off("dmCreated", dmHandler); };
-  }, [socket, user, seedFromStorage, seedMentionsFromStorage]);
+  }, [socket, user, seedFromStorage, seedMentionsFromStorage, seedUsers]);
 
   // ─── Socket: User Profile Updated ────────────────────────────────────────
   React.useEffect(() => {
@@ -352,14 +382,26 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
           id: d.id,
           title: d.name,
           url: `/dm/${d.id}`,
-          avatar: d.avatar_url,
+          avatar_url: d.avatar_url ?? null,
+          target_user_id: d.other_user_id ?? null,
+          is_online: d.is_online ?? false,
+          last_seen: d.last_seen ?? null,
         }));
         setUsers(userList);
+        seedUsers(
+          res.data
+            .map((d: any) => ({
+              id: d.other_user_id ?? null,
+              is_online: d.is_online,
+              last_seen: d.last_seen,
+            }))
+            .filter((entry: any) => entry.id !== null)
+        );
       }).catch((err) => console.error("Sidebar user sync error:", err));
     };
     socket.on("userUpdated", handleUserUpdated);
     return () => { socket.off("userUpdated", handleUserUpdated); };
-  }, [socket]);
+  }, [socket, seedUsers]);
 
   // ─── Socket: removed / added from channel ───────────────────────────────
   React.useEffect(() => {

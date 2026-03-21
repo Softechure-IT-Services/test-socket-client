@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useAuth } from "@/app/components/context/userId_and_connection/provider";
+import { usePresence } from "@/app/components/context/PresenceContext";
 import MessageInput from "@/app/components/custom/MessageInput";
 import FileBg from "@/app/components/ui/file-bg";
 import FileUploadToggle from "@/app/components/ui/file-upload";
@@ -14,6 +15,8 @@ import { useUnread } from "@/app/components/context/UnreadContext";
 import { MessageRow, MessageSkeleton } from "@/app/components/MessageRow";
 import DOMPurify from "dompurify";
 import { sweetConfirm, sweetToast } from "@/lib/sweetalert";
+import { UserAvatar } from "@/app/components/MessageMeta";
+import { formatRelativeTime } from "@/lib/utils";
 // At the top with your other hook imports
 type User = {
   name: string;
@@ -34,6 +37,13 @@ type Channel = {
   id: number | string;
   is_private: boolean;
   is_dm?: boolean;
+};
+type DmUser = {
+  id: number | string;
+  name: string;
+  avatar_url?: string | null;
+  is_online?: boolean | null;
+  last_seen?: string | null;
 };
 type ForwardedFrom = {
   id: string | null;
@@ -68,7 +78,7 @@ type ChannelChatProps = {
 // ─── New message divider ───────────────────────────────────────────────────────
 function NewMessageDivider() {
   return (
-    <div className="flex items-center justify-end gap-2 px-6 py-2 select-none">
+    <div className="flex items-center justify-end gap-2 px-6 py-2 select-none absolute left-0 top-0 transform -translate-y-1/2 w-full">
       <div className="flex-1 h-px bg-red-400/60" />
       <span className="text-[10px] font-bold tracking-widest text-red-500 uppercase px-2 py-0.5 rounded-full bg-red-50 dark:bg-red-950/30 border border-red-300 dark:border-red-700 shrink-0">
         New
@@ -110,7 +120,7 @@ function SystemMessage({
 export default function ChannelChat({ channelId }: ChannelChatProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isDm, setIsDm] = useState(false);
-  const [dmOtherUser, setDmOtherUser] = useState<any>(null);
+  const [dmOtherUser, setDmOtherUser] = useState<DmUser | null>(null);
   const [channel, setChannel] = useState<Channel | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
 
@@ -147,6 +157,7 @@ const canSendMessages = isMember;
     });
 
   const { socket, user, isOnline } = useAuth();
+  const { seedUsers, isOnline: presenceIsOnline, getLastSeen } = usePresence();
   const userId = user?.id;
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [hoveredId, setHoveredId] = useState<string | number | null>(null);
@@ -246,6 +257,9 @@ const canSendMessages = isMember;
         if (ch?.is_dm) {
           setIsDm(true);
           setDmOtherUser(data.dm_user);
+          if (data.dm_user) {
+            seedUsers([data.dm_user]);
+          }
         } else {
           setIsDm(false);
         }
@@ -256,7 +270,7 @@ const canSendMessages = isMember;
           setIsMember(false);
         }
       });
-  }, [channelId]);
+  }, [channelId, seedUsers]);
 
   // ─── Listen for removed/added from channel ──────────────────────────────────
   useEffect(() => {
@@ -469,15 +483,18 @@ const canSendMessages = isMember;
       const stableId =
         msg.id ?? `${msg.sender_id}-${msg.created_at ?? Date.now()}`;
 
+      const isSelf = String(msg.sender_id) === String(userId);
       const chatMsg: ChatMessage = {
         id: stableId,
-        sender_id: msg.sender_id,
+        sender_id: String(msg.sender_id), // always string — matches loadMessages; fixes grouping
         sender_name: msg.sender_name,
         content: msg.content,
         files: Array.isArray(msg.files) ? msg.files : [],
-        self: String(msg.sender_id) === String(userId),
+        self: isSelf,
         created_at: msg.created_at ?? new Date().toISOString(),
-        avatar_url: msg.avatar_url ?? null,
+        // For own messages prefer the React context avatar — socket.user is set at
+        // connect time and can be stale after a profile picture update.
+        avatar_url: isSelf ? (user?.avatar_url ?? msg.avatar_url ?? null) : (msg.avatar_url ?? null),
         is_forwarded: msg.is_forwarded ?? false,
         forwarded_from: msg.forwarded_from ?? null,
         is_system: msg.is_system ?? false,
@@ -533,7 +550,7 @@ const canSendMessages = isMember;
       const createdAt = msg.created_at ?? new Date().toISOString();
       const chatMsg: ChatMessage = {
         id: stableId,
-        sender_id: msg.sender_id,
+        sender_id: String(msg.sender_id), // always string — matches loadMessages; fixes grouping
         sender_name: msg.sender_name,
         content: msg.content,
         files: Array.isArray(msg.files) ? msg.files : [],
@@ -645,6 +662,7 @@ const canSendMessages = isMember;
         }
         return prev;
       });
+      seedUsers([updatedUser]);
     };
 
     socket.on("receiveMessage", handleReceive);
@@ -662,7 +680,7 @@ const canSendMessages = isMember;
       socket.off("threadReplyAdded", handleThreadReply);
       socket.off("userUpdated", handleUserUpdated);
     };
-  }, [socket, userId, channelId]);
+  }, [socket, userId, channelId, seedUsers]);
 
   const loadMessages = useCallback(
     async (initial = false) => {
@@ -1502,6 +1520,22 @@ const canSendMessages = isMember;
     return () => clearTimeout(t);
   }, [highlightedIds]);
 
+  useEffect(() => {
+    if (dmOtherUser) {
+      seedUsers([dmOtherUser]);
+    }
+  }, [dmOtherUser, seedUsers]);
+
+  const dmUserId = dmOtherUser?.id ?? null;
+  const dmPresenceOnline = dmUserId ? presenceIsOnline(dmUserId) : dmOtherUser?.is_online ?? false;
+  const dmPresenceLastSeen =
+    (dmUserId ? getLastSeen(dmUserId) : null) ?? dmOtherUser?.last_seen ?? null;
+  const dmPresenceSubtitle = dmPresenceOnline
+    ? ""
+    : dmPresenceLastSeen
+    ? `Last seen ${formatRelativeTime(dmPresenceLastSeen) ?? ""}`
+    : "Last seen unknown";
+
   return (
     <div
       className="flex min-h-[100%] dark:bg-black relative"
@@ -1535,8 +1569,33 @@ const canSendMessages = isMember;
       {dragging && canSendMessages && (
         <div className="absolute top-0 left-0 w-full h-[100%]  bg-opacity-50 flex items-center justify-center z-500 transition-opacity duration-300 order-1">
           <FileBg />
-        </div>
+        {/* </div>
         )}  
+        {isDm && dmOtherUser && (
+          <div className="sticky top-0 z-30 border-b border-[var(--border-color)] bg-[var(--chat_bg)] px-6 py-3 flex items-center gap-3">
+            <UserAvatar
+              name={dmOtherUser.name ?? ""}
+              avatarUrl={dmOtherUser.avatar_url ?? null}
+              size="sm"
+              rounded="full"
+            />
+            <div className="flex flex-col min-w-0">
+              <div className="flex items-center gap-2">
+                <span className="text-base font-semibold truncate">{dmOtherUser.name}</span>
+                <span
+                  className={`text-[10px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-full ${
+                    dmPresenceOnline ? "bg-emerald-100 text-emerald-700" : "bg-muted text-muted-foreground"
+                  }`}
+                >
+                  {dmPresenceOnline ? "Online" : "Offline"}
+                </span>
+              </div>
+              <span className="text-xs text-muted-foreground truncate">
+                {dmPresenceSubtitle}
+              </span>
+            </div> */}
+          </div>
+        )}
         {hasNewMessages && isMember && (
           <div className="sticky top-2 z-50 flex justify-center">
             <button
@@ -1661,7 +1720,7 @@ const canSendMessages = isMember;
 
         {/* ─── Message input area ─────────────────────────────────── */}
         <div
-          className="pb-2 px-[25px] pt-0 relative sticky bottom-0 right-0 bg-[var(--chat_bg)] dark:bg-zinc-900"
+          className="pb-2 px-[25px] pt-0 relative sticky bottom-0 right-0 bg-[var(--chat_bg)] dark:bg-zinc-900 z-4"
           ref={messageBoxRef}
         >
           {canSendMessages ? (

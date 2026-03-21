@@ -92,7 +92,7 @@ export function SenderName({
   if (!name) return null;
   return (
     <span
-      className={`text-sm font-semibold leading-none text-gray-900 dark:text-gray-100 ${className}`}
+      className={`text-sm font-bold leading-none text-gray-900 dark:text-gray-100 ${className}`}
     >
       {name}
     </span>

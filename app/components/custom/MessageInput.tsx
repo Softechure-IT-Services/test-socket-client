@@ -59,38 +59,26 @@ type UploadedPreview = {
 
 type PreviewFile = UploadingPreview | UploadedPreview;
 
-// Allowed MIME types — extend as needed
-const ALLOWED_TYPES = [
-  "image/jpeg",
-  "image/png",
-  "image/gif",
-  "image/webp",
-  "image/svg+xml",
-  "video/mp4",
-  "video/webm",
-  "application/pdf",
-  "text/plain",
+// Mirrors bucket policy: image/*, video/*, application/pdf
+const ALLOWED_TYPES = ["image/*", "video/*", "application/pdf"];
+const ALLOWED_LABEL = "Images, Videos, PDF";
+
+const isAllowedMime = (mime: string) =>
+  mime.startsWith("image/") ||
+  mime.startsWith("video/") ||
+  mime === "application/pdf";
+
+// Extension fallback for browsers (e.g. iOS) that omit MIME types
+const ALLOWED_EXTENSIONS = [
+  "jpg", "jpeg", "png", "gif", "webp", "svg", "avif", "heic", "heif",
+  "mp4", "webm", "mov", "avi", "mkv",
+  "pdf",
 ];
-const ALLOWED_LABEL = "JPEG, PNG, GIF, WEBP, SVG, MP4, WEBM, PDF, TXT";
 
 const isAllowedType = (file: File) => {
-  if (ALLOWED_TYPES.includes(file.type)) return true;
-  // Some browsers (e.g. iOS) may not provide a MIME type for certain files.
-  // Fall back to extension-based detection.
+  if (file.type && isAllowedMime(file.type)) return true;
   const ext = file.name.split(".").pop()?.toLowerCase();
-  if (!ext) return false;
-  return [
-    "jpg",
-    "jpeg",
-    "png",
-    "gif",
-    "webp",
-    "svg",
-    "mp4",
-    "webm",
-    "pdf",
-    "txt",
-  ].includes(ext);
+  return !!ext && ALLOWED_EXTENSIONS.includes(ext);
 };
 
 const isAllowedSize = (file: File) => file.size <= MAX_FILE_SIZE;
@@ -99,7 +87,6 @@ const getFileKind = (type: string, name: string) => {
   if (type.startsWith("image/")) return "image";
   if (type.startsWith("video/")) return "video";
   if (type === "application/pdf") return "pdf";
-  if (type.startsWith("text/") || name.endsWith(".txt")) return "text";
   return "other";
 };
 
@@ -957,7 +944,7 @@ export default function MessageInput({
                   }`}
                 >
                   <img
-                    src={u.avatar_url ? `/avatar/${u.avatar_url}` : "/avatar/fallback.webp"}
+                    src={u.avatar_url ? `${u.avatar_url}` : "/avatar/fallback.webp"}
                     alt={u.name}
                     className="w-7 h-7 rounded-sm object-cover shrink-0"
                   />
@@ -985,7 +972,7 @@ export default function MessageInput({
 
           {/* File previews */}
           {previewFiles.length > 0 && (
-            <div className="flex flex-wrap gap-4 mt-2 w-fit">
+            <div className="flex flex-wrap gap-3 mt-2 w-fit">
               {previewFiles.map((file, i) => {
                 const kind = file.uploading
                   ? "image"
@@ -993,33 +980,39 @@ export default function MessageInput({
 
                 const entryId = file.uploading ? file.preview : `uploaded-${i}`;
 
+                // Derive a short readable extension label
+                const ext = file.name.split(".").pop()?.toUpperCase() ?? "";
+                // Truncate long filenames for display
+                const displayName = file.name.length > 18
+                  ? file.name.slice(0, 15) + "…" + (ext ? `.${ext.toLowerCase()}` : "")
+                  : file.name;
+
                 return (
                   <div
                     key={entryId}
-                    className="relative flex flex-col items-center px-2 py-2 rounded-lg cursor-pointer"
+                    className="relative flex flex-col items-center gap-1 cursor-pointer"
+                    style={{ width: 88 }}
                   >
-                    {/* Cancel/delete button — keep the same icon and position for both states */}
+                    {/* Cancel/delete button */}
                     <button
                       type="button"
                       onClick={() =>
                         file.uploading ? cancelUpload(file.id) : deleteUploadedFile(entryId)
                       }
-                      className="absolute top-0 right-0 bg-gray-600 hover:bg-black hover:scale-[1.15] w-6 h-6 rounded-full text-white flex items-center justify-center text-sm cursor-pointer transition-all duration-300 z-10"
+                      className="absolute top-0 right-0 bg-gray-600 hover:bg-black hover:scale-[1.15] w-5 h-5 rounded-full text-white flex items-center justify-center text-xs cursor-pointer transition-all duration-300 z-10"
                       title={file.uploading ? "Cancel upload" : "Remove file"}
                     >
                       <HiXMark />
                     </button>
 
+                    {/* Square thumbnail */}
                     {file.uploading ? (
-                      /* ── Uploading skeleton ── */
-                      <div className="relative w-22 h-22 rounded-md overflow-hidden bg-gray-200">
-                        {/* Show the stable blob preview — no flash */}
+                      <div className="relative w-[88px] h-[88px] rounded-lg overflow-hidden bg-gray-200 shrink-0">
                         <img
                           src={file.preview}
                           alt={file.name}
                           className="w-full h-full object-cover opacity-40 blur-sm"
                         />
-                        {/* Progress overlay */}
                         <div className="absolute inset-0 flex items-center justify-center">
                           <span className="text-xs font-semibold text-gray-700 bg-white/70 rounded px-1">
                             {file.progress}%
@@ -1030,25 +1023,36 @@ export default function MessageInput({
                       <img
                         src={(file as UploadedPreview).url}
                         alt={file.name}
-                        className="w-22 h-22 object-cover rounded-md border border-black"
+                        className="w-[88px] h-[88px] object-cover rounded-lg border border-gray-300 dark:border-zinc-600 shrink-0"
                       />
                     ) : kind === "video" ? (
                       <video
                         src={(file as UploadedPreview).url}
-                        className="w-22 h-22 rounded-md border border-black"
-                        controls
+                        className="w-[88px] h-[88px] object-cover rounded-lg border border-gray-300 dark:border-zinc-600 shrink-0"
                       />
                     ) : (
+                      /* PDF / other — icon tile */
                       <a
                         href={(file as UploadedPreview).url}
                         target="_blank"
                         rel="noopener noreferrer"
+                        className="block w-[88px] h-[88px] shrink-0"
                       >
-                        <div className="py-3 px-7 flex gap-6 items-center justify-center rounded-md border border-black bg-gray-50">
-                          <CiFileOn className="text-3xl text-gray-600" />
+                        <div className="w-full h-full flex flex-col items-center justify-center gap-1 rounded-lg border border-gray-300 dark:border-zinc-600 bg-gray-50 dark:bg-zinc-800">
+                          <CiFileOn className="text-3xl text-gray-500 dark:text-gray-400" />
+                          {ext && (
+                            <span className="text-[10px] font-bold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                              {ext}
+                            </span>
+                          )}
                         </div>
                       </a>
                     )}
+
+                    {/* Filename + extension */}
+                    <p className="w-full text-center text-[11px] text-gray-600 dark:text-gray-400 leading-tight truncate px-0.5">
+                      {displayName}
+                    </p>
                   </div>
                 );
               })}

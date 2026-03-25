@@ -857,7 +857,7 @@ export default function MessageInput({
   // ─── Render ────────────────────────────────────────────────────────────────
 
   return (
-    <div className={`flex flex-col gap-2 w-full message-box border overflow-hidden rounded-xl bg-[var(--chat_bg)] ${in_thread ? "-translate-y-[5px]" : ""}`}>
+    <div className={`relative overflow-auto max-h-[250px] flex flex-col gap-2 w-full message-box border overflow-hidden rounded-xl bg-[var(--chat_bg)] ${in_thread ? "-translate-y-[5px]" : ""}`}>
       <style>{`
         .mention-chip {
           display: inline;
@@ -919,7 +919,7 @@ export default function MessageInput({
 
       {/* ── Mention dropdown — floats above the editor, below toolbar ────────── */}
       {mentionOpen && (
-        <div className="border-b border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 max-h-52 overflow-y-auto">
+        <div className="border-b border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 max-h-52 overflow-y-auto absolute bottom-full left-0 right-0 z-50">
           {mentionLoading ? (
             <div className="px-4 py-3 text-xs text-muted-foreground">Searching…</div>
           ) : mentionUsers.length === 0 ? (

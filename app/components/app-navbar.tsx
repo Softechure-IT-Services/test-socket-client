@@ -345,10 +345,12 @@ export default function AppNavbar() {
         const baseRoute = result.is_dm_channel ? `/dm/${result.channel_id}` : `/channel/${result.channel_id}`;
         let url = `${baseRoute}?`;
         const threadParentId = resolveThreadParentId(result);
-        // Always open thread panel: use thread_parent_id if it's a reply, otherwise use message id
-        const threadId = threadParentId || result.id;
-        url += `threadId=${threadId}&scrollTo=${result.id}`;
-        console.log('[SearchNav] Navigating to message result:', result, 'threadParentId:', threadParentId, 'threadId:', threadId, 'url:', url, 'current location:', window.location.href);
+        if (result.is_thread_reply && threadParentId) {
+          url += `threadId=${threadParentId}&scrollTo=${result.id}&v=${Date.now()}`;
+        } else {
+          url += `scrollTo=${result.id}&v=${Date.now()}`;
+        }
+        console.log('[SearchNav] Navigating to message result:', result, 'threadParentId:', threadParentId, 'url:', url, 'current location:', window.location.href);
         router.push(url);
         // if (threadParentId) {
         //   // Force a refresh so ChannelChat re-runs its thread auto-open effect even if we're already on this channel.
@@ -562,7 +564,7 @@ export default function AppNavbar() {
                           {data.messages.map((m) => {
                             const idx = flat.indexOf(m);
                             const threadParentId = resolveThreadParentId(m);
-                            const isThreadReply = !!threadParentId;
+                            const isThreadReply = !!(m.is_thread_reply && threadParentId);
                             return (
                               <ResultRow
                                 key={`msg-${m.id}`}

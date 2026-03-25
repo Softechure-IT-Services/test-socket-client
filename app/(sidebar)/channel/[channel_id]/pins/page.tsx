@@ -105,9 +105,9 @@ export default function PinnedMessages() {
       const threadParentId = resolveThreadParentId(msg);
       const base = `/channel/${channelId}`;
       const url = threadParentId
-        ? `${base}?threadId=${threadParentId}&scrollTo=${msg.message_id}`
-        : `${base}?scrollTo=${msg.message_id}`;
-      router.push(url);
+        ? `${base}?threadId=${threadParentId}&scrollTo=${msg.message_id}&v=${Date.now()}`
+        : `${base}?scrollTo=${msg.message_id}&v=${Date.now()}`;
+      router.push(url, { scroll: false });
     },
     [channelId, router]
   );

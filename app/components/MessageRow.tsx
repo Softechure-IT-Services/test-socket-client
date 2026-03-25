@@ -316,7 +316,7 @@ export const MessageRow = memo(function MessageRow({
       onMouseLeave={onMouseLeave}
       className={`relative flex justify-start group/message !px-[25px] items-center gap-3
         ${msg.pinned ? "pinned bg-amber-100 dark:bg-amber-900/20" : "hover:bg-[var(--sidebar-accent)]"}
-        ${isHighlighted ? "bg-red-200 dark:bg-red-900/30 animate-pulse" : ""}
+        ${isHighlighted ? "bg-amber-100 dark:bg-amber-900/40 animate-pulse" : ""}
         ${className}`}
     >
       {/* Pin icon */}

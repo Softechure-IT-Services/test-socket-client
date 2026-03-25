@@ -182,6 +182,7 @@ const canSendMessages = isMember;
   const loadingMoreRef = useRef(false);
   const highlightedScrollIds = useRef<Set<string>>(new Set());
   const prevScrollToRef = useRef<string | null>(null);
+  const isJumpingToPinnedRef = useRef(false);
 
   const [hasNewMessages, setHasNewMessages] = useState(false);
   const [newMessageCount, setNewMessageCount] = useState(0);
@@ -352,26 +353,21 @@ const canSendMessages = isMember;
 
     highlightedScrollIds.current.add(scrollToId);
 
+    // Use state-based highlighting (pulsing red) for standardized and better visibility
+    setHighlightedIds((prev) => new Set(prev).add(scrollToId));
+
     setTimeout(() => {
-      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      el.scrollIntoView({ behavior: "auto", block: "center" });
 
-      el.style.transition = "none";
-      el.style.backgroundColor = "#fef08a";
-      el.style.borderRadius = "6px";
-      el.style.outline = "2px solid #facc15";
-
+      // Delay releasing the scroll guard to allow for layout stabilization after the jump
       setTimeout(() => {
-        el.style.transition = "background-color 1s ease, outline 1s ease";
-        el.style.backgroundColor = "";
-        el.style.outline = "2px solid transparent";
-        setTimeout(() => {
-          el.style.transition = "";
-          el.style.outline = "";
-          el.style.borderRadius = "";
-        }, 1000);
-      }, 1800);
+        isJumpingToPinnedRef.current = false;
+        // Also remove from the dedup set so that clicking the same search result/pin
+        // (which now includes a timestamp in the URL) can re-trigger the highlight.
+        highlightedScrollIds.current.delete(scrollToId);
+      }, 500);
     }, 100);
-  }, [scrollTargetId, messages, initialLoading]);
+  }, [scrollTargetId, messages, initialLoading, searchParams]);
 
   // ─── Shared thread auto-open logic ──────────────────────────────────────────
   // Effect: responds to URL changes. Always fetches the parent via API so the
@@ -533,6 +529,12 @@ const canSendMessages = isMember;
       });
 
       // Side-effects outside setMessages to avoid double-fire in React Strict Mode
+      if (!chatMsg.self) {
+        // Play notification sound for all incoming messages from others
+        const audio = new Audio("/slack_notification.mp3");
+        audio.play().catch(() => {});
+      }
+
       if (!shouldAutoScrollRef.current && !chatMsg.self) {
         // User is scrolled up — show the floating banner + NEW divider
         setHasNewMessages(true);
@@ -754,7 +756,16 @@ const canSendMessages = isMember;
           };
         });
 
-        setMessages((prev) => (initial ? mapped : [...mapped, ...prev]));
+        setMessages((prev) => {
+          const combined = initial ? mapped : [...mapped, ...prev];
+          const seen = new Set();
+          return combined.filter(m => {
+            const k = String(m.id);
+            if (seen.has(k)) return false;
+            seen.add(k);
+            return true;
+          }).sort((a, b) => new Date(a.created_at!).getTime() - new Date(b.created_at!).getTime());
+        });
 
         const newCursor = data.nextCursor ?? null;
 
@@ -766,6 +777,10 @@ const canSendMessages = isMember;
         }
 
         if (!initial && el) {
+          // If we are currently jumping to a pinned message, don't let prepending
+          // messages reset the scroll position during the jump.
+          if (isJumpingToPinnedRef.current) return;
+
           requestAnimationFrame(() => {
             const newScrollHeight = el.scrollHeight;
             el.scrollTop = newScrollHeight - prevScrollHeight;
@@ -791,6 +806,7 @@ const canSendMessages = isMember;
   const loadMessagesAroundId = useCallback(
     async (targetId: string) => {
       if (!channelId || !userId) return;
+      isJumpingToPinnedRef.current = true;
       setInitialLoading(true);
       setHasMoreNewer(false);
       setNextAfterCursor(null);
@@ -798,10 +814,10 @@ const canSendMessages = isMember;
         const target = Number(targetId);
         const [beforeRes, afterRes] = await Promise.all([
           api.get(`/channels/${channelId}/messages`, {
-            params: { limit: 20, cursor: target + 1 },
+            params: { limit: 50, cursor: target + 1 },
           }),
           api.get(`/channels/${channelId}/messages`, {
-            params: { limit: 15, after: target },
+            params: { limit: 50, after: target },
           }),
         ]);
 
@@ -841,8 +857,10 @@ const canSendMessages = isMember;
           .map(mapMsg)
           .filter((m: ChatMessage) => Number(m.id) > target);
 
+        // Merge and deduplicate by ID to prevent "duplicate key" errors
+        const combined = [...beforeMsgs, ...afterMsgs];
         const seen = new Set<string>();
-        const merged = [...beforeMsgs, ...afterMsgs].filter((m) => {
+        const merged = combined.filter((m) => {
           const k = String(m.id);
           if (seen.has(k)) return false;
           seen.add(k);
@@ -854,7 +872,7 @@ const canSendMessages = isMember;
         setNextCursor(beforeRes.data.nextCursor ?? null);
         setHasMore(!!beforeRes.data.nextCursor);
 
-        if (afterMsgs.length >= 15) {
+        if (afterMsgs.length >= 50) {
           const newestId = Math.max(...afterMsgs.map((m) => Number(m.id)));
           setNextAfterCursor(newestId);
           setHasMoreNewer(true);
@@ -1172,7 +1190,11 @@ const canSendMessages = isMember;
         return [...prev, ...fresh].sort((a, b) => Number(a.id) - Number(b.id));
       });
 
-      // Restore scroll position — don't let appending content jump the view
+      // Restore scroll position — don't let appending content jump the view.
+      // If we are currently jumping to a pinned message, don't let pagination
+      // overrides the jump's scroll position.
+      if (isJumpingToPinnedRef.current) return;
+
       requestAnimationFrame(() => {
         if (el) el.scrollTop = savedScrollTop;
       });
@@ -1253,7 +1275,28 @@ const canSendMessages = isMember;
       created_at: new Date().toISOString(),
     };
 
-    setMessages((prev) => [...prev, newMsg]);
+    const isHistorical = hasMoreNewer || !!searchParams?.get("scrollTo");
+
+    if (isHistorical) {
+      // If we are looking at old history and send a message, we must return to the bottom/live view.
+      const base = isDm ? `/dm/${channelId}` : `/channel/${channelId}`;
+      router.push(base);
+      loadMessages(true);
+      // Force scroll to bottom after state re-stabilizes
+      setTimeout(() => {
+        const el = containerRef.current;
+        if (el) el.scrollTop = el.scrollHeight;
+      }, 500);
+    } else {
+      setMessages((prev) => [...prev, newMsg]);
+    }
+
+    shouldAutoScrollRef.current = true;
+    // Extra boost for scroll to bottom to ensure it works even if we were just slightly off-bottom
+    setTimeout(() => {
+      const el = containerRef.current;
+      if (el) el.scrollTop = el.scrollHeight;
+    }, 100);
 
     socket.emit("sendMessage", {
       content,
@@ -1598,11 +1641,11 @@ const canSendMessages = isMember;
         onDrop={handleDrop}
       >
       {dragging && canSendMessages && (
-        <div className="absolute top-0 left-0 w-full h-[100%]  bg-opacity-50 flex items-center justify-center z-500 transition-opacity duration-300 order-1">
+        <div className="absolute top-0 left-0 w-full h-[100%] bg-opacity-50 flex items-center justify-center z-500 transition-opacity duration-300 order-1">
           <FileBg />
-        {/* </div>
-        )}  
-        {isDm && dmOtherUser && (
+        </div>
+      )}
+        {/* {isDm && dmOtherUser && (
           <div className="sticky top-0 z-30 border-b border-[var(--border-color)] bg-[var(--chat_bg)] px-6 py-3 flex items-center gap-3">
             <UserAvatar
               name={dmOtherUser.name ?? ""}
@@ -1624,9 +1667,9 @@ const canSendMessages = isMember;
               <span className="text-xs text-muted-foreground truncate">
                 {dmPresenceSubtitle}
               </span>
-            </div> */}
+            </div>
           </div>
-        )}
+        )} */}
         {hasNewMessages && isMember && (
           <div className="sticky top-2 z-50 flex justify-center">
             <button
@@ -1680,7 +1723,7 @@ const canSendMessages = isMember;
             if (msg.is_system) {
               return (
                 <div
-                  className="relative" key={msgId} id={`msg-${msgId}`}
+                  className="relative" key={msgId}
                   ref={isFirst ? topMessageRef : (isLast && hasMoreNewer ? bottomMessageRef : null)}
                 >
                   {isNewSeparator && <NewMessageDivider />}
@@ -1700,7 +1743,7 @@ const canSendMessages = isMember;
 
             return (
               <div
-                className="relative" key={msgId} id={`msg-${msgId}`}
+                className="relative" key={msgId}
                 ref={isFirst ? topMessageRef : (isLast && hasMoreNewer ? bottomMessageRef : null)}
               >
                 {isNewSeparator && <NewMessageDivider />}

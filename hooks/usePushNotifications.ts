@@ -67,6 +67,13 @@ export function usePushNotifications() {
     ({ title, body, icon, channelId, url, force = false }: PushNotificationPayload) => {
       if (typeof window === "undefined") return;
       if (!("Notification" in window)) return;
+
+      // Always play the sound if permission is granted, even if we don't show the visual popup
+      if (Notification.permission === "granted") {
+        const audio = new Audio("/slack_notification.mp3");
+        audio.play().catch(() => { /* ignore play errors (e.g. user hasn't interacted) */ });
+      }
+
       if (Notification.permission !== "granted") return;
 
       // Skip if the user is actively looking at the page —

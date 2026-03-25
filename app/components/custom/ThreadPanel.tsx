@@ -11,6 +11,7 @@ import type { MsgFile } from "@/app/components/MessageRow";
 import CreateNew from "@/app/components/modals/CreateNew";
 import FileBg from "@/app/components/ui/file-bg";
 import { sweetConfirm } from "@/lib/sweetalert";
+import { getLastRead, setLastRead } from "@/hooks/useLastRead";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -98,6 +99,10 @@ export default function ThreadPanel({
   // ─── Edit mode (mirrors ChannelChat) ─────────────────────────────────────
   const [editMessageId, setEditMessageId] = useState<string | null>(null);
   const [editContent, setEditContent] = useState<string>("");
+
+  // ─── New message separator (unread indicator) ────────────────────────────
+  const [newMessageSeparatorId, setNewMessageSeparatorId] = useState<string | null>(null);
+  const lastReadAtOpenRef = useRef<number | null>(null);
 
   const searchParams = useSearchParams();
   const highlightedScrollIds = useRef(new Set<string>());
@@ -233,12 +238,35 @@ export default function ThreadPanel({
         };
       });
       setReplies(normalised);
+
+      // Set up unread indicator for thread
+      const threadKey = `thread_${parentMessage.id}`;
+      const lastReadId = getLastRead(threadKey);
+
+      // Place the NEW divider at the first unread reply (newer than lastRead)
+      if (lastReadId !== null) {
+        const firstUnread = normalised.find(
+          (r) => !String(r.sender_id).includes(userId || '') && r.id != null && Number(r.id) > lastReadId
+        );
+        if (firstUnread) {
+          setNewMessageSeparatorId(String(firstUnread.id));
+        }
+      }
+
+      // Save the newest reply as lastRead for this thread
+      const newestId = normalised.reduce((max, r) => {
+        const n = Number(r.id);
+        return !isNaN(n) && n > max ? n : max;
+      }, 0);
+      if (newestId > 0) {
+        setLastRead(threadKey, newestId);
+      }
     } catch (err) {
       console.error("Failed to fetch thread replies:", err);
     } finally {
       setLoading(false);
     }
-  }, [parentMessage?.id]);
+  }, [parentMessage?.id, userId]);
 
   useEffect(() => {
     initialRepliesLoadedRef.current = false;
@@ -305,6 +333,14 @@ export default function ThreadPanel({
 
         const next = [...prev, reply];
         onReplyCountChange?.(parentMessage.id, next.length);
+
+        // Update last read for this thread
+        const threadKey = `thread_${parentMessage.id}`;
+        setLastRead(threadKey, Number(reply.id));
+
+        // Set new message separator if not already set
+        setNewMessageSeparatorId((prev) => prev || String(reply.id));
+
         return next;
       });
     };
@@ -713,6 +749,16 @@ return () => {
 
                   return (
                     <div key={reply.id} id={`msg-${reply.id}`}>
+                      {/* New message separator */}
+                      {newMessageSeparatorId && String(reply.id) === newMessageSeparatorId && (
+                        <div className="flex items-center gap-2 px-4 py-2 my-2">
+                          <div className="flex-1 h-px bg-blue-500 dark:bg-blue-400" />
+                          <span className="text-[11px] text-blue-600 dark:text-blue-400 font-semibold whitespace-nowrap bg-white dark:bg-zinc-900 px-2">
+                            NEW
+                          </span>
+                          <div className="flex-1 h-px bg-blue-500 dark:bg-blue-400" />
+                        </div>
+                      )}
                     <MessageRow
                       msg={{
                         id: reply.id,

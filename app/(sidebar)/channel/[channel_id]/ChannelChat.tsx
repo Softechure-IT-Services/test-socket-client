@@ -376,12 +376,19 @@ const canSendMessages = isMember;
   // ─── Shared thread auto-open logic ──────────────────────────────────────────
   // Effect: responds to URL changes. Always fetches the parent via API so the
   // thread opens reliably regardless of whether messages are loaded.
+  const closingRef = useRef(false);
   useEffect(() => {
     const threadId = threadIdParam;
-    console.log('[ThreadEffect] threadIdParam changed:', threadId, 'threadMessage:', threadMessage?.id);
+    console.log('[ThreadEffect] threadIdParam changed:', threadId, 'threadMessage:', threadMessage?.id, 'closing:', closingRef.current);
 
     if (!threadId) {
       console.log('[ThreadEffect] No threadId');
+      return;
+    }
+
+    // If we're in the middle of closing, don't re-open
+    if (closingRef.current) {
+      console.log('[ThreadEffect] Currently closing, skipping');
       return;
     }
 
@@ -436,7 +443,7 @@ const canSendMessages = isMember;
         }
       })
       .catch((err) => console.error("Auto Open Thread failed:", err));
-  }, [threadIdParam, threadMessage, messages]); // Include threadMessage and messages to check if already open
+  }, [threadIdParam]); // Only depend on threadIdParam to avoid re-triggering on close
 
 
   useEffect(() => {
@@ -1082,13 +1089,22 @@ const canSendMessages = isMember;
     const observer = new IntersectionObserver(
       (entries) => {
         const first = entries[0];
-        if (first.isIntersecting && !isLoadingMore && !initialLoading) {
+        // Only paginate after the initial load AND scroll-to-bottom are complete.
+        // Without this guard the observer fires immediately on mount (top message
+        // is visible before the RAF scroll runs) and floods the API.
+        if (
+          first.isIntersecting &&
+          !isLoadingMore &&
+          !initialLoading &&
+          hasCompletedInitialLoadRef.current
+        ) {
           loadMessages(false);
         }
       },
       {
         root: containerRef.current,
         threshold: 0.1,
+        rootMargin: "50px 0px 0px 0px",
       }
     );
 
@@ -1557,18 +1573,12 @@ const canSendMessages = isMember;
             // onClose={() => setThreadMessage(null)}
             onClose={() => {
   console.log('[ThreadClose] Closing thread, current URL:', window.location.href, 'searchParams:', searchParams?.toString());
+  closingRef.current = true;
   setThreadMessage(null);
-  // URL cleanup removed - we now allow re-opening the same thread
-  // const next = new URLSearchParams(searchParams?.toString() ?? "");
-  // next.delete("threadId");
-  // next.delete("scrollTo");
-  // const qs = next.toString();
-  // const newUrl = window.location.pathname + (qs ? `?${qs}` : "");
-  // console.log('[ThreadClose] Replacing URL to:', newUrl);
-  // // Use window.history.replaceState to avoid router issues
-  // window.history.replaceState(null, '', newUrl);
-  // // Force a re-render by updating searchParams
-  // window.dispatchEvent(new PopStateEvent('popstate', { state: null }));
+  // Reset closing flag after a short delay
+  setTimeout(() => {
+    closingRef.current = false;
+  }, 100);
 }}
             onReplyCountChange={(msgId, count) => {
               setMessages((prev) =>
@@ -1581,13 +1591,11 @@ const canSendMessages = isMember;
         </div>
       )}
       <div
-        className="relative flex flex-col flex-1 min-h-0 overflow-y-auto overflow-x-hidden max-h-[calc(100vh-var(--main-header-height)-var(--chat-header-height)+28px)] order-1"
-        onScroll={handleScroll}
+        className="relative flex flex-col flex-1 min-h-0 overflow-hidden max-h-[calc(100vh-var(--main-header-height)-var(--chat-header-height)+28px)] order-1"
         onDragEnter={handleDragEnter}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
-        ref={containerRef}
       >
       {dragging && canSendMessages && (
         <div className="absolute top-0 left-0 w-full h-[100%]  bg-opacity-50 flex items-center justify-center z-500 transition-opacity duration-300 order-1">
@@ -1640,10 +1648,11 @@ const canSendMessages = isMember;
             </button>
           </div>
         )}
-
         <div
-          className="flex-1 pt-[60px] pb-[10px] bg-[var(--chat_bg)] px-0"
+          className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden pt-[60px] pb-[10px] bg-[var(--chat_bg)] px-0"
           style={{ scrollbarGutter: "stable" }}
+          onScroll={handleScroll}
+          ref={containerRef}
         >
           {initialLoading && (
             <>
@@ -1743,7 +1752,7 @@ const canSendMessages = isMember;
 
         {/* ─── Message input area ─────────────────────────────────── */}
         <div
-          className="pb-2 px-[25px] pt-0 relative sticky bottom-0 right-0 bg-[var(--chat_bg)] dark:bg-zinc-900 z-4"
+          className="shrink-0 pb-2 px-[25px] pt-0 relative bottom-0 right-0 bg-[var(--chat_bg)] dark:bg-zinc-900 z-4"
           ref={messageBoxRef}
         >
           {canSendMessages ? (

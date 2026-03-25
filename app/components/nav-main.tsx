@@ -65,7 +65,7 @@ function DMAvatar({ sub, online }: { sub: SubItem; online: boolean }) {
       <span
         aria-label={online ? "Online" : "Offline"}
         className={`absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border border-background ${
-          online ? "bg-emerald-500" : "bg-muted-foreground/50"
+          online ? "bg-emerald-500" : "bg-gray-500"
         }`}
       />
     </div>

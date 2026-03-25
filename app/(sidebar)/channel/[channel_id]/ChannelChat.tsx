@@ -139,6 +139,11 @@ export default function ChannelChat({ channelId }: ChannelChatProps) {
   );
   const searchParams = useSearchParams();
   const router = useRouter();
+  const threadIdParam = searchParams?.get("threadId");
+  const scrollToParam = searchParams?.get("scrollTo");
+  const scrollTargetId = threadIdParam || scrollToParam;
+
+  console.log('[ChannelChat] Render - searchParams:', searchParams?.toString(), 'threadIdParam:', threadIdParam, 'scrollToParam:', scrollToParam);
 
 
   // Inside the ChannelChat component, alongside your other hooks
@@ -173,6 +178,7 @@ const canSendMessages = isMember;
   const dragCounter = useRef(0);
   const messageBoxRef = useRef<HTMLDivElement | null>(null);
   const didInitialScrollRef = useRef(false);
+  const hasCompletedInitialLoadRef = useRef(false);
   const loadingMoreRef = useRef(false);
   const highlightedScrollIds = useRef<Set<string>>(new Set());
   const prevScrollToRef = useRef<string | null>(null);
@@ -336,9 +342,7 @@ const canSendMessages = isMember;
   }, [socket, channelId, userId]);
 
   useEffect(() => {
-    const threadId = searchParams?.get("threadId");
-    const paramScrollTo = searchParams?.get("scrollTo");
-    const scrollToId = threadId || paramScrollTo;
+    const scrollToId = scrollTargetId;
     if (!scrollToId || messages.length === 0 || initialLoading) return;
 
     if (highlightedScrollIds.current.has(scrollToId)) return;
@@ -367,36 +371,34 @@ const canSendMessages = isMember;
         }, 1000);
       }, 1800);
     }, 100);
-  }, [searchParams, messages, initialLoading]);
+  }, [scrollTargetId, messages, initialLoading]);
 
   // ─── Shared thread auto-open logic ──────────────────────────────────────────
-  // Split into two effects to avoid the race where messages loading re-triggers
-  // the effect but prevThreadIdRef has already been set, blocking the open.
-  const prevThreadIdRef = useRef<string | null>(null);
-  const pendingThreadIdRef = useRef<string | null>(null);
-
-  // Effect 1: responds to URL changes (searchParams). Always fetches the parent
-  // via API so the thread opens reliably regardless of whether messages are loaded.
+  // Effect: responds to URL changes. Always fetches the parent via API so the
+  // thread opens reliably regardless of whether messages are loaded.
   useEffect(() => {
-    const threadId = searchParams?.get("threadId");
+    const threadId = threadIdParam;
+    console.log('[ThreadEffect] threadIdParam changed:', threadId, 'threadMessage:', threadMessage?.id);
 
     if (!threadId) {
-      prevThreadIdRef.current = null;
-      pendingThreadIdRef.current = null;
+      console.log('[ThreadEffect] No threadId');
       return;
     }
 
-    // Same threadId as before — check if we already have a thread open with it.
-    // If threadMessage is still showing this thread, skip. If not (user closed it
-    // and re-opened), we should re-open it.
-    if (threadId === prevThreadIdRef.current) return;
-    prevThreadIdRef.current = threadId;
-    pendingThreadIdRef.current = threadId;
+    // If already open, skip
+    const alreadyOpen = threadMessage && String(threadMessage.id) === threadId;
+    console.log('[ThreadEffect] alreadyOpen:', alreadyOpen);
+    if (alreadyOpen) {
+      console.log('[ThreadEffect] Thread already open, skipping');
+      return;
+    }
+
+    console.log('[ThreadEffect] Proceeding to open thread:', threadId);
 
     // Check messages already in state first (avoids unnecessary API round-trip)
     const parentMsgInView = messages.find((m) => String(m.id) === threadId);
     if (parentMsgInView) {
-      pendingThreadIdRef.current = null;
+      console.log('[ThreadEffect] Found parent message in view, setting threadMessage');
       setThreadMessage({
         id: parentMsgInView.id!,
         content: parentMsgInView.content,
@@ -409,36 +411,32 @@ const canSendMessages = isMember;
 
     // Not in view yet — call API directly. This is the reliable path for when
     // ChannelChat just mounted (messages array is empty on initial render).
+    console.log('[ThreadEffect] Calling API for thread:', threadId);
     api
       .get(`/threads/${threadId}`)
       .then((res) => {
+        console.log('[ThreadEffect] API response:', res.data);
         if (res.data.parent_message) {
-          pendingThreadIdRef.current = null;
           setThreadMessage(res.data.parent_message);
+        } else {
+          // If no parent_message, check if the message exists locally (for search results)
+          const localMessage = messages.find((m) => String(m.id) === threadId);
+          if (localMessage) {
+            console.log('[ThreadEffect] Using local message as thread parent');
+            setThreadMessage({
+              id: localMessage.id!,
+              content: localMessage.content,
+              sender_name: localMessage.sender_name,
+              avatar_url: localMessage.avatar_url,
+              created_at: localMessage.created_at,
+            });
+          } else {
+            console.log('[ThreadEffect] No parent message found, not opening thread');
+          }
         }
       })
       .catch((err) => console.error("Auto Open Thread failed:", err));
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchParams]); // ← intentionally omit `messages` — see Effect 2
-
-  // Effect 2: If messages loaded and there's still a pending thread to open
-  // (the API call hasn't resolved yet), use the local data as a fast path.
-  useEffect(() => {
-    const threadId = pendingThreadIdRef.current;
-    if (!threadId || messages.length === 0) return;
-
-    const parentMsgInView = messages.find((m) => String(m.id) === threadId);
-    if (!parentMsgInView) return;
-
-    pendingThreadIdRef.current = null;
-    setThreadMessage({
-      id: parentMsgInView.id!,
-      content: parentMsgInView.content,
-      sender_name: parentMsgInView.sender_name,
-      avatar_url: parentMsgInView.avatar_url,
-      created_at: parentMsgInView.created_at,
-    });
-  }, [messages]);
+  }, [threadIdParam, threadMessage, messages]); // Include threadMessage and messages to check if already open
 
 
   useEffect(() => {
@@ -872,8 +870,8 @@ const canSendMessages = isMember;
   // is already on the channel and clicks a pinned message, channelId doesn't
   // change so loadMessagesAroundId is never called. This effect fills that gap.
   useEffect(() => {
-    const threadId = searchParams?.get("threadId");
-    const paramScrollTo = searchParams?.get("scrollTo");
+    const threadId = threadIdParam;
+    const paramScrollTo = scrollToParam;
 
     // When both threadId and scrollTo are present (pinned thread reply), use
     // a compound key so clicking a different reply in the same thread is handled.
@@ -905,11 +903,12 @@ const canSendMessages = isMember;
     // Target not in DOM — load the message bundle that contains it
     shouldAutoScrollRef.current = false;
     loadMessagesAroundId(channelScrollTarget);
-  }, [searchParams, loadMessagesAroundId]);
+  }, [threadIdParam, scrollToParam, loadMessagesAroundId]);
 
   useEffect(() => {
     if (!channelId || !userId) return;
     didInitialScrollRef.current = false;
+    hasCompletedInitialLoadRef.current = false;
 
     // Capture lastRead BEFORE resetting — used by after-load effect for NEW divider
     lastReadAtOpenRef.current = getLastRead(channelId);
@@ -929,9 +928,7 @@ const canSendMessages = isMember;
     highlightedScrollIds.current.clear();
     prevScrollToRef.current = null;
 
-    const threadId = searchParams?.get("threadId");
-    const paramScrollTo = searchParams?.get("scrollTo");
-    const scrollToId = threadId || paramScrollTo;
+    const scrollToId = scrollTargetId;
     if (scrollToId) {
       shouldAutoScrollRef.current = false;
       loadMessagesAroundId(scrollToId);
@@ -946,10 +943,7 @@ const canSendMessages = isMember;
     const el = containerRef.current;
     if (!el) return;
 
-    const threadId = searchParams?.get("threadId");
-    const paramScrollTo = searchParams?.get("scrollTo");
-    const scrollToId = threadId || paramScrollTo;
-    if (scrollToId) return;
+    if (scrollTargetId) return;
 
     requestAnimationFrame(() => {
       el.scrollTop = el.scrollHeight;
@@ -968,6 +962,19 @@ const canSendMessages = isMember;
     if (!prevInitialLoadingRef.current) return; // wasn't loading — skip
     prevInitialLoadingRef.current = false;
     if (messages.length === 0) return;
+
+    if (scrollTargetId) {
+      // Jump-to-pinned flow: let the highlight logic control scroll position.
+      hasCompletedInitialLoadRef.current = true;
+      return;
+    }
+
+    // Scroll to bottom instantly (no animation) now that the first batch is ready
+    const el = containerRef.current;
+    if (el) {
+      el.scrollTop = el.scrollHeight;
+    }
+    hasCompletedInitialLoadRef.current = true;
 
     const lastReadId = lastReadAtOpenRef.current;
 
@@ -1027,7 +1034,8 @@ const canSendMessages = isMember;
     if (isLoadingNewer || hasMoreNewer) return;
     if (!shouldAutoScrollRef.current) return;
 
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    // Use instant (no animation) for the initial load batch; smooth for live new messages
+    bottomRef.current?.scrollIntoView({ behavior: hasCompletedInitialLoadRef.current ? "smooth" : "instant" });
   }, [lastMessageId]);
 
   const handleDownload = async (file: any) => {
@@ -1542,11 +1550,26 @@ const canSendMessages = isMember;
     >
       {/* Thread panel — 1/3 width, slides in from the right */}
       {threadMessage && (
-        <div className="hidden md:flex md:w-[33vw]  shrink-0 flex-col max-h-[calc(100vh-var(--main-header-height)-var(--chat-header-height)+33px)] sticky top-0 order-2 animate-in slide-in-from-right duration-200">
+        <div className="hidden md:flex md:w-[33vw]  shrink-0 flex-col max-h-[calc(100vh-var(--main-header-height)-var(--chat-header-height)+28px)] sticky top-0 order-2 animate-in slide-in-from-right duration-200">
           <ThreadPanel
             parentMessage={threadMessage}
             channelId={channelId}
-            onClose={() => setThreadMessage(null)}
+            // onClose={() => setThreadMessage(null)}
+            onClose={() => {
+  console.log('[ThreadClose] Closing thread, current URL:', window.location.href, 'searchParams:', searchParams?.toString());
+  setThreadMessage(null);
+  // URL cleanup removed - we now allow re-opening the same thread
+  // const next = new URLSearchParams(searchParams?.toString() ?? "");
+  // next.delete("threadId");
+  // next.delete("scrollTo");
+  // const qs = next.toString();
+  // const newUrl = window.location.pathname + (qs ? `?${qs}` : "");
+  // console.log('[ThreadClose] Replacing URL to:', newUrl);
+  // // Use window.history.replaceState to avoid router issues
+  // window.history.replaceState(null, '', newUrl);
+  // // Force a re-render by updating searchParams
+  // window.dispatchEvent(new PopStateEvent('popstate', { state: null }));
+}}
             onReplyCountChange={(msgId, count) => {
               setMessages((prev) =>
                 prev.map((m) =>
@@ -1558,7 +1581,7 @@ const canSendMessages = isMember;
         </div>
       )}
       <div
-        className="relative flex flex-col flex-1 min-h-0 overflow-y-auto overflow-x-hidden max-h-[calc(100vh-var(--main-header-height)-var(--chat-header-height)+33px)] order-1"
+        className="relative flex flex-col flex-1 min-h-0 overflow-y-auto overflow-x-hidden max-h-[calc(100vh-var(--main-header-height)-var(--chat-header-height)+28px)] order-1"
         onScroll={handleScroll}
         onDragEnter={handleDragEnter}
         onDragOver={handleDragOver}

@@ -86,6 +86,7 @@ export default function ThreadPanel({
   const [loading, setLoading] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
+  const initialRepliesLoadedRef = useRef(false);
 
   // ─── Hover / lock state (mirrors ChannelChat) ─────────────────────────────
   const [hoveredId, setHoveredId] = useState<string | number | null>(null);
@@ -240,6 +241,7 @@ export default function ThreadPanel({
   }, [parentMessage?.id]);
 
   useEffect(() => {
+    initialRepliesLoadedRef.current = false;
     setReplies([]);
     fetchReplies();
   }, [fetchReplies]);
@@ -249,7 +251,10 @@ export default function ThreadPanel({
   useEffect(() => {
     const scrollToId = searchParams?.get("scrollTo");
     if (scrollToId) return; // let the highlight effect handle positioning
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    // Use instant scroll on the first load (no animation), smooth for live new replies
+    const behavior = initialRepliesLoadedRef.current ? "smooth" : "instant";
+    bottomRef.current?.scrollIntoView({ behavior });
+    initialRepliesLoadedRef.current = true;
   }, [replies.length]);
 
   // ─── Socket: live new replies ─────────────────────────────────────────────

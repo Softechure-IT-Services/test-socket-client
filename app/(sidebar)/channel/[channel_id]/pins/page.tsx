@@ -14,6 +14,8 @@ interface Sender {
   avatar_url?: string | null;
 }
 
+type MaybeId = string | number | null | undefined;
+
 interface PinnedMessage {
   message_id: number;
   content: string;
@@ -30,8 +32,28 @@ interface PinnedMessage {
     path?: string;
   }[];
   is_thread_reply?: boolean;
-  thread_parent_id?: number | null;
+  thread_parent_id?: MaybeId;
+  thread_parent_message_id?: MaybeId;
+  parent_message_id?: MaybeId;
+  thread_id?: MaybeId;
 }
+
+const resolveThreadParentId = (msg: PinnedMessage): string | null => {
+  const candidates: MaybeId[] = [
+    msg.thread_parent_id,
+    msg.thread_parent_message_id,
+    msg.parent_message_id,
+    msg.thread_id,
+  ];
+
+  for (const candidate of candidates) {
+    if (candidate === null || candidate === undefined) continue;
+    const str = String(candidate).trim();
+    if (str) return str;
+  }
+
+  return null;
+};
 
 // ─── Empty state ──────────────────────────────────────────────────────────────
 
@@ -79,12 +101,12 @@ export default function PinnedMessages() {
 
   const handleJump = useCallback(
     (msg: PinnedMessage) => {
-      let url = `/channel/${channelId}?`;
-      if (msg.is_thread_reply && msg.thread_parent_id) {
-        url += `threadId=${msg.thread_parent_id}&scrollTo=${msg.message_id}`;
-      } else {
-        url += `scrollTo=${msg.message_id}`;
-      }
+      if (!channelId) return;
+      const threadParentId = resolveThreadParentId(msg);
+      const base = `/channel/${channelId}`;
+      const url = threadParentId
+        ? `${base}?threadId=${threadParentId}&scrollTo=${msg.message_id}`
+        : `${base}?scrollTo=${msg.message_id}`;
       router.push(url);
     },
     [channelId, router]

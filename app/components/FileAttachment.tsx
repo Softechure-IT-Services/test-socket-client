@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   Download, Share2, Eye, Film, Music,
   FileText, FileArchive, FileCode, FileSpreadsheet, File as FileIcon2,
@@ -29,6 +29,10 @@ type FileAttachmentProps = {
   /** Disable hover actions (e.g. for read-only parent message previews) */
   readOnly?: boolean;
   customClass?: string;
+  /** Full navigable media list for lightbox Prev/Next */
+  allMedia?: AttachmentFile[];
+  /** Index of this file within allMedia */
+  mediaIndex?: number;
 };
 
 type FileAttachmentListProps = {
@@ -122,8 +126,8 @@ function ActionBtn({
       onClick={(e) => { e.stopPropagation(); onClick(); }}
       className={
         variant === "compact"
-          ? "w-7 h-7 rounded-md flex items-center justify-center text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-zinc-700 hover:text-gray-700 dark:hover:text-gray-200 transition-colors"
-          : "w-6 h-6 rounded-md flex items-center justify-center bg-black/30 hover:bg-black/50 text-white transition-colors"
+          ? "w-7 h-7 rounded-md cursor-pointer flex items-center justify-center text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-zinc-700 hover:text-gray-700 dark:hover:text-gray-200 transition-colors"
+          : "w-6 h-6 rounded-md cursor-pointer flex items-center justify-center bg-black/30 hover:bg-black/50 text-white transition-colors"
       }
     >
       {icon}
@@ -156,22 +160,94 @@ function ActionBtn({
 //   );
 // }
 
-function Lightbox({ url, name, onClose }: { url: string; name: string; onClose: () => void }) {
+function Lightbox({
+  files,
+  initialIndex,
+  onClose,
+}: {
+  files: AttachmentFile[];
+  initialIndex: number;
+  onClose: () => void;
+}) {
+  const [currentIndex, setCurrentIndex] = useState(initialIndex);
+  const current = files[currentIndex];
+  const hasPrev = currentIndex > 0;
+  const hasNext = currentIndex < files.length - 1;
+
+  const goPrev = useCallback(() => { if (hasPrev) setCurrentIndex((i) => i - 1); }, [hasPrev]);
+  const goNext = useCallback(() => { if (hasNext) setCurrentIndex((i) => i + 1); }, [hasNext]);
+
+  // Keyboard navigation
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "ArrowLeft") goPrev();
+      else if (e.key === "ArrowRight") goNext();
+      else if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [goPrev, goNext, onClose]);
+
+  if (!current) return null;
+
+  const isVid = isVideo(current.type);
+
   return createPortal(
     <div
       className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 backdrop-blur-sm"
       onClick={onClose}
     >
-      <div
-        className="relative max-w-[90vw] max-h-[90vh] flex flex-col items-center"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={url} alt={name} className="max-w-full max-h-[80vh] rounded-lg object-contain shadow-2xl" />
-        <p className="mt-3 text-sm text-white/70 truncate max-w-[60vw]">{name}</p>
+      <div className="relative h-full w-full flex items-center justify-center">
+
+        {/* Prev button */}
+        {hasPrev && (
+          <button
+            onClick={(e) => { e.stopPropagation(); goPrev(); }}
+            className="absolute left-4 z-10 w-10 h-10 rounded-full bg-white/10 hover:bg-white/25 text-white flex items-center justify-center text-xl transition-colors cursor-pointer select-none"
+            aria-label="Previous"
+          >‹</button>
+        )}
+
+        {/* Media content */}
+        <div className="flex flex-col items-center">
+
+        <div
+          className="w-[90vw] max-w-[800px] h-[90vh] max-h-[500px] flex flex-col items-center justify-center"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {isVid ? (
+            // eslint-disable-next-line jsx-a11y/media-has-caption
+            <video
+              key={current.url}
+              src={current.url}
+              controls
+              autoPlay
+              className="max-w-full max-h-[80vh] rounded-lg shadow-2xl"
+            />
+          ) : (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={current.url} alt={current.name} className="max-w-full h-full object-contain" />
+          )}
+        </div>
+          <p className="mt-3 text-sm text-white/70 truncate max-w-[60vw]">{current.name}</p>
+          {files.length > 1 && (
+            <p className="mt-1 text-xs text-white/40">{currentIndex + 1} / {files.length}</p>
+          )}
+        </div>
+
+        {/* Next button */}
+        {hasNext && (
+          <button
+            onClick={(e) => { e.stopPropagation(); goNext(); }}
+            className="absolute right-4 z-10 w-10 h-10 rounded-full bg-white/10 hover:bg-white/25 text-white flex items-center justify-center text-xl transition-colors cursor-pointer select-none"
+            aria-label="Next"
+          >›</button>
+        )}
+
+        {/* Close button */}
         <button
           onClick={onClose}
-          className="absolute -top-3 -right-3 w-7 h-7 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center text-lg leading-none transition-colors"
+          className="absolute top-2 right-2 w-7 h-7 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center text-lg leading-none transition-colors cursor-pointer"
           aria-label="Close preview"
         >×</button>
       </div>
@@ -185,9 +261,13 @@ function Lightbox({ url, name, onClose }: { url: string; name: string; onClose: 
 // INLINE CHAT VARIANTS (compact, shown inside message bubbles)
 // ─────────────────────────────────────────────────────────────────────────────
 
-function InlineImageAttachment({ file, onDownload, onShare, readOnly, customClass }: FileAttachmentProps) {
+function InlineImageAttachment({ file, onDownload, onShare, readOnly, customClass, allMedia, mediaIndex }: FileAttachmentProps) {
   const [hovered, setHovered] = useState(false);
   const [lightboxOpen, setLightboxOpen] = useState(false);
+
+  // Fall back to just this file if no sibling list provided
+  const lightboxFiles = allMedia ?? [file];
+  const lightboxIndex = mediaIndex ?? 0;
 
   return (
     <>
@@ -204,7 +284,10 @@ function InlineImageAttachment({ file, onDownload, onShare, readOnly, customClas
           draggable={false}
         />
         {!readOnly && hovered && (
-          <div className="absolute inset-0 bg-black/40 flex flex-col justify-between p-2 transition-opacity duration-150">
+          <div
+            className="absolute inset-0 bg-black/40 flex flex-col justify-between p-2 transition-opacity duration-150"
+            onClick={() => setLightboxOpen(true)}
+          >
             <div className="flex justify-end gap-1.5">
               <ActionBtn icon={<Eye size={13} />} label="Preview" onClick={() => setLightboxOpen(true)} />
               <ActionBtn icon={<Download size={13} />} label="Download" onClick={() => onDownload?.(file)} />
@@ -214,7 +297,13 @@ function InlineImageAttachment({ file, onDownload, onShare, readOnly, customClas
           </div>
         )}
       </div>
-      {lightboxOpen && <Lightbox url={file.url} name={file.name} onClose={() => setLightboxOpen(false)} />}
+      {lightboxOpen && (
+        <Lightbox
+          files={lightboxFiles}
+          initialIndex={lightboxIndex}
+          onClose={() => setLightboxOpen(false)}
+        />
+      )}
     </>
   );
 }
@@ -254,9 +343,12 @@ function InlineGenericAttachment({ file, onDownload, onShare, readOnly }: FileAt
 // TAB VIEW VARIANTS (richer, for the Files tab page)
 // ─────────────────────────────────────────────────────────────────────────────
 
-function TabMediaCard({ file, onDownload, onShare, readOnly }: FileAttachmentProps) {
+function TabMediaCard({ file, onDownload, onShare, readOnly, allMedia, mediaIndex }: FileAttachmentProps) {
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const isVid = isVideo(file.type);
+
+  const lightboxFiles = allMedia ?? [file];
+  const lightboxIndex = mediaIndex ?? 0;
 
   return (
     <>
@@ -281,7 +373,10 @@ function TabMediaCard({ file, onDownload, onShare, readOnly }: FileAttachmentPro
         )}
 
         {/* Hover overlay */}
-        <div className="absolute inset-0 bg-black/0 group-hover/media:bg-black/50 transition-all duration-200 flex flex-col justify-between p-2">
+        <div
+          className="absolute inset-0 bg-black/0 group-hover/media:bg-black/50 transition-all duration-200 flex flex-col justify-between p-2"
+          onClick={() => setLightboxOpen(true)}
+        >
           {!readOnly && (
             <div className="flex justify-end gap-1 opacity-0 group-hover/media:opacity-100 transition-opacity duration-200">
               {!isVid && (
@@ -299,7 +394,13 @@ function TabMediaCard({ file, onDownload, onShare, readOnly }: FileAttachmentPro
           </div>
         </div>
       </div>
-      {lightboxOpen && <Lightbox url={file.url} name={file.name} onClose={() => setLightboxOpen(false)} />}
+      {lightboxOpen && (
+        <Lightbox
+          files={lightboxFiles}
+          initialIndex={lightboxIndex}
+          onClose={() => setLightboxOpen(false)}
+        />
+      )}
     </>
   );
 }
@@ -401,6 +502,8 @@ export function FileAttachmentList({
                   onDownload={onDownload}
                   onShare={onShare}
                   readOnly={readOnly}
+                  allMedia={mediaFiles}
+                  mediaIndex={i}
                 />
               ))}
             </div>
@@ -447,6 +550,8 @@ return (
             onShare={onShare}
             readOnly={readOnly}
             customClass={images.length > 2 ? "w-[calc(33.333%-0.375rem)]" : ""}
+            allMedia={images}
+            mediaIndex={i}
           />
         ))}
       </div>

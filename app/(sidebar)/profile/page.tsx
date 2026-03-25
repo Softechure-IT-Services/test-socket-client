@@ -572,7 +572,7 @@ export default function ProfilePage() {
                      <button
                         onClick={handleDeleteAccount}
                         disabled={deletingAccount}
-                        className="h-10 px-5 rounded-xl border-2 border-destructive text-destructive text-sm font-medium hover:bg-destructive hover:text-destructive-foreground transition-all disabled:opacity-50 flex items-center gap-2"
+                        className="h-10 px-5 rounded-xl border-2 border-destructive text-destructive text-sm font-medium hover:bg-destructive hover:text-destructive-foreground hover:text-white transition-all disabled:opacity-50 flex items-center gap-2"
                       >
                         {deletingAccount && <Loader2 className="w-4 h-4 animate-spin" />}
                         {confirmDelete ? "I'm sure, delete my account" : "Delete Account"}

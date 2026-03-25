@@ -35,17 +35,23 @@ interface PersonResult {
   kind: "person";
 }
 
+type MaybeId = string | number | null | undefined;
+
 interface MessageResult {
   id: number;
   content: string;
   created_at: string;
   channel_id: number;
-  thread_parent_id: number | null;
+  thread_parent_id: MaybeId;
+  thread_parent_message_id?: MaybeId;
+  parent_message_id?: MaybeId;
+  thread_id?: MaybeId;
   channel_name: string | null;
   is_dm_channel: boolean;
   sender_name: string | null;
   sender_avatar: string | null;
   kind: "message";
+  is_thread_reply?: boolean;
 }
 
 type AnyResult = ChannelResult | PersonResult | MessageResult;
@@ -55,6 +61,31 @@ interface SearchData {
   people: PersonResult[];
   messages: MessageResult[];
 }
+
+interface NavHistory {
+  stack: string[];
+  index: number;
+}
+
+function findBackTargetIndex(stack: string[], currentIndex: number, isLoginPath: (p: string) => boolean) {
+  let idx = currentIndex - 1;
+  while (idx >= 0) {
+    if (!isLoginPath(stack[idx])) return idx;
+    idx -= 1;
+  }
+  return -1;
+}
+
+function findForwardTargetIndex(stack: string[], currentIndex: number, isLoginPath: (p: string) => boolean) {
+  let idx = currentIndex + 1;
+  while (idx < stack.length) {
+    if (!isLoginPath(stack[idx])) return idx;
+    idx += 1;
+  }
+  return -1;
+}
+
+const isLoginPath = (p: string) => p === "/login" || p.startsWith("/login?");
 
 // ─── Add this helper alongside the existing helpers ───────────────────────────
 function stripHtml(html: string): string {
@@ -69,6 +100,31 @@ function stripHtml(html: string): string {
     .replace(/&#39;/g, "'")
     .replace(/\s+/g, " ")       // collapse multiple spaces
     .trim();
+}
+
+function normalizeId(id: MaybeId): string | null {
+  if (id === null || id === undefined) return null;
+  const str = String(id).trim();
+  return str.length ? str : null;
+}
+
+type Threadish = {
+  thread_parent_id?: MaybeId;
+  thread_parent_message_id?: MaybeId;
+  parent_message_id?: MaybeId;
+  thread_id?: MaybeId;
+  threadId?: MaybeId;
+};
+
+function resolveThreadParentId(result: Threadish): string | null {
+  return (
+    normalizeId(result.thread_parent_id) ??
+    normalizeId(result.thread_parent_message_id) ??
+    normalizeId(result.parent_message_id) ??
+    normalizeId(result.thread_id) ??
+    normalizeId(result.threadId) ??
+    null
+  );
 }
 
 // ─── Debounce ─────────────────────────────────────────────────────────────────
@@ -141,45 +197,49 @@ export default function AppNavbar() {
   const router = useRouter();
   const pathname = usePathname();
   const { user, logout } = useAuth();
-  const navStack = useRef<string[]>([]);
+  const navHistory = useRef<NavHistory>({ stack: [], index: -1 });
+  const pendingHistoryIndex = useRef<number | null>(null);
+  const [canGoBack, setCanGoBack] = useState(false);
+  const [canGoForward, setCanGoForward] = useState(false);
 
   useEffect(() => {
     if (!pathname) return;
 
-    const stack = navStack.current;
-    const last = stack[stack.length - 1];
-    if (pathname === last) return;
-
-    const existingIndex = stack.lastIndexOf(pathname);
-    if (existingIndex !== -1) {
-      // Navigated back/forward: keep history consistent
-      navStack.current = stack.slice(0, existingIndex + 1);
+    const history = navHistory.current;
+    if (pendingHistoryIndex.current !== null) {
+      history.index = pendingHistoryIndex.current;
+      pendingHistoryIndex.current = null;
     } else {
-      navStack.current = [...stack, pathname];
+      const nextStack = history.stack.slice(0, history.index + 1);
+      nextStack.push(pathname);
+      history.stack = nextStack;
+      history.index = nextStack.length - 1;
     }
+
+    setCanGoBack(findBackTargetIndex(history.stack, history.index, isLoginPath) !== -1);
+    setCanGoForward(findForwardTargetIndex(history.stack, history.index, isLoginPath) !== -1);
   }, [pathname]);
 
-  const isLoginPath = (p: string) => p === "/login" || p.startsWith("/login?");
-
   function handleBack() {
-    const stack = navStack.current;
-    if (stack.length <= 1) {
-      return;
-    }
+    if (!canGoBack) return;
 
-    // Find the last non-login entry before the current page
-    let idx = stack.length - 2;
-    while (idx >= 0 && isLoginPath(stack[idx])) {
-      idx -= 1;
-    }
+    const history = navHistory.current;
+    const targetIndex = findBackTargetIndex(history.stack, history.index, isLoginPath);
+    if (targetIndex === -1) return;
 
-    if (idx >= 0) {
-      const target = stack[idx];
-      navStack.current = stack.slice(0, idx + 1);
-      router.push(target);
-    }
-    // If there is no non-login page to go back to, do nothing.
-    // This prevents going back into the login screen.
+    pendingHistoryIndex.current = targetIndex;
+    router.push(history.stack[targetIndex]);
+  }
+
+  function handleForward() {
+    if (!canGoForward) return;
+
+    const history = navHistory.current;
+    const targetIndex = findForwardTargetIndex(history.stack, history.index, isLoginPath);
+    if (targetIndex === -1) return;
+
+    pendingHistoryIndex.current = targetIndex;
+    router.push(history.stack[targetIndex]);
   }
 
   function handleLogout() {
@@ -284,12 +344,16 @@ export default function AppNavbar() {
         // Navigate to channel/dm, highlight the message via hash, open thread if applicable
         const baseRoute = result.is_dm_channel ? `/dm/${result.channel_id}` : `/channel/${result.channel_id}`;
         let url = `${baseRoute}?`;
-        if (result.thread_parent_id) {
-          url += `threadId=${result.thread_parent_id}&scrollTo=${result.id}`;
-        } else {
-          url += `scrollTo=${result.id}`;
-        }
+        const threadParentId = resolveThreadParentId(result);
+        // Always open thread panel: use thread_parent_id if it's a reply, otherwise use message id
+        const threadId = threadParentId || result.id;
+        url += `threadId=${threadId}&scrollTo=${result.id}`;
+        console.log('[SearchNav] Navigating to message result:', result, 'threadParentId:', threadParentId, 'threadId:', threadId, 'url:', url, 'current location:', window.location.href);
         router.push(url);
+        // if (threadParentId) {
+        //   // Force a refresh so ChannelChat re-runs its thread auto-open effect even if we're already on this channel.
+        //   router.refresh();
+        // }
       }
     },
     [router]
@@ -351,11 +415,21 @@ export default function AppNavbar() {
               </DropdownMenu>
 
               {/* Back / Forward */}
-              <div>
-                <button className="p-2 rounded-md hover:bg-accent" aria-label="back" onClick={handleBack}>
+              <div className="flex items-center">
+                <button
+                  className="p-2 rounded-md transition-colors hover:bg-accent disabled:opacity-35 disabled:hover:bg-transparent disabled:cursor-not-allowed"
+                  aria-label="back"
+                  onClick={handleBack}
+                  disabled={!canGoBack}
+                >
                   <FaArrowLeft size={16} />
                 </button>
-                <button className="p-2 rounded-md hover:bg-accent" aria-label="forward" onClick={() => router.forward()}>
+                <button
+                  className="p-2 rounded-md transition-colors hover:bg-accent disabled:opacity-35 disabled:hover:bg-transparent disabled:cursor-not-allowed"
+                  aria-label="forward"
+                  onClick={handleForward}
+                  disabled={!canGoForward}
+                >
                   <FaArrowRight size={16} />
                 </button>
               </div>
@@ -380,7 +454,7 @@ export default function AppNavbar() {
                   onKeyDown={handleKeyDown}
                   onFocus={() => hasResults && setOpen(true)}
                   placeholder="Search messages, channels, people — # @ or plain"
-                  className="w-full h-8 rounded-full pl-9 pr-8 text-sm outline-none border border-[var(--border-color)] focus:border-[var(--sidebar-foreground)] bg-transparent transition placeholder:text-muted-foreground"
+                  className="w-full h-8 rounded-full pl-9 pr-8 text-sm outline-none border border-[var(--border-color)] focus:border-[var(--sidebar-foreground)] bg-transparent transition "
                   autoComplete="off"
                   spellCheck={false}
                 />
@@ -397,13 +471,13 @@ export default function AppNavbar() {
               </div>
 
               {/* Mode pill */}
-              {query && mode !== "all" && (
+              {/* {query && mode !== "all" && (
                 <span className={`absolute -top-5 left-3 text-[10px] font-semibold px-2 py-0.5 rounded-full ${
                   mode === "channel" ? "bg-blue-500/15 text-blue-400" : "bg-green-500/15 text-green-400"
                 }`}>
                   {mode === "channel" ? "# Channels only" : "@ People only"}
                 </span>
-              )}
+              )} */}
 
               {/* ── Dropdown ──────────────────────────────────────────────────── */}
               {open && (
@@ -472,9 +546,9 @@ export default function AppNavbar() {
                                     {highlight(p.email, searchTerm)}
                                   </p>
                                 </div>
-                                {p.dm_channel_id && (
+                                {/* {p.dm_channel_id && (
                                   <span className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded-full flex-shrink-0">DM</span>
-                                )}
+                                )} */}
                               </ResultRow>
                             );
                           })}
@@ -487,6 +561,8 @@ export default function AppNavbar() {
                           <SectionHeader label="Messages" />
                           {data.messages.map((m) => {
                             const idx = flat.indexOf(m);
+                            const threadParentId = resolveThreadParentId(m);
+                            const isThreadReply = !!threadParentId;
                             return (
                               <ResultRow
                                 key={`msg-${m.id}`}
@@ -494,13 +570,13 @@ export default function AppNavbar() {
                                 onClick={() => navigate(m)}
                                 onMouseEnter={() => setActiveIndex(idx)}
                               >
-                                <span className="w-6 h-6 rounded-md bg-violet-500/15 flex items-center justify-center flex-shrink-0 mt-0.5">
-                                  <MessageSquare size={10} className="text-violet-400" />
+                                <span className={`w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0 mt-0.5 ${isThreadReply ? "bg-indigo-500/15" : "bg-violet-500/15"}`}>
+                                  <MessageSquare size={10} className={isThreadReply ? "text-indigo-400" : "text-violet-400"} />
                                 </span>
                                 <div className="flex-1 min-w-0">
                                   {/* Meta row */}
                                   <div className="flex items-center gap-1.5 mb-0.5">
-                                    <span className="text-xs font-semibold text-foreground truncate">
+                                    <span className="text-xs font-semibold  truncate">
                                       {m.sender_name ?? "Unknown"}
                                     </span>
                                     <span className="text-[10px] text-muted-foreground">in</span>
@@ -508,6 +584,12 @@ export default function AppNavbar() {
                                       {m.is_dm_channel ? <FaUser size={8} /> : <FaHashtag size={8} />}
                                       {m.channel_name ?? `channel ${m.channel_id}`}
                                     </span>
+                                    {isThreadReply && (
+                                      <span className="flex items-center gap-0.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 flex-shrink-0">
+                                        <MessageSquare size={8} />
+                                        Thread reply
+                                      </span>
+                                    )}
                                     <span className="text-[10px] text-muted-foreground ml-auto flex-shrink-0">
                                       {timeAgo(m.created_at)}
                                     </span>
@@ -575,7 +657,7 @@ function ResultRow({
   return (
     <button
       className={`w-full flex items-start gap-2.5 px-3 py-2 text-left transition-colors ${
-        active ? "bg-accent text-accent-foreground" : "hover:bg-accent/40"
+        active ? "bg-accent" : "hover:bg-accent/40"
       }`}
       onClick={onClick}
       onMouseEnter={onMouseEnter}

@@ -6,6 +6,7 @@ import { Button } from "@/app/components/ui/button";
 import { Input } from "@/app/components/ui/input";
 import { Switch } from "@/app/components/ui/switch";
 import { Label } from "@/app/components/ui/label";
+import { UserAvatar } from "@/app/components/MessageMeta";
 import { useEffect, useState } from "react";
 import { useAuth } from "@/app/components/context/userId_and_connection/provider";
 import { useDebounce } from "@/hooks/useDebounce";
@@ -14,6 +15,8 @@ import { useRouter } from "next/navigation";
 type User = {
   id: string;
   name: string;
+  avatar_url?: string;
+  is_online?: boolean;
 };
 
 type Props = {
@@ -199,7 +202,7 @@ export default function CreateModal({ open, onClose, type, forwardMessageId }: P
         {type === "channel" && (
           <div className="space-y-1">
             <Input
-              placeholder="Channel name"
+              placeholder="Channel name*"
               value={channelName}
               onChange={(e) => setChannelName(e.target.value)}
             />
@@ -240,7 +243,7 @@ export default function CreateModal({ open, onClose, type, forwardMessageId }: P
                     key={u.id}
                     className="inline-flex items-center gap-1 text-xs bg-muted rounded-full px-2.5 py-1"
                   >
-                    👤 {u.name}
+                    {u.name}
                     <button
                       onClick={() =>
                         setSelectedUsers((prev) => prev.filter((x) => x.id !== u.id))
@@ -262,16 +265,40 @@ export default function CreateModal({ open, onClose, type, forwardMessageId }: P
               )}
               {users.map((u) => {
                 const active = selectedUsers.some((x) => x.id === u.id);
+                const isOnline = Boolean(u.is_online);
+                const displayName = u.name || "Unknown";
                 return (
-                  <div
+                  <button
                     key={u.id}
                     onClick={() => toggleUser(u)}
-                    className={`cursor-pointer rounded px-3 py-2 text-sm transition-colors ${
-                      active ? "bg-primary text-primary-foreground" : "hover:bg-muted"
+                    className={`w-full text-left flex items-center justify-between gap-2 rounded-lg px-3 py-2 transition-colors ${
+                      active ? "bg-primary text-primary-foreground" : "bg-background hover:bg-muted"
                     }`}
+                    type="button"
                   >
-                    {u.name}
-                  </div>
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div className="relative">
+                        <UserAvatar
+                          name={displayName}
+                          avatarUrl={u.avatar_url ?? null}
+                          size="sm"
+                          rounded="full"
+                        />
+                        <span
+                          className={`absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full border border-white ${
+                            isOnline ? "bg-emerald-500" : "bg-muted-foreground/70"
+                          }`}
+                        />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium truncate">{displayName}</p>
+                        <p className="text-[10px] truncate">
+                          {isOnline ? "Online" : "Offline"}
+                        </p>
+                      </div>
+                    </div>
+                    {active && <span className="text-xs font-semibold">✓</span>}
+                  </button>
                 );
               })}
             </div>
@@ -328,7 +355,7 @@ export default function CreateModal({ open, onClose, type, forwardMessageId }: P
                     key={item.id}
                     className="inline-flex items-center gap-1 text-xs bg-muted rounded-full px-2.5 py-1"
                   >
-                    {item.kind === "channel" ? "#" : "👤"} {item.name}
+                   {item.name}
                     <button
                       onClick={() =>
                         setSelectedForward((prev) => prev.filter((s) => s.id !== item.id))
@@ -369,7 +396,7 @@ export default function CreateModal({ open, onClose, type, forwardMessageId }: P
                 }
               }}
               disabled={selectedForward.length === 0 || forwarding}
-              className="w-full cursor-pointer"
+              className="w-full bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {forwarding
                 ? "Forwarding..."
@@ -389,7 +416,7 @@ export default function CreateModal({ open, onClose, type, forwardMessageId }: P
                 (nameStatus !== "available" || !channelName.trim())) ||
               (type === "dm" && selectedUsers.length !== 1)
             }
-            className="cursor-pointer"
+            className="w-full bg-sidebar text-white disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {type === "channel" ? "Create Channel" : "Start Chat"}
           </Button>

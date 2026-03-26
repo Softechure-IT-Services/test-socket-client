@@ -696,6 +696,8 @@ interface Member {
   name: string;
   email: string;
   avatar_url?: string | null;
+  is_online?: boolean;  // Added for presence
+  last_seen?: string | null; // Added for presence
 }
 
 interface SearchUser {
@@ -757,12 +759,16 @@ function MembersPanel({
   const [addingId, setAddingId] = useState<string | null>(null);
   const [removingId, setRemovingId] = useState<number | null>(null);
   const debouncedSearch = useDebounce(searchQuery, 300);
+  const { seedUsers, isOnline, getLastSeen } = usePresence(); // Use presence context
 
   const fetchMembers = useCallback(async () => {
     setLoadingMembers(true);
     try {
       const res = await api.get(`/channels/${channelId}/members`);
-      setMembers(res.data.members ?? []);
+      const fetchedMembers = res.data.members ?? [];
+      setMembers(fetchedMembers);
+      // Seed presence info for all members
+      seedUsers(fetchedMembers);
     } catch (err) {
       console.error("Failed to fetch members", err);
     } finally {
@@ -966,6 +972,10 @@ function MembersPanel({
               String(member.id) === String(currentUserId);
             const isOwner = isSelf && isCreator;
 
+            // Get real-time presence data
+            const memberOnline = isOnline(member.id);
+            const memberLastSeen = getLastSeen(member.id) ?? member.last_seen;
+
             return (
               <div
                 key={member.id}
@@ -977,6 +987,11 @@ function MembersPanel({
                       name={member.name}
                       avatarUrl={member.avatar_url}
                       size="md"
+                    />
+                    <span
+                      className={`absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-background ${
+                        memberOnline ? "bg-emerald-500" : "bg-muted-foreground/30"
+                      }`}
                     />
                     {isOwner && (
                       <Crown
@@ -1001,8 +1016,14 @@ function MembersPanel({
                         </span>
                       )}
                     </div>
-                    <p className="text-[11px] truncate">
-                      {member.email}
+                    <p className="text-[11px] truncate text-[var(--accent-foreground)]">
+                      {memberOnline ? (
+                        <span className="text-emerald-600 dark:text-emerald-400 font-medium">Active now</span>
+                      ) : memberLastSeen ? (
+                        `Last seen ${formatRelativeTime(memberLastSeen)}`
+                      ) : (
+                        member.email
+                      )}
                     </p>
                   </div>
                 </div>

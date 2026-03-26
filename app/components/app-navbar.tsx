@@ -517,9 +517,9 @@ export default function AppNavbar() {
                                 <span className="flex-1 truncate font-medium">
                                   {highlight(c.name, searchTerm)}
                                 </span>
-                                {c.is_private && (
+                                {/* {c.is_private && (
                                   <span className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded-full">private</span>
-                                )}
+                                )} */}
                               </ResultRow>
                             );
                           })}

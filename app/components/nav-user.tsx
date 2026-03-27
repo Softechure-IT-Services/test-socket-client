@@ -47,7 +47,7 @@ export function NavUser({ user }: { user: UserType }) {
                 className="shrink-0"
               />
               <div className="grid flex-1 text-left text-sm leading-tight min-w-0">
-                <span className="truncate font-semibold">{user.name}</span>
+                <span className="truncate font-semibold">{user.username}</span>
                 <span className="truncate text-xs text-muted-foreground">
                   {user.email}
                 </span>
@@ -72,7 +72,7 @@ export function NavUser({ user }: { user: UserType }) {
                 className="shrink-0"
               />
               <div className="flex flex-col min-w-0">
-                <span className="text-sm font-semibold truncate">{user.name}</span>
+                <span className="text-sm font-semibold truncate">{user.username}</span>
                 <span className="text-xs truncate">
                   {user.email}
                 </span>

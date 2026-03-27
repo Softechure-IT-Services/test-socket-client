@@ -257,6 +257,12 @@ const canSendMessages = isMember;
         // channels. A public channel user who has left will have is_member === false.
         if (data.is_member !== undefined) {
           setIsMember(data.is_member);
+          // Redirect if user manually accessed a private channel they aren't part of
+          if (ch?.is_private && data.is_member === false) {
+            router.replace("/");
+            sweetToast("Restricted", "You're not allowed to access this route", "error");
+            return;
+          }
         } else {
           setIsMember(true); // fallback: server didn't send the flag
         }
@@ -274,7 +280,8 @@ const canSendMessages = isMember;
       .catch((err) => {
         console.error(err);
         if (err.response?.status === 403) {
-          setIsMember(false);
+          router.replace("/");
+          sweetToast("Restricted", "You're not allowed to access this route", "error");
         }
       });
   }, [channelId, seedUsers]);
@@ -378,7 +385,7 @@ const canSendMessages = isMember;
     console.log('[ThreadEffect] threadIdParam changed:', threadId, 'threadMessage:', threadMessage?.id, 'closing:', closingRef.current);
 
     if (!threadId) {
-      console.log('[ThreadEffect] No threadId');
+      setThreadMessage(null);
       return;
     }
 
@@ -484,13 +491,20 @@ const canSendMessages = isMember;
       const stableId =
         msg.id ?? `${msg.sender_id}-${msg.created_at ?? Date.now()}`;
 
+      let msgFiles = [];
+      if (Array.isArray(msg.files)) {
+        msgFiles = msg.files;
+      } else if (typeof msg.files === "string" && msg.files) {
+        try { msgFiles = JSON.parse(msg.files); } catch { msgFiles = []; }
+      }
+
       const isSelf = String(msg.sender_id) === String(userId);
       const chatMsg: ChatMessage = {
         id: stableId,
         sender_id: String(msg.sender_id), // always string — matches loadMessages; fixes grouping
         sender_name: msg.sender_name,
         content: msg.content,
-        files: Array.isArray(msg.files) ? msg.files : [],
+        files: msgFiles,
         self: isSelf,
         created_at: msg.created_at ?? new Date().toISOString(),
         // For own messages prefer the React context avatar — socket.user is set at
@@ -555,12 +569,19 @@ const canSendMessages = isMember;
       const stableId =
         msg.id ?? `${msg.sender_id}-${msg.created_at ?? Date.now()}`;
       const createdAt = msg.created_at ?? new Date().toISOString();
+      let ackFiles = [];
+      if (Array.isArray(msg.files)) {
+        ackFiles = msg.files;
+      } else if (typeof msg.files === "string" && msg.files) {
+        try { ackFiles = JSON.parse(msg.files); } catch { ackFiles = []; }
+      }
+
       const chatMsg: ChatMessage = {
         id: stableId,
         sender_id: String(msg.sender_id), // always string — matches loadMessages; fixes grouping
         sender_name: msg.sender_name,
         content: msg.content,
-        files: Array.isArray(msg.files) ? msg.files : [],
+        files: ackFiles,
         self: true,
         created_at: createdAt,
         avatar_url: user?.avatar_url ?? null,
@@ -952,6 +973,7 @@ const canSendMessages = isMember;
     setHighlightedIds(new Set());
     highlightedScrollIds.current.clear();
     prevScrollToRef.current = null;
+    setThreadMessage(null);
 
     const scrollToId = scrollTargetId;
     if (scrollToId) {
@@ -1360,6 +1382,7 @@ const canSendMessages = isMember;
           ? {
               ...m,
               content: newContent,
+              is_edited: true,
               updated_at: new Date().toISOString(),
             }
           : m

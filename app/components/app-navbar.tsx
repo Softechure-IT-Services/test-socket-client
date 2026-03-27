@@ -118,9 +118,12 @@ type Threadish = {
 
 function resolveThreadParentId(result: Threadish): string | null {
   return (
-    normalizeId(result.thread_parent_id) ??
     normalizeId(result.thread_parent_message_id) ??
     normalizeId(result.parent_message_id) ??
+    // thread_parent_id is the *thread row id* (not the parent message id).
+    // Only fall back to it if we have nothing else, to avoid building URLs
+    // like ?threadId=<thread_id> which ChannelChat can't open.
+    normalizeId(result.thread_parent_id) ??
     normalizeId(result.thread_id) ??
     normalizeId(result.threadId) ??
     null

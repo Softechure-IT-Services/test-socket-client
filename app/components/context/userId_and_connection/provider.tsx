@@ -1,14 +1,13 @@
-
-// provider.tsx
 "use client";
 
-import { createContext, useContext, useEffect, useRef, useState } from "react";
+import { createContext, useContext, useEffect, useState } from "react";
 import { io, Socket } from "socket.io-client";
 import api from "@/lib/axios";
 
 export type UserType = {
   id: string;
   name: string;
+  username: string;
   email: string;
   avatar_url?: string;
 };
@@ -17,7 +16,7 @@ type AuthContextType = {
   user: UserType | null;
   isOnline: boolean;
   socket: Socket | null;
-  login: (token: string) => void;   // 👈 add this
+  login: (token: string) => void;
   logout: () => void;
   updateUser: (partial: Partial<UserType>) => void;
 };
@@ -27,135 +26,96 @@ const AuthContext = createContext<AuthContextType | null>(null);
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [user, setUser] = useState<UserType | null>(null);
   const [isOnline, setIsOnline] = useState(false);
-  // const socketRef = useRef<Socket | null>(null);
-const [socket, setSocket] = useState<Socket | null>(null);
-const [token, setToken] = useState<string | null>(null);
-useEffect(() => {
-  const storedToken = localStorage.getItem("access_token");
-  if (storedToken) {
-    setToken(storedToken);
-  }
-}, []);
+  const [socket, setSocket] = useState<Socket | null>(null);
+  const [token, setToken] = useState<string | null>(null);
 
-const login = (newToken: string) => {
-  localStorage.setItem("access_token", newToken);
-  setToken(newToken);
-};
+  useEffect(() => {
+    const storedToken = localStorage.getItem("access_token");
+    if (storedToken) {
+      setToken(storedToken);
+    }
+  }, []);
 
-const updateUser = (partial: Partial<UserType>) => {
-  setUser((prev) => {
-    if (!prev) return prev;
-    return { ...prev, ...partial };
-  });
-};
+  const login = (newToken: string) => {
+    localStorage.setItem("access_token", newToken);
+    setToken(newToken);
+  };
 
-const logout = async () => {
-  try {
-    // Tell server to invalidate refresh token
-    await api.post("/auth/logout");
-  } catch {
-    // Even if it fails, clean up client-side
-  }
-  localStorage.removeItem("access_token");
-  // Clear any auth cookies the server may have set
-  document.cookie = "access_token=; Max-Age=0; path=/";
-  document.cookie = "refresh_token=; Max-Age=0; path=/";
-  document.cookie = "user_id=; Max-Age=0; path=/";
-  document.cookie = "username=; Max-Age=0; path=/";
-  setToken(null);
-  setUser(null);
-  socket?.disconnect();
-  setSocket(null);
-};
+  const updateUser = (partial: Partial<UserType>) => {
+    setUser((prev) => {
+      if (!prev) return prev;
+      return { ...prev, ...partial };
+    });
+  };
 
-  // useEffect(() => {
-  //   if (socketRef.current) return; // prevent duplicate connection
+  const logout = async () => {
+    try {
+      await api.post("/auth/logout");
+    } catch {
+      // Ignore cleanup error
+    }
+    localStorage.removeItem("access_token");
+    document.cookie = "access_token=; Max-Age=0; path=/";
+    document.cookie = "refresh_token=; Max-Age=0; path=/";
+    document.cookie = "user_id=; Max-Age=0; path=/";
+    document.cookie = "username=; Max-Age=0; path=/";
+    setToken(null);
+    setUser(null);
+    socket?.disconnect();
+    setSocket(null);
+  };
 
-  //   // const socket = io(process.env.NEXT_PUBLIC_SERVER_URL!, {
-  //   //   withCredentials: true, // ✅ cookies sent
-  //   //   transports: ["websocket"],
-  //   // });
-
-  //   const socket = io(process.env.NEXT_PUBLIC_SERVER_URL!, {
-  //     transports: ["websocket"],
-  //     auth: {
-  //       token: localStorage.getItem("access_token"), // or from memory
-  //     },
-  //   });
-
-
-  //   socketRef.current = socket;
-
-  //   socket.on("connect", () => {
-  //     setIsOnline(true);
-  //   });
-
-  //   socket.on("auth-success", ({ user }) => {
-  //     setUser(user); // ✅ full user object
-  //   });
-
-  //   socket.on("disconnect", () => {
-  //     setIsOnline(false);
-  //     setUser(null);
-  //   });
-
-  //   socket.on("connect_error", (err) => {
-  //     console.error("Socket error:", err.message);
-  //     setIsOnline(false);
-  //   });
-
-  //   return () => {
-  //     socket.disconnect();
-  //     socketRef.current = null;
-  //   };
-  // }, []);
+  useEffect(() => {
+    const handleGlobalLogout = () => logout();
+    window.addEventListener("auth:logout", handleGlobalLogout);
+    return () => {
+      window.removeEventListener("auth:logout", handleGlobalLogout);
+    };
+  }, [socket]);
 
   useEffect(() => {
     if (!token) return;
-  if (socket) return; // prevent duplicate connection
-  const s = io(process.env.NEXT_PUBLIC_SERVER_URL!, {
-    transports: ["websocket"],
-    auth: {
-      token: localStorage.getItem("access_token"),
-    },
-  });
+    if (socket) return; 
 
-  setSocket(s);
+    const s = io(process.env.NEXT_PUBLIC_SERVER_URL!, {
+      transports: ["websocket"],
+      auth: (cb) => {
+        cb({ token: localStorage.getItem("access_token") });
+      },
+    });
 
-  s.on("connect", () => {
-    setIsOnline(true);
-  });
+    setSocket(s);
 
-  s.on("auth-success", ({ user }) => {
-    setUser(user);
-    // JWT-based auth sets socket.user from the token, which may not carry
-    // avatar_url (or carries a stale one). Immediately refresh from the DB so
-    // the sidebar footer and socket message avatars are always up-to-date.
-    s.emit("refreshUserProfile");
-  });
+    s.on("connect", () => {
+      setIsOnline(true);
+    });
 
-  s.on("disconnect", () => {
-    setIsOnline(false);
-    setUser(null);
-  });
+    s.on("auth-success", ({ user }) => {
+      setUser(user);
+      s.emit("refreshUserProfile");
+    });
 
-  // When the user saves their profile, the server refreshes socket.user and
-  // echoes the updated data back. Keep the React auth context in sync so
-  // avatar/name changes are reflected immediately without a page reload.
-  s.on("userProfileRefreshed", (fresh: Partial<UserType>) => {
-    setUser((prev) => prev ? { ...prev, ...fresh } : prev);
-  });
+    s.on("disconnect", () => {
+      setIsOnline(false);
+      setUser(null);
+    });
 
-  s.on("connect_error", (err) => {
-    console.error("Socket error:", err.message);
-    setIsOnline(false);
-  });
+    s.on("userProfileRefreshed", (fresh: Partial<UserType>) => {
+      setUser((prev) => prev ? { ...prev, ...fresh } : prev);
+    });
 
-  return () => {
-    s.disconnect();
-    setSocket(null);
-  };
-}, [token]);
+    s.on("connect_error", (err) => {
+      console.error("Socket error:", err.message);
+      setIsOnline(false);
+      // Removed the immediate logout() tripwire here!
+      // The Axios interceptor now exclusively handles authoritative logouts via 'auth:logout' events when refresh completely fails.
+    });
+
+    return () => {
+      s.disconnect();
+      setSocket(null);
+    };
+  }, [token]);
 
   return (
     <AuthContext.Provider
@@ -166,7 +126,6 @@ const logout = async () => {
         login,
         logout,
         updateUser,
-        // socket: socketRef.current,
       }}
     >
       {children}

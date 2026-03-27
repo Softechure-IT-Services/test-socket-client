@@ -56,7 +56,7 @@ function ThreadCard({
   currentUser: { id: string | number; name: string; avatar_url?: string | null } | null;
   socket: any;
 }) {
-  const [replies, setReplies] = useState<Reply[]>(thread.replies);
+  const [replies, setReplies] = useState<Reply[]>(thread.replies ?? []);
   const [expanded, setExpanded] = useState(false);
   const [replying, setReplying] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -199,6 +199,61 @@ const [editContent, setEditContent] = useState<string>("");
     return () => socket.off("reactionUpdated", handleReactionUpdate);
   }, [socket]);
 
+  // ── Socket: messageEdited ─────────────────────────────────────────────
+  useEffect(() => {
+    if (!socket || !thread.parent_message?.id) return;
+    const handle = (data: any) => {
+      const msgId = String(data.id);
+      // Ignore if it's the parent (the top-level ThreadsPage handles parent updates)
+      if (msgId === String(thread.parent_message?.id)) return;
+
+      setReplies((prev) =>
+        prev.map((r) =>
+          String(r.id) === msgId
+            ? { ...r, content: data.content, updated_at: data.updated_at, is_edited: true }
+            : r
+        )
+      );
+    };
+    socket.on("messageEdited", handle);
+    return () => socket.off("messageEdited", handle);
+  }, [socket, thread.parent_message?.id]);
+
+  // ── Socket: messageDeleted ────────────────────────────────────────────
+  useEffect(() => {
+    if (!socket || !thread.parent_message?.id) return;
+    const handle = ({ id }: any) => {
+      const msgId = String(id);
+      // Ignore if it's the parent (the top-level ThreadsPage handles thread removal)
+      if (msgId === String(thread.parent_message?.id)) return;
+
+      setReplies((prev) => prev.filter((r) => String(r.id) !== msgId));
+    };
+    socket.on("messageDeleted", handle);
+    return () => socket.off("messageDeleted", handle);
+  }, [socket, thread.parent_message?.id]);
+
+  // ── Socket: messagePinned / messageUnpinned ───────────────────────────
+  useEffect(() => {
+    if (!socket) return;
+    const handlePin = ({ messageId }: any) => {
+      setReplies((prev) =>
+        prev.map((r) => String(r.id) === String(messageId) ? { ...r, pinned: true } : r)
+      );
+    };
+    const handleUnpin = ({ messageId }: any) => {
+      setReplies((prev) =>
+        prev.map((r) => String(r.id) === String(messageId) ? { ...r, pinned: false } : r)
+      );
+    };
+    socket.on("messagePinned", handlePin);
+    socket.on("messageUnpinned", handleUnpin);
+    return () => {
+      socket.off("messagePinned", handlePin);
+      socket.off("messageUnpinned", handleUnpin);
+    };
+  }, [socket]);
+
   // Auto-expand + scroll when reply box opens or new reply arrives while open
   useEffect(() => {
     if (replying) setExpanded(true);
@@ -210,7 +265,7 @@ const [editContent, setEditContent] = useState<string>("");
         bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
       }, 50);
     }
-  }, [replies.length, replying]);
+  }, [(replies || []).length, replying]);
 
   // ── Shared reaction helper (optimistic update + socket emit) ──────────────
   const applyReaction = useCallback(
@@ -347,22 +402,30 @@ const [editContent, setEditContent] = useState<string>("");
 }
 
 async function handleSaveEdit(messageId: string, newContent: string) {
-  try {
-    await api.put(`/messages/${messageId}`, { content: newContent });
+  // Optimistic update locally
+  setReplies((prev) =>
+    prev.map((r) =>
+      String(r.id) === String(messageId)
+        ? { ...r, content: newContent, updated_at: new Date().toISOString() }
+        : r
+    )
+  );
 
-    setReplies((prev) =>
-      prev.map((r) =>
-        String(r.id) === String(messageId)
-          ? {
-              ...r,
-              content: newContent,
-              updated_at: new Date().toISOString(),
-            }
-          : r
-      )
-    );
-  } catch (err) {
-    console.error("Failed to edit reply:", err);
+  if (socket) {
+    // Emit via socket so ALL users (thread panel + threads page) get the update
+    socket.emit("editMessage", {
+      messageId: Number(messageId),
+      content: newContent,
+      channel_id: Number(thread.channel_id),
+    });
+  } else {
+    try {
+      await api.put(`/messages/${messageId}`, { content: newContent });
+    } catch (err) {
+      console.error("Failed to edit reply:", err);
+      // revert on failure
+      fetchReplies();
+    }
   }
 
   setEditMessageId(null);
@@ -419,8 +482,8 @@ async function handleSaveEdit(messageId: string, newContent: string) {
     }
   };
 
-  const visibleReplies = expanded ? replies : replies.slice(0, 2);
-  const hiddenCount = replies.length - 2;
+  const visibleReplies = expanded ? (replies || []) : (replies || []).slice(0, 2);
+  const hiddenCount = (replies || []).length - 2;
 
   return (
     <div
@@ -440,7 +503,7 @@ async function handleSaveEdit(messageId: string, newContent: string) {
           isPrivate={thread.is_private}
         />
         <span className="ml-auto text-gray-300 dark:text-zinc-600 text-xs">
-          {replies.length} {replies.length === 1 ? "reply" : "replies"}
+          {(replies || []).length} {(replies || []).length === 1 ? "reply" : "replies"}
         </span>
       </div>
 
@@ -583,6 +646,44 @@ export default function ThreadsPage() {
     })();
   }, []);
 
+  // ── Socket: live list updates ──────────────────────────────────────────────
+  useEffect(() => {
+    if (!socket) return;
+
+    const handleEdited = (data: any) => {
+      setThreads((prev) =>
+        prev.map((t) => {
+          if (t.parent_message && String(t.parent_message.id) === String(data.id)) {
+            return {
+              ...t,
+              parent_message: {
+                ...t.parent_message,
+                content: data.content,
+                is_edited: true,
+              },
+            };
+          }
+          return t;
+        })
+      );
+    };
+
+    const handleDeleted = ({ id }: any) => {
+      // If the parent message is deleted, the entire thread disappears
+      setThreads((prev) =>
+        prev.filter((t) => !t.parent_message || String(t.parent_message.id) !== String(id))
+      );
+    };
+
+    socket.on("messageEdited", handleEdited);
+    socket.on("messageDeleted", handleDeleted);
+
+    return () => {
+      socket.off("messageEdited", handleEdited);
+      socket.off("messageDeleted", handleDeleted);
+    };
+  }, [socket]);
+
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-zinc-950">
       <div className="max-w-4xl mx-auto px-5 py-10">
@@ -627,7 +728,7 @@ export default function ThreadsPage() {
           <div className="space-y-4">
             {threads.map((thread) => (
               <ThreadCard
-                key={thread.thread_id}
+                key={thread.thread_id || thread.parent_message?.id || Math.random()}
                 thread={thread}
                 currentUser={user}
                 socket={socket}

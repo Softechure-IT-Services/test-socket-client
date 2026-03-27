@@ -17,6 +17,8 @@ import {
   Eye,
   EyeOff,
   Trash2,
+  CheckCircle2,
+  XCircle,
 } from "lucide-react";
 
 type Section = "profile" | "notifications" | "privacy";
@@ -147,6 +149,12 @@ export default function ProfilePage() {
   const [email, setEmail] = useState(user?.email ?? "");
   const [status, setStatus] = useState("");
   const [bio, setBio] = useState("");
+  const [username, setUsername] = useState(user?.username ?? "");
+
+  // Username availability check
+  type UsernameStatus = "idle" | "checking" | "available" | "taken" | "invalid";
+  const [usernameStatus, setUsernameStatus] = useState<UsernameStatus>("idle");
+  const usernameDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [currentPw, setCurrentPw] = useState("");
   const [newPw, setNewPw] = useState("");
@@ -177,6 +185,7 @@ export default function ProfilePage() {
       setStatus(data.status ?? "");
       setBio(data.bio ?? "");
       setEmail(data.email ?? "");
+      setUsername(data.username ?? "");
       if (typeof updateUser === "function") {
         updateUser({ name: data.name, avatar_url: data.avatar_url, email: data.email });
       }
@@ -194,8 +203,35 @@ export default function ProfilePage() {
       setName(user.name ?? "");
       setAvatarUrl(user.avatar_url ?? "");
       setEmail(user.email ?? "");
+      setUsername(user.username ?? "");
     }
   }, [user]);
+
+  // Debounced username availability check (exclude self)
+  useEffect(() => {
+    const currentUsername = user?.username ?? "";
+    if (!username || username === currentUsername) {
+      setUsernameStatus("idle");
+      return;
+    }
+    if (!/^[a-z0-9_-]{3,30}$/.test(username)) {
+      setUsernameStatus("invalid");
+      return;
+    }
+    setUsernameStatus("checking");
+    if (usernameDebounceRef.current) clearTimeout(usernameDebounceRef.current);
+    usernameDebounceRef.current = setTimeout(async () => {
+      try {
+        const res = await api.get(`/users/check-username?username=${encodeURIComponent(username)}&exclude_self=true`);
+        setUsernameStatus(res.data.available ? "available" : "taken");
+      } catch {
+        setUsernameStatus("idle");
+      }
+    }, 450);
+    return () => {
+      if (usernameDebounceRef.current) clearTimeout(usernameDebounceRef.current);
+    };
+  }, [username, user?.username]);
 
   async function handleAvatarChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -247,12 +283,25 @@ export default function ProfilePage() {
 
   async function handleSaveProfile() {
     setProfileError("");
+    if (usernameStatus === "taken") {
+      setProfileError("Username is already taken. Please choose another.");
+      return;
+    }
+    if (usernameStatus === "checking") {
+      setProfileError("Still checking username availability, please wait.");
+      return;
+    }
+    if (username && !/^[a-z0-9_-]{3,30}$/.test(username)) {
+      setProfileError("Username must be 3–30 chars: letters, numbers, _ or - only.");
+      return;
+    }
     setProfileSaving(true);
     try {
-      const res = await api.patch("/users/me", { name, status, bio });
+      const res = await api.patch("/users/me", { name, username, status, bio });
       if (typeof updateUser === "function") {
-        updateUser({ name: res.data.user?.name ?? name });
+        updateUser({ name: res.data.user?.name ?? name, username: res.data.user?.username ?? username });
       }
+      setUsernameStatus("idle");
       setProfileSaved(true);
       setTimeout(() => setProfileSaved(false), 2500);
     } catch (err: any) {
@@ -390,6 +439,9 @@ export default function ProfilePage() {
 
                     <div className="flex-1 text-center sm:text-left mt-3 sm:mt-12">
                       <h2 className="text-xl font-bold text-foreground tracking-tight">{name || "Your Name"}</h2>
+                      {username && (
+                        <p className="text-xs font-mono text-primary/70 mt-0.5">@{username}</p>
+                      )}
                       <p className="text-sm font-medium text-neutral-500 dark:text-neutral-400 mt-0.5">{email}</p>
                     </div>
 
@@ -427,6 +479,36 @@ export default function ProfilePage() {
                     <Field label="Display Name">
                       <StyledInput value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Alex" />
                     </Field>
+
+                    <Field label="Username" hint="Unique handle used to identify you.">
+                      <div className="relative">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400 text-sm select-none z-10">@</span>
+                        <StyledInput
+                          value={username}
+                          onChange={(e) => {
+                            const cleaned = e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, "").slice(0, 30);
+                            setUsername(cleaned);
+                          }}
+                          placeholder="your_handle"
+                        />
+                        {/* overlay the @ prefix by adjusting padding */}
+                        <span className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
+                          {usernameStatus === "checking" && <Loader2 className="w-4 h-4 animate-spin text-neutral-400" />}
+                          {usernameStatus === "available" && <CheckCircle2 className="w-4 h-4 text-emerald-500" />}
+                          {usernameStatus === "taken" && <XCircle className="w-4 h-4 text-red-500" />}
+                          {usernameStatus === "invalid" && <XCircle className="w-4 h-4 text-amber-500" />}
+                        </span>
+                      </div>
+                      {usernameStatus === "available" && (
+                        <p className="text-xs text-emerald-500 mt-1">@{username} is available!</p>
+                      )}
+                      {usernameStatus === "taken" && (
+                        <p className="text-xs text-red-500 mt-1">@{username} is already taken.</p>
+                      )}
+                      {usernameStatus === "invalid" && (
+                        <p className="text-xs text-amber-500 mt-1">3–30 chars: letters, numbers, _ or - only.</p>
+                      )}
+                    </Field>
                     
                     <Field label="Current Status" hint="What's on your mind?">
                       <StyledInput value={status} onChange={(e) => setStatus(e.target.value)} placeholder="e.g. In a meeting 📞" />
@@ -457,7 +539,7 @@ export default function ProfilePage() {
                     </div>
                     <button
                       onClick={handleSaveProfile}
-                      disabled={profileSaving}
+                      disabled={profileSaving || usernameStatus === "checking" || usernameStatus === "taken" || usernameStatus === "invalid"}
                       className="flex items-center justify-center gap-2 h-10 px-6 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground text-sm font-medium transition-colors disabled:opacity-60"
                     >
                       {profileSaving ? (

@@ -2062,9 +2062,12 @@ import { useAuth } from "@/app/components/context/userId_and_connection/provider
 const MainPage: React.FC = () => {
     const searchParams = useSearchParams();
   const meetingId = searchParams.get("meeting_id");
+  const channelId = searchParams.get("channel_id");
 
   const { socket, user } = useAuth();
-const autoJoinRoomIdRef = React.useRef<string | null>(meetingId);
+  // Prefer explicit meeting_id (active session room id) if provided; fall back to channel room.
+  const derivedRoomId = meetingId || (channelId ? `channel-${channelId}` : null);
+  const autoJoinRoomIdRef = React.useRef<string | null>(derivedRoomId);
 
   useEffect(() => {
     if (!socket) return; // wait until provider has created the socket
@@ -2731,6 +2734,10 @@ const autoJoinRoomIdRef = React.useRef<string | null>(meetingId);
       if (localStream) addVideoStream("local", localStream, true, username);
       socket?.emit("join-room", roomId);
       socket?.emit("update-call-status", true);
+      // If this huddle is tied to a channel, notify other channel members so they can auto-join.
+      if (channelId) {
+        socket?.emit("huddle-started", { channelId: Number(channelId), roomId });
+      }
 
       deviceCheckInterval = setInterval(() => {
         checkAndUpdateDevices();

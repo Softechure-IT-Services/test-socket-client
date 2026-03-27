@@ -4,7 +4,6 @@
 import React, { memo } from "react";
 import DOMPurify from "dompurify";
 
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/app/components/ui/tooltip";
 import { TbPinFilled } from "react-icons/tb";
 
 import ChatHover, { type Reaction as ChatHoverReaction } from "@/app/components/chat-hover";
@@ -213,24 +212,27 @@ function ReactionsStrip({
             .map((u) => u.name ?? ""),
         ];
 
-        return (
-          <Tooltip key={idx}>
-            <TooltipTrigger asChild>
-              <span
-                onClick={() => isMember && onToggle?.(r.emoji)}
-                className={`text-sm px-2 leading-none py-1 rounded-full flex items-center gap-1 select-none transition-colors
-                  ${isMember ? "cursor-pointer" : "cursor-default opacity-60"}
-                  ${currentUserReacted
-                    ? "bg-blue-100 border border-blue-500 text-blue-700 dark:bg-blue-900/40 dark:border-blue-400 dark:text-blue-300"
-                    : "bg-gray-200 border border-transparent hover:border-gray-400 dark:bg-zinc-700 dark:text-gray-200"}
-                `}
-              >
-                {r.emoji} {r.count > 1 ? r.count : null}
-              </span>
-            </TooltipTrigger>
+        const tooltipLabel =
+          `${r.emoji} ${r.count === 1 ? "1 person" : `${r.count} people`}` +
+          (tooltipUsers.length > 0 ? `\n${tooltipUsers.join(", ")}` : "");
 
-            <TooltipContent className="bg-black text-white p-2 text-xs rounded-md flex flex-col gap-1 min-w-[80px]">
-              <p className="font-semibold border-b border-white/20 pb-1 mb-0.5">
+        return (
+          <div key={idx} className="relative group/reaction">
+            <span
+              onClick={() => isMember && onToggle?.(r.emoji)}
+              className={`text-sm px-2 leading-none py-1 rounded-full flex items-center gap-1 select-none transition-colors
+                ${isMember ? "cursor-pointer" : "cursor-default opacity-60"}
+                ${currentUserReacted
+                  ? "bg-blue-100 border border-blue-500 text-blue-700 dark:bg-blue-900/40 dark:border-blue-400 dark:text-blue-300"
+                  : "bg-gray-200 border border-transparent hover:border-gray-400 dark:bg-zinc-700 dark:text-gray-200"}
+              `}
+            >
+              {r.emoji} {r.count > 1 ? r.count : null}
+            </span>
+
+            {/* Pure CSS tooltip — no Radix, no state, no loops */}
+            <div className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 z-50 hidden group-hover/reaction:flex flex-col items-start bg-black text-white text-xs rounded-md px-2 py-1.5 min-w-[80px] max-w-[160px] shadow-lg">
+              <p className="font-semibold border-b border-white/20 pb-1 mb-0.5 w-full">
                 {r.emoji} {r.count === 1 ? "1 person" : `${r.count} people`}
               </p>
               {tooltipUsers.length > 0 ? (
@@ -240,14 +242,12 @@ function ReactionsStrip({
                   </span>
                 ))
               ) : (
-                // Users array present but names not yet hydrated — show count so
-                // the tooltip is never completely empty
                 <span className="opacity-60 italic">
                   {r.count === 1 ? "1 person reacted" : `${r.count} people reacted`}
                 </span>
               )}
-            </TooltipContent>
-          </Tooltip>
+            </div>
+          </div>
         );
       })}
     </div>

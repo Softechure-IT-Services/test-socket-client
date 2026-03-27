@@ -30,10 +30,13 @@ type ThreadReply = {
 
 type ParentMessage = {
   id: number | string;
+  sender_id?: number | string;
   content: string;
   sender_name?: string;
   avatar_url?: string | null;
   created_at?: string | null;
+  files?: MsgFile[];
+  reactions?: any[];
 };
 
 type ThreadPanelProps = {
@@ -107,10 +110,13 @@ export default function ThreadPanel({
   const searchParams = useSearchParams();
   const highlightedScrollIds = useRef(new Set<string>());
 
+  const [liveParent, setLiveParent] = useState<ParentMessage | null>(parentMessage);
+
   // Clear the dedup set whenever the thread changes, so the highlight fires fresh
   useEffect(() => {
     highlightedScrollIds.current.clear();
-  }, [parentMessage?.id]);
+    setLiveParent(parentMessage);
+  }, [parentMessage?.id, parentMessage]);
 
   useEffect(() => {
     const scrollToId = searchParams?.get("scrollTo");
@@ -268,6 +274,13 @@ export default function ThreadPanel({
     }
   }, [parentMessage?.id, userId]);
 
+  // Sycn reply count with parent component whenever replies change
+  useEffect(() => {
+    if (!parentMessage?.id || !onReplyCountChange) return;
+    const count = replies.filter((r) => !String(r.id).startsWith("temp-")).length;
+    onReplyCountChange(parentMessage.id, count);
+  }, [replies.length, parentMessage?.id, onReplyCountChange]);
+
   useEffect(() => {
     initialRepliesLoadedRef.current = false;
     setReplies([]);
@@ -324,15 +337,10 @@ export default function ThreadPanel({
         if (tempIdx !== -1) {
           const next = [...prev];
           next[tempIdx] = reply;
-          onReplyCountChange?.(
-            parentMessage.id,
-            next.filter((r) => !String(r.id).startsWith("temp-")).length
-          );
           return next;
         }
 
         const next = [...prev, reply];
-        onReplyCountChange?.(parentMessage.id, next.length);
 
         // Update last read for this thread
         const threadKey = `thread_${parentMessage.id}`;
@@ -383,6 +391,92 @@ return () => {
 };
   }, [socket]);
 
+  // ─── Socket listeners: edit / delete / pin / unpin ────────────────────────
+  useEffect(() => {
+    if (!socket || !liveParent?.id) return;
+
+    const handleEdited = (data: any) => {
+      const msgId = String(data.id);
+      // 1. Is it the parent message?
+      if (msgId === String(liveParent.id)) {
+        setLiveParent(prev => prev ? { ...prev, content: data.content, is_edited: true } : prev);
+      }
+      // 2. Is it a reply?
+      setReplies((prev) =>
+        prev.map((r) =>
+          String(r.id) === msgId
+            ? { ...r, content: data.content, updated_at: data.updated_at, is_edited: true }
+            : r
+        )
+      );
+    };
+
+    const handleDeleted = (data: any) => {
+      const msgId = String(data.id);
+      // 1. Is it the parent message? Close panel.
+      if (msgId === String(liveParent.id)) {
+        onClose();
+        return;
+      }
+      // 2. Is it a reply? Remove from list.
+      setReplies((prev) => prev.filter((r) => String(r.id) !== msgId));
+    };
+
+    const handlePinned = (data: any) => {
+      setReplies((prev) =>
+        prev.map((r) =>
+          String(r.id) === String(data.messageId) ? { ...r, pinned: true } : r
+        )
+      );
+    };
+
+    const handleUnpinned = (data: any) => {
+      setReplies((prev) =>
+        prev.map((r) =>
+          String(r.id) === String(data.messageId) ? { ...r, pinned: false } : r
+        )
+      );
+    };
+
+    const handleUserUpdated = (updatedUser: any) => {
+      // Update parent if applicable
+      if (String(liveParent.sender_id) === String(updatedUser.id)) {
+        setLiveParent(prev => prev ? {
+          ...prev,
+          sender_name: updatedUser.name !== undefined ? updatedUser.name : prev.sender_name,
+          avatar_url: updatedUser.avatar_url !== undefined ? updatedUser.avatar_url : prev.avatar_url,
+        } : prev);
+      }
+      // Update replies
+      setReplies((prev) =>
+        prev.map((r) => {
+          if (String(r.sender_id) === String(updatedUser.id)) {
+            return {
+              ...r,
+              sender_name: updatedUser.name !== undefined ? updatedUser.name : r.sender_name,
+              avatar_url: updatedUser.avatar_url !== undefined ? updatedUser.avatar_url : r.avatar_url,
+            };
+          }
+          return r;
+        })
+      );
+    };
+
+    socket.on("messageEdited", handleEdited);
+    socket.on("messageDeleted", handleDeleted);
+    socket.on("messagePinned", handlePinned);
+    socket.on("messageUnpinned", handleUnpinned);
+    socket.on("userUpdated", handleUserUpdated);
+
+    return () => {
+      socket.off("messageEdited", handleEdited);
+      socket.off("messageDeleted", handleDeleted);
+      socket.off("messagePinned", handlePinned);
+      socket.off("messageUnpinned", handleUnpinned);
+      socket.off("userUpdated", handleUserUpdated);
+    };
+  }, [socket, liveParent?.id, liveParent?.sender_id, onClose]);
+
   // ─── Shared reaction helper (optimistic update + socket emit) ───────────
   const applyReaction = useCallback(
     (messageId: string | number, emoji: string) => {
@@ -425,79 +519,7 @@ return () => {
     [socket, userId, user]
   );
 
-  // ─── Socket listeners: edit / delete / pin / unpin for thread replies ───────
-  useEffect(() => {
-    if (!socket) return;
 
-    const handleEdited = (data: any) => {
-      if (!data.is_thread_reply) return;
-      setReplies((prev) =>
-        prev.map((r) =>
-          String(r.id) === String(data.id)
-            ? { ...r, content: data.content, updated_at: data.updated_at }
-            : r
-        )
-      );
-    };
-
-    const handleDeleted = (data: any) => {
-      if (!data.is_thread_reply) return;
-      setReplies((prev) => {
-        const next = prev.filter((r) => String(r.id) !== String(data.id));
-        if (next.length !== prev.length) {
-          onReplyCountChange?.(parentMessage!.id, next.length);
-        }
-        return next;
-      });
-    };
-
-    const handlePinned = (data: any) => {
-      if (!data.is_thread_reply) return;
-      setReplies((prev) =>
-        prev.map((r) =>
-          String(r.id) === String(data.messageId) ? { ...r, pinned: data.pinned } : r
-        )
-      );
-    };
-
-    const handleUnpinned = (data: any) => {
-      if (!data.is_thread_reply) return;
-      setReplies((prev) =>
-        prev.map((r) =>
-          String(r.id) === String(data.messageId) ? { ...r, pinned: false } : r
-        )
-      );
-    };
-
-    const handleUserUpdated = (updatedUser: any) => {
-      setReplies((prev) =>
-        prev.map((r) => {
-          if (String(r.sender_id) === String(updatedUser.id)) {
-            return {
-              ...r,
-              sender_name: updatedUser.name !== undefined ? updatedUser.name : r.sender_name,
-              avatar_url: updatedUser.avatar_url !== undefined ? updatedUser.avatar_url : r.avatar_url,
-            };
-          }
-          return r;
-        })
-      );
-    };
-
-    socket.on("messageEdited", handleEdited);
-    socket.on("messageDeleted", handleDeleted);
-    socket.on("messagePinned", handlePinned);
-    socket.on("messageUnpinned", handleUnpinned);
-    socket.on("userUpdated", handleUserUpdated);
-
-    return () => {
-      socket.off("messageEdited", handleEdited);
-      socket.off("messageDeleted", handleDeleted);
-      socket.off("messagePinned", handlePinned);
-      socket.off("messageUnpinned", handleUnpinned);
-      socket.off("userUpdated", handleUserUpdated);
-    };
-  }, [socket, parentMessage, onReplyCountChange]);
 
   // ─── Edit helpers (mirrors ChannelChat) ─────────────────────────────────
   function enableEditMode(messageId: string | number) {
@@ -517,12 +539,16 @@ return () => {
     setReplies((prev) =>
       prev.map((r) =>
         String(r.id) === messageId
-          ? { ...r, content: newContent, updated_at: new Date().toISOString() }
+          ? { ...r, content: newContent, is_edited: true, updated_at: new Date().toISOString() }
           : r
       )
     );
     // Socket emit — server broadcasts messageEdited back to room
-    socket?.emit("editMessage", { messageId: Number(messageId), content: newContent });
+    socket?.emit("editMessage", { 
+      messageId: Number(messageId), 
+      content: newContent,
+      channel_id: Number(channelId)
+    });
     setEditMessageId(null);
     setEditContent("");
   }
@@ -549,11 +575,7 @@ return () => {
           });
           if (!confirmed) return;
           // Optimistic update
-          setReplies((prev) => {
-            const next = prev.filter((r) => String(r.id) !== messageId);
-            onReplyCountChange?.(parentMessage!.id, next.length);
-            return next;
-          });
+          setReplies((prev) => prev.filter((r) => String(r.id) !== messageId));
           // Socket emit — server will broadcast messageDeleted back to room
           socket?.emit("deleteMessage", { id: Number(messageId) });
           break;
@@ -569,9 +591,15 @@ return () => {
           );
           // Socket emit — server will broadcast messagePinned/Unpinned back
           if (isCurrentlyPinned) {
-            socket?.emit("unpinMessage", { messageId: Number(messageId) });
+            socket?.emit("unpinMessage", { 
+              messageId: Number(messageId),
+              channel_id: Number(channelId)
+            });
           } else {
-            socket?.emit("pinMessage", { messageId: Number(messageId) });
+            socket?.emit("pinMessage", { 
+              messageId: Number(messageId),
+              channel_id: Number(channelId)
+            });
           }
           break;
         }
@@ -626,20 +654,25 @@ return () => {
         files: files ?? [],
       });
       setReplies((prev) => {
-        const next = prev.map((r) =>
-          r.id === tempReply.id
-            ? {
-                ...tempReply,
-                id: res.data.id,
-                created_at: res.data.created_at,
-                files: res.data.files ?? files ?? [],
-              }
-            : r
-        );
-        onReplyCountChange?.(
-          parentMessage.id,
-          next.filter((r) => !String(r.id).startsWith("temp-")).length
-        );
+        const next = prev.map((r) => {
+          if (r.id === tempReply.id) {
+            let replyFiles: MsgFile[] = [];
+            const dataFiles = res.data.data.files;
+            if (Array.isArray(dataFiles)) {
+              replyFiles = dataFiles;
+            } else if (typeof dataFiles === "string" && dataFiles) {
+              try { replyFiles = JSON.parse(dataFiles); } catch { replyFiles = []; }
+            }
+
+            return {
+              ...tempReply,
+              id: res.data.data.id,
+              created_at: res.data.data.created_at,
+              files: replyFiles,
+            };
+          }
+          return r;
+        });
         return next;
       });
     } catch (err) {
@@ -665,46 +698,59 @@ return () => {
       {threadDragging && 
       <FileBg />
        } 
-      {/* ── Header ──────────────────────────────────────────────────────────── */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-zinc-700 shrink-0">
-        <div className="flex items-center gap-2">
-          <MessageSquare size={16} className="text-gray-500 dark:text-gray-400" />
-          <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-            Thread
-          </h2>
+      {!liveParent ? (
+        <div className="flex flex-col items-center justify-center h-full text-center px-6 text-gray-400">
+           <MessageSquare size={32} className="mb-3 opacity-40" />
+           <p className="text-sm font-medium">Thread not found</p>
+           <p className="text-xs mt-1">This thread may have been deleted.</p>
+           <button onClick={onClose} className="mt-4 text-xs text-blue-500 hover:underline">Close</button>
         </div>
-        <button
-          onClick={onClose}
-          title="Close thread"
-          className="p-1.5 rounded-md hover:bg-gray-100 dark:hover:bg-zinc-800 text-gray-500 dark:text-gray-400 transition-colors cursor-pointer"
-        >
-          <X size={16} />
-        </button>
-      </div>
+      ) : (
+        <>
+          {/* ── Header ──────────────────────────────────────────────────────────── */}
+          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-zinc-700 shrink-0">
+            <div className="flex items-center gap-2">
+              <MessageSquare size={16} className="text-gray-500 dark:text-gray-400" />
+              <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                Thread
+              </h2>
+            </div>
+            <button
+              onClick={onClose}
+              title="Close thread"
+              className="p-1.5 rounded-md hover:bg-gray-100 dark:hover:bg-zinc-800 text-gray-500 dark:text-gray-400 transition-colors cursor-pointer"
+            >
+              <X size={16} />
+            </button>
+          </div>
 
-      {/* ── Parent message (quoted) — read-only, no interactions ──────────── */}
-      <div className="px-[10px] py-3 border-b border-gray-200 dark:border-zinc-700 bg-gray-50 dark:bg-zinc-800/50 shrink-0">
-        <MessageRow
-          msg={{
-            id: parentMessage.id,
-            sender_id: "",
-            sender_name: parentMessage.sender_name ?? "User",
-            avatar_url: parentMessage.avatar_url,
-            content: parentMessage.content,
-            created_at: parentMessage.created_at,
-          }}
-          showHeader
-          isMember={false}
-          in_thread={true}
-          className="[&]:px-0 [&]:hover:bg-transparent"
-        />
+          {/* ── Parent message (quoted) — read-only, no interactions ──────────── */}
+          <div className="px-[10px] py-3 border-b border-gray-200 dark:border-zinc-700 bg-gray-50 dark:bg-zinc-800/50 shrink-0">
+            <MessageRow
+              msg={{
+                id: liveParent.id,
+                sender_id: liveParent.sender_id ? String(liveParent.sender_id) : "",
+                sender_name: liveParent.sender_name ?? "User",
+                avatar_url: liveParent.avatar_url,
+                content: liveParent.content,
+                created_at: liveParent.created_at ?? new Date().toISOString(),
+                files: liveParent.files,
+                reactions: liveParent.reactions,
+              }}
+              showHeader
+              isMember={false}
+              in_thread={true}
+              className="[&]:px-0 [&]:hover:bg-transparent"
+            />
 
-        {replies.length > 0 && (
-          <p className="mt-2 text-xs text-blue-600 dark:text-blue-400 font-medium">
-            {replies.length} {replies.length === 1 ? "reply" : "replies"}
-          </p>
-        )}
-      </div>
+            {replies.length > 0 && (
+              <p className="mt-2 text-xs text-blue-600 dark:text-blue-400 font-medium">
+                {replies.length} {replies.length === 1 ? "reply" : "replies"}
+              </p>
+            )}
+          </div>
+        </>
+      )}
 
       {/* ── Replies list ──────────────────────────────────────────────────── */}
       <div className="flex-1 min-h-0 overflow-y-auto py-2 pt-[25px]">

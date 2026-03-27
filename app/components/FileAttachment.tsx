@@ -482,7 +482,7 @@ export function FileAttachmentList({
   readOnly,
   tabView = false,
 }: FileAttachmentListProps) {
-  if (!files.length) return null;
+  if (!Array.isArray(files) || !files.length) return null;
 
   // ── Tab view ─────────────────────────────────────────────────────────────────
   if (tabView) {

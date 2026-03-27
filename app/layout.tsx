@@ -2,6 +2,7 @@ import "@/app/globals.css"
 import { Toaster } from "@/app/components/ui/sonner"
 import { AuthProvider } from "@/app/components/context/userId_and_connection/provider";
 import { PresenceProvider } from "@/app/components/context/PresenceContext";
+import { TooltipProvider } from "@/app/components/ui/tooltip";
 import { Inter, Roboto } from "next/font/google";
 
 
@@ -24,7 +25,9 @@ export default function RootLayout({
       <body className={`${inter.variable} ${roboto.variable} antialiased`}>
         <AuthProvider>
           <PresenceProvider>
-            {children}
+            <TooltipProvider delayDuration={0}>
+              {children}
+            </TooltipProvider>
           </PresenceProvider>
         </AuthProvider>
         <Toaster position="top-right" />

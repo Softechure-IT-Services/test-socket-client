@@ -857,7 +857,7 @@ export default function MessageInput({
   // ─── Render ────────────────────────────────────────────────────────────────
 
   return (
-    <div className={`relative overflow-visible flex flex-col gap-2 w-full message-box border rounded-xl bg-[var(--chat_bg)] ${in_thread ? "-translate-y-[5px]" : ""}`}>
+    <div className={`relative overflow-visible flex flex-col gap-2 w-full message-box border rounded-xl bg-[var(--chat_bg)]`}>
       <style>{`
         .mention-chip {
           display: inline;

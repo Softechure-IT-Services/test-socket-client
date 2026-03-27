@@ -40,9 +40,10 @@ interface PinnedMessage {
 
 const resolveThreadParentId = (msg: PinnedMessage): string | null => {
   const candidates: MaybeId[] = [
-    msg.thread_parent_id,
     msg.thread_parent_message_id,
     msg.parent_message_id,
+    // thread_parent_id is the thread row id; prefer parent message id first.
+    msg.thread_parent_id,
     msg.thread_id,
   ];
 

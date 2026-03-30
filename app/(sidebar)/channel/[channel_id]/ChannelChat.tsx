@@ -260,8 +260,11 @@ const canSendMessages = isMember;
           // Redirect if user manually accessed a private channel they aren't part of
           if (ch?.is_private && data.is_member === false) {
             router.replace("/");
-            sweetToast("Restricted", "You're not allowed to access this route", "error");
-            return;
+sweetToast({
+  title: "Restricted",
+  text: "You're not allowed to access this route",
+  icon: "error",
+});            return;
           }
         } else {
           setIsMember(true); // fallback: server didn't send the flag
@@ -281,8 +284,11 @@ const canSendMessages = isMember;
         console.error(err);
         if (err.response?.status === 403) {
           router.replace("/");
-          sweetToast("Restricted", "You're not allowed to access this route", "error");
-        }
+sweetToast({
+  title: "Restricted",
+  text: "You're not allowed to access this route",
+  icon: "error",
+});        }
       });
   }, [channelId, seedUsers]);
 

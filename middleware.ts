@@ -9,7 +9,8 @@ const PROTECTED_ROUTES = [
   '/thank-you',
   '/deleteaccount',
   '/channel',
-  
+  '/dm',
+  '/threads',
 ];
 
 export function middleware(request: NextRequest) {

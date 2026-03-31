@@ -4,9 +4,25 @@
 // @ts-nocheck
 import { useSearchParams } from "next/navigation";
 import React, { useEffect, useRef, useState } from "react";
+import { flushSync } from "react-dom";
+import { createRoot } from "react-dom/client";
 import { io, Socket } from "socket.io-client";
+import type { IconType } from "react-icons";
 import { useAuth } from "@/app/components/context/userId_and_connection/provider";
 import api from "@/lib/axios";
+import {
+  BsCameraVideoFill,
+  BsCameraVideoOffFill,
+  BsChevronUp,
+  BsDisplay,
+  BsLink45Deg,
+  BsMicFill,
+  BsMicMuteFill,
+  BsPeopleFill,
+  BsTelephoneXFill,
+  BsXLg,
+} from "react-icons/bs";
+
 
 type LobbyMode =
   | "loading"
@@ -56,6 +72,10 @@ const MainPage: React.FC = () => {
   const [sidebarTab, setSidebarTab] = useState<"people" | "chat">("people");
   const [unreadChatCount, setUnreadChatCount] = useState(0);
   const [isMeetingActive, setIsMeetingActive] = useState(false);
+  const [isScreenShareActive, setIsScreenShareActive] = useState(false);
+  const [huddleAdminUserId, setHuddleAdminUserId] = useState<string | null>(null);
+  const [isChannelMember, setIsChannelMember] = useState(false);
+  const [channelAccessReady, setChannelAccessReady] = useState(!channelId || !currentUserId);
   const [lobbyState, setLobbyState] = useState<LobbyState>({
     mode: "loading",
     title: "Preparing huddle",
@@ -69,6 +89,9 @@ const MainPage: React.FC = () => {
   const currentUsernameRef = useRef("");
   const activeRoomRef = useRef<string | null>(null);
   const isInCallRef = useRef(false);
+  const channelAccessReadyRef = useRef(!channelId || !currentUserId);
+  const canJoinWithoutAdmissionRef = useRef(false);
+  const isHuddleAdminRef = useRef(false);
   const sidebarTabRef = useRef<"people" | "chat">("people");
   const chatDraftRef = useRef("");
   const inspectRoomRef = useRef<(() => Promise<void>) | null>(null);
@@ -83,6 +106,23 @@ const MainPage: React.FC = () => {
   const updateLobbyState = (next: LobbyState) => {
     lobbyModeRef.current = next.mode;
     setLobbyState(next);
+  };
+
+  const isHuddleAdmin =
+    currentUserId != null && huddleAdminUserId === currentUserId;
+  const canJoinWithoutAdmission =
+    !!channelId && !!currentUserId && isChannelMember;
+
+  const applyResolvedHuddleSession = (payload: any) => {
+    const roomId = payload?.room_id ?? payload?.session?.meeting_id ?? null;
+    const adminUserId = payload?.session?.started_by ?? payload?.started_by ?? null;
+
+    if (roomId) {
+      setResolvedRoomId(roomId);
+      resolvedRoomIdRef.current = roomId;
+    }
+
+    setHuddleAdminUserId(adminUserId != null ? String(adminUserId) : null);
   };
 
   useEffect(() => {
@@ -144,6 +184,15 @@ const MainPage: React.FC = () => {
   }, [resolvedRoomId]);
 
   useEffect(() => {
+    isHuddleAdminRef.current = isHuddleAdmin;
+  }, [huddleAdminUserId, isHuddleAdmin]);
+
+  useEffect(() => {
+    channelAccessReadyRef.current = channelAccessReady;
+    canJoinWithoutAdmissionRef.current = canJoinWithoutAdmission;
+  }, [isChannelMember, channelAccessReady, canJoinWithoutAdmission]);
+
+  useEffect(() => {
     sidebarTabRef.current = sidebarTab;
     if (sidebarTab === "chat") {
       setUnreadChatCount(0);
@@ -155,14 +204,58 @@ const MainPage: React.FC = () => {
   }, [chatDraft]);
 
   useEffect(() => {
+    if (!channelId) {
+      setIsChannelMember(false);
+      setChannelAccessReady(true);
+      return;
+    }
+
+    if (!currentUserId) {
+      setIsChannelMember(false);
+      setChannelAccessReady(true);
+      return;
+    }
+
+    let cancelled = false;
+    setChannelAccessReady(false);
+
+    api
+      .get(`/channels/${channelId}`)
+      .then(({ data }) => {
+        if (cancelled) return;
+        setIsChannelMember(data?.is_member === true);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        console.error("Failed to resolve channel membership for huddle:", err);
+        setIsChannelMember(false);
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setChannelAccessReady(true);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [channelId, currentUserId]);
+
+  useEffect(() => {
+    if (!resolvedRoomId) return;
+    if (channelId && !channelAccessReady) return;
+    void inspectRoomRef.current?.();
+  }, [resolvedRoomId, channelId, channelAccessReady, isChannelMember, huddleAdminUserId]);
+
+  useEffect(() => {
     if (meetingId) {
       setResolvedRoomId(meetingId);
       resolvedRoomIdRef.current = meetingId;
-      return;
     }
 
     if (!channelId) return;
     if (typeof window !== "undefined" && !localStorage.getItem("access_token")) {
+      if (meetingId) return;
       updateLobbyState({
         mode: "invite_required",
         title: "Invite link required",
@@ -176,20 +269,24 @@ const MainPage: React.FC = () => {
     api
       .get(`/huddle/channel/${channelId}/active`)
       .then(({ data }) => {
+        if (data?.session?.started_by != null || data?.started_by != null) {
+          applyResolvedHuddleSession(data);
+        }
+
         if (data.active && data.room_id) {
-          setResolvedRoomId(data.room_id);
-          resolvedRoomIdRef.current = data.room_id;
+          applyResolvedHuddleSession(data);
         } else {
+          if (meetingId) return;
           return api
             .post(`/huddle/channel/${channelId}/start`)
             .then(({ data: startData }) => {
-              setResolvedRoomId(startData.room_id);
-              resolvedRoomIdRef.current = startData.room_id;
+              applyResolvedHuddleSession(startData);
             });
         }
       })
       .catch((err) => {
         console.error("Failed to resolve huddle room:", err);
+        if (meetingId) return;
         updateLobbyState({
           mode: "invite_required",
           title: "Invite link required",
@@ -283,8 +380,16 @@ const MainPage: React.FC = () => {
     const callerName = document.getElementById("callerName")!;
     const callerInitial = document.getElementById("callerInitial")!;
     const toastContainer = document.getElementById("toastContainer")!;
-    const micSelect = document.getElementById("micSelect") as HTMLSelectElement;
-    const camSelect = document.getElementById("camSelect") as HTMLSelectElement;
+    const prejoinMicSelect = document.getElementById("prejoinMicSelect") as HTMLSelectElement | null;
+    const prejoinSpeakerSelect = document.getElementById("prejoinSpeakerSelect") as HTMLSelectElement | null;
+    const prejoinCamSelect = document.getElementById("prejoinCamSelect") as HTMLSelectElement | null;
+    const meetingMicSelect = document.getElementById("meetingMicSelect") as HTMLSelectElement | null;
+    const meetingSpeakerSelect = document.getElementById("meetingSpeakerSelect") as HTMLSelectElement | null;
+    const meetingCamSelect = document.getElementById("meetingCamSelect") as HTMLSelectElement | null;
+    const micSelects = [prejoinMicSelect, meetingMicSelect].filter(Boolean) as HTMLSelectElement[];
+    const speakerSelects = [prejoinSpeakerSelect, meetingSpeakerSelect].filter(Boolean) as HTMLSelectElement[];
+    const camSelects = [prejoinCamSelect, meetingCamSelect].filter(Boolean) as HTMLSelectElement[];
+    let currentSpeakerDeviceId = "";
 
     // ---------- USERNAME SETUP ----------
     async function applyUsernameAndStart(name: string) {
@@ -350,6 +455,17 @@ const MainPage: React.FC = () => {
         return;
       }
 
+      if (channelId && !channelAccessReadyRef.current) {
+        updateLobbyState({
+          mode: "loading",
+          title: "Checking huddle access",
+          description: "Confirming whether this channel membership can join directly.",
+          primaryLabel: "Checking...",
+          primaryDisabled: true,
+        });
+        return;
+      }
+
       updateLobbyState({
         mode: "loading",
         title: "Checking huddle status",
@@ -361,14 +477,24 @@ const MainPage: React.FC = () => {
       socket?.emit("huddle-room-preview", { roomId: roomToInspect }, (snapshot: any) => {
         const participants = normalizeMembers(snapshot?.participants);
         const pending = normalizeMembers(snapshot?.pending);
+        if (snapshot?.adminUserId != null) {
+          setHuddleAdminUserId(String(snapshot.adminUserId));
+        }
         setRoomParticipants(participants);
         setPendingAdmissions(pending);
 
-        if (snapshot?.pendingRequest) {
+        const canDirectJoin =
+          canJoinWithoutAdmissionRef.current ||
+          snapshot?.requesterIsChannelMember === true;
+        const requestJoinDescription = channelId
+          ? "You're not a member of this channel. The huddle admin needs to admit you."
+          : "People are already inside this huddle. Send a request and someone in the call can admit you.";
+
+        if (snapshot?.pendingRequest && !canDirectJoin) {
           updateLobbyState({
             mode: "waiting",
             title: "Waiting for admission",
-            description: "Your request is already pending. Someone inside the huddle needs to admit you.",
+            description: "Your request is already pending. The huddle admin needs to admit you.",
             primaryLabel: "Waiting for approval",
             primaryDisabled: true,
           });
@@ -395,10 +521,20 @@ const MainPage: React.FC = () => {
           return;
         }
 
+        if (canDirectJoin) {
+          updateLobbyState({
+            mode: "join_now",
+            title: "Join huddle",
+            description: "You're already a member of this channel, so you can join without approval.",
+            primaryLabel: "Join now",
+          });
+          return;
+        }
+
         updateLobbyState({
           mode: "ask_to_join",
           title: "Ask to join",
-          description: "People are already inside this huddle. Send a request and someone in the call can admit you.",
+          description: requestJoinDescription,
           primaryLabel: "Ask to join",
         });
       });
@@ -418,6 +554,11 @@ const MainPage: React.FC = () => {
       }
 
       if (lobbyModeRef.current === "ask_to_join" || lobbyModeRef.current === "denied") {
+        if (canJoinWithoutAdmissionRef.current) {
+          joinRoom(roomToJoin, channelId ? `Channel ${channelId}` : `Room: ${roomToJoin}`);
+          return;
+        }
+
         socket?.emit(
           "request-room-admission",
           { roomId: roomToJoin, username: currentUsernameRef.current || username },
@@ -430,7 +571,7 @@ const MainPage: React.FC = () => {
               updateLobbyState({
                 mode: "waiting",
                 title: "Waiting for admission",
-                description: "Someone already inside the huddle needs to admit you before you can join.",
+                description: "The huddle admin needs to admit you before you can join.",
                 primaryLabel: "Waiting for approval",
                 primaryDisabled: true,
               });
@@ -449,7 +590,9 @@ const MainPage: React.FC = () => {
       updateLobbyState({
         mode: "ask_to_join",
         title: "Ready to ask to join",
-        description: "People are already inside this huddle. Ask to join and they can admit you.",
+        description: channelId
+          ? "You're not a member of this channel. Ask the huddle admin to admit you."
+          : "People are already inside this huddle. Ask to join and they can admit you.",
         primaryLabel: "Ask to join",
       });
       showToast("Join request cancelled", "info");
@@ -523,6 +666,8 @@ const MainPage: React.FC = () => {
         }
       }
       previewReadyRef.current = true;
+      await refreshDeviceList(false);
+      updateDeviceButtons();
     }
 
     // ---------- DEVICE CHECK / AUTO UPGRADE ----------
@@ -634,25 +779,39 @@ const MainPage: React.FC = () => {
     }
 
     function updateDeviceButtons() {
-      const micBtns = [
-        document.getElementById("toggleMic"),
-        document.getElementById("meetingToggleMic"),
-      ];
-      const camBtns = [
-        document.getElementById("toggleCam"),
-        document.getElementById("meetingToggleCam"),
-      ];
-      micBtns.forEach((btn) => {
-        if (btn && !hasMicrophone) {
-          btn.classList.add("bg-yellow-600", "hover:bg-yellow-700", "device-warning");
-          btn.classList.remove("bg-transparent", "hover:bg-accent", "bg-red-600", "hover:bg-red-700");
-        }
+      const activeAudioTrack =
+        localStream?.getAudioTracks().find((audioTrack) => audioTrack !== silentAudioTrack) || null;
+      const activeVideoTrack =
+        localStream?.getVideoTracks().find((videoTrack) => (videoTrack as any).label !== "canvas") || null;
+      const micEnabled = !!(hasMicrophone && activeAudioTrack?.enabled);
+      const camEnabled = !!(hasCamera && activeVideoTrack?.enabled);
+
+      getMicButtons().forEach((button) => {
+        updateControlButton(button, {
+          available: hasMicrophone,
+          enabled: micEnabled,
+          iconMarkup: getMicIconMarkup(micEnabled),
+        });
       });
-      camBtns.forEach((btn) => {
-        if (btn && !hasCamera) {
-          btn.classList.add("bg-yellow-600", "hover:bg-yellow-700", "device-warning");
-          btn.classList.remove("bg-transparent", "hover:bg-accent", "bg-red-600", "hover:bg-red-700");
-        }
+
+      getCamButtons().forEach((button) => {
+        updateControlButton(button, {
+          available: hasCamera,
+          enabled: camEnabled,
+          iconMarkup: getCamIconMarkup(camEnabled),
+        });
+      });
+
+      getMicDropdownButtons().forEach((button) => {
+        button.disabled = !micSelects.length && !speakerSelects.length;
+        button.classList.toggle("opacity-50", button.disabled);
+        button.classList.toggle("cursor-not-allowed", button.disabled);
+      });
+
+      getCamDropdownButtons().forEach((button) => {
+        button.disabled = !camSelects.length;
+        button.classList.toggle("opacity-50", button.disabled);
+        button.classList.toggle("cursor-not-allowed", button.disabled);
       });
     }
 
@@ -672,6 +831,149 @@ const MainPage: React.FC = () => {
         toast.style.transition = "all 0.3s";
         setTimeout(() => toast.remove(), 300);
       }, 3000);
+    }
+
+    function getMicButtons() {
+      return [
+        document.getElementById("toggleMic") as HTMLButtonElement | null,
+        document.getElementById("meetingToggleMic") as HTMLButtonElement | null,
+      ].filter(Boolean) as HTMLButtonElement[];
+    }
+
+    function getCamButtons() {
+      return [
+        document.getElementById("toggleCam") as HTMLButtonElement | null,
+        document.getElementById("meetingToggleCam") as HTMLButtonElement | null,
+      ].filter(Boolean) as HTMLButtonElement[];
+    }
+
+    function getMicDropdownButtons() {
+      return [
+        document.getElementById("toggleMicDropdown") as HTMLButtonElement | null,
+        document.getElementById("meetingToggleMicDropdown") as HTMLButtonElement | null,
+      ].filter(Boolean) as HTMLButtonElement[];
+    }
+
+    function getCamDropdownButtons() {
+      return [
+        document.getElementById("toggleCamDropdown") as HTMLButtonElement | null,
+        document.getElementById("meetingToggleCamDropdown") as HTMLButtonElement | null,
+      ].filter(Boolean) as HTMLButtonElement[];
+    }
+
+    const iconMarkupCache = new Map<IconType, Map<string, string>>();
+
+    function renderIconMarkup(Icon: IconType, className: string) {
+      let cachedByClassName = iconMarkupCache.get(Icon);
+      if (!cachedByClassName) {
+        cachedByClassName = new Map<string, string>();
+        iconMarkupCache.set(Icon, cachedByClassName);
+      }
+
+      const cachedMarkup = cachedByClassName.get(className);
+      if (cachedMarkup) return cachedMarkup;
+
+      const host = document.createElement("div");
+      const root = createRoot(host);
+
+      flushSync(() => {
+        root.render(<Icon className={className} aria-hidden="true" focusable="false" />);
+      });
+
+      const markup = host.innerHTML;
+      root.unmount();
+      cachedByClassName.set(className, markup);
+      return markup;
+    }
+
+    function getMicIconMarkup(enabled: boolean) {
+      return renderIconMarkup(enabled ? BsMicFill : BsMicMuteFill, "w-5 h-5");
+    }
+
+    function getCamIconMarkup(enabled: boolean) {
+      return renderIconMarkup(
+        enabled ? BsCameraVideoFill : BsCameraVideoOffFill,
+        "w-5 h-5"
+      );
+    }
+
+    function updateControlButton(
+      button: HTMLButtonElement,
+      options: { available: boolean; enabled: boolean; iconMarkup: string }
+    ) {
+      const isMeetingButton = button.id.startsWith("meeting");
+      button.classList.remove(
+        "bg-transparent",
+        "hover:bg-accent",
+        "hover:bg-white/15",
+        "bg-red-600",
+        "hover:bg-red-700",
+        "bg-yellow-600",
+        "hover:bg-yellow-700",
+        "device-warning"
+      );
+
+      if (!options.available) {
+        button.classList.add("bg-yellow-600", "hover:bg-yellow-700", "device-warning");
+      } else if (!options.enabled) {
+        button.classList.add("bg-red-600", "hover:bg-red-700");
+      } else if (isMeetingButton) {
+        button.classList.add("bg-transparent", "hover:bg-accent");
+      } else {
+        button.classList.add("bg-transparent", "hover:bg-white/15");
+      }
+
+      button.innerHTML = options.iconMarkup;
+      button.setAttribute("aria-pressed", String(options.enabled));
+    }
+
+    async function applyAudioOutputDevice(deviceId: string, silent = false) {
+      currentSpeakerDeviceId = deviceId;
+      const mediaElements = Array.from(document.querySelectorAll("#videos video")) as HTMLMediaElement[];
+      const supportedElements = mediaElements.filter(
+        (element) => typeof (element as HTMLMediaElement & { setSinkId?: (value: string) => Promise<void> }).setSinkId === "function"
+      ) as (HTMLMediaElement & { setSinkId: (value: string) => Promise<void> })[];
+
+      if (!deviceId) {
+        speakerSelects.forEach((select) => {
+          select.value = "";
+        });
+        return;
+      }
+
+      speakerSelects.forEach((select) => {
+        if (Array.from(select.options).some((option) => option.value === deviceId)) {
+          select.value = deviceId;
+        }
+      });
+
+      if (!mediaElements.length) {
+        return;
+      }
+
+      if (!supportedElements.length) {
+        if (!silent) {
+          showToast("Speaker output switching is not supported in this browser.", "warning");
+        }
+        return;
+      }
+
+      try {
+        await Promise.all(
+          supportedElements.map((element) => {
+            if (element.muted) return Promise.resolve();
+            return element.setSinkId(deviceId);
+          })
+        );
+        if (!silent) {
+          showToast("Speaker output updated.", "success");
+        }
+      } catch (err) {
+        console.error("Failed to update audio output device:", err);
+        if (!silent) {
+          showToast("Could not switch the speaker output.", "error");
+        }
+      }
     }
 
     // ---------- CALL FLOW ----------
@@ -722,10 +1024,17 @@ const MainPage: React.FC = () => {
             updateLobbyState({
               mode: "ask_to_join",
               title: "Ask to join",
-              description: "This huddle requires admission before you can enter.",
+              description: channelId
+                ? "You're not a member of this channel. The huddle admin needs to admit you before you can enter."
+                : "This huddle requires admission before you can enter.",
               primaryLabel: "Ask to join",
             });
-            showToast("Ask to join first so someone inside can admit you.", "warning");
+            showToast(
+              channelId
+                ? "Ask the huddle admin to admit you before joining."
+                : "Ask to join first so someone inside can admit you.",
+              "warning"
+            );
             return;
           }
           showToast(response?.error || "Could not join the huddle.", "error");
@@ -742,6 +1051,9 @@ const MainPage: React.FC = () => {
         prejoin.classList.add("hidden");
         meeting.classList.remove("hidden");
         roomName.textContent = displayName;
+        if (response?.adminUserId != null) {
+          setHuddleAdminUserId(String(response.adminUserId));
+        }
         setRoomParticipants(normalizeMembers(response?.participants));
         setPendingAdmissions(normalizeMembers(response?.pending));
         setChatMessages(normalizeChatMessages(response?.chatHistory));
@@ -815,20 +1127,42 @@ const MainPage: React.FC = () => {
     admitParticipantRef.current = (targetSocketId: string) => {
       const roomToJoin = activeRoomRef.current;
       if (!roomToJoin) return;
-      socket?.emit("respond-room-admission", {
-        roomId: roomToJoin,
-        targetSocketId,
-        admit: true,
-      });
+      if (!isHuddleAdminRef.current) {
+        showToast("Only the huddle admin can admit people.", "warning");
+        return;
+      }
+      socket?.emit(
+        "respond-room-admission",
+        {
+          roomId: roomToJoin,
+          targetSocketId,
+          admit: true,
+        },
+        (response: any) => {
+          if (response?.ok) return;
+          showToast(response?.error || "Could not admit that person.", "error");
+        }
+      );
     };
     denyParticipantRef.current = (targetSocketId: string) => {
       const roomToJoin = activeRoomRef.current;
       if (!roomToJoin) return;
-      socket?.emit("respond-room-admission", {
-        roomId: roomToJoin,
-        targetSocketId,
-        admit: false,
-      });
+      if (!isHuddleAdminRef.current) {
+        showToast("Only the huddle admin can deny join requests.", "warning");
+        return;
+      }
+      socket?.emit(
+        "respond-room-admission",
+        {
+          roomId: roomToJoin,
+          targetSocketId,
+          admit: false,
+        },
+        (response: any) => {
+          if (response?.ok) return;
+          showToast(response?.error || "Could not deny that request.", "error");
+        }
+      );
     };
     sendChatMessageRef.current = () => {
       const roomToJoin = activeRoomRef.current;
@@ -845,6 +1179,10 @@ const MainPage: React.FC = () => {
     kickParticipantRef.current = (targetSocketId: string) => {
       const roomToJoin = activeRoomRef.current;
       if (!roomToJoin || targetSocketId === socket?.id) return;
+      if (!isHuddleAdminRef.current) {
+        showToast("Only the huddle admin can remove participants.", "warning");
+        return;
+      }
       socket?.emit("kick-participant", { roomId: roomToJoin, targetSocketId }, (response: any) => {
         if (!response?.ok) {
           showToast(response?.error || "Could not remove that participant.", "error");
@@ -865,56 +1203,35 @@ const MainPage: React.FC = () => {
     };
 
     function toggleMic() {
-      if (!hasMicrophone) {
+      const track = localStream?.getAudioTracks().find((audioTrack) => audioTrack !== silentAudioTrack);
+      if (!hasMicrophone || !track) {
         showToast("No microphone available. Connect a microphone to enable audio.", "warning");
         return;
       }
-      const track = localStream?.getAudioTracks()[0];
-      if (track && track !== silentAudioTrack) {
-        track.enabled = !track.enabled;
-        const btns = [
-          document.getElementById("toggleMic"),
-          document.getElementById("meetingToggleMic"),
-        ];
-        btns.forEach((btn) => {
-          if (btn) {
-            btn.classList.toggle("bg-red-600", !track.enabled);
-            btn.classList.toggle("hover:bg-red-700", !track.enabled);
-            btn.classList.toggle("bg-transparent", track.enabled);
-            btn.classList.toggle("hover:bg-accent", track.enabled);
-          }
-        });
-      }
+      track.enabled = !track.enabled;
+      updateDeviceButtons();
     }
 
     function toggleCam() {
-      if (!hasCamera) {
+      const track = localStream?.getVideoTracks().find((videoTrack) => (videoTrack as any).label !== "canvas");
+      if (!hasCamera || !track) {
         showToast("No camera available. Connect a camera to enable video.", "warning");
         return;
       }
-      const track = localStream?.getVideoTracks()[0];
-      if (track && (track as any).label !== "canvas") {
-        track.enabled = !track.enabled;
-        const btns = [
-          document.getElementById("toggleCam"),
-          document.getElementById("meetingToggleCam"),
-        ];
-        btns.forEach((btn) => {
-          if (btn) {
-            btn.classList.toggle("bg-red-600", !track.enabled);
-            btn.classList.toggle("hover:bg-red-700", !track.enabled);
-            btn.classList.toggle("bg-transparent", track.enabled);
-            btn.classList.toggle("hover:bg-accent", track.enabled);
-          }
-        });
-      }
+      track.enabled = !track.enabled;
+      updateDeviceButtons();
     }
 
     // ---------- WEBRTC SIGNALING ----------
     const handleExistingUsers = (users: any[]) => {
       users.forEach((userData) => createPeer(userData.id, userData.username, true));
     };
-    const handleUserJoined = (userData: any) => { createPeer(userData.id, userData.username, false); };
+    const handleUserJoined = (userData: any) => {
+      createPeer(userData.id, userData.username, false);
+      if (isScreenSharing && currentRoom) {
+        socket?.emit("screen-share-status", { roomId: currentRoom, sharing: true });
+      }
+    };
 
     const handleOffer = async ({ from, offer, username: peerUsername }: any) => {
       const pc = createPeer(from, peerUsername, false);
@@ -982,9 +1299,10 @@ const MainPage: React.FC = () => {
     const handlePeerScreenShareStatus = ({ userId, sharing }: { userId: string; sharing: boolean }) => {
       if (sharing) {
         registerScreenShareOwner(userId);
+        syncPeerScreenShareTile(userId, true);
       } else {
         unregisterScreenShareOwner(userId);
-        document.getElementById(`video-screen-${userId}`)?.remove();
+        syncPeerScreenShareTile(userId, false);
       }
       reorganizeVideoLayout();
     };
@@ -1017,9 +1335,22 @@ const MainPage: React.FC = () => {
       peers[id] = { pc, username: peerUsername };
 
       if (localStream) {
-        localStream.getTracks().forEach((t) => {
+        localStream.getAudioTracks().forEach((t) => {
           try { pc.addTrack(t, localStream!); } catch (err) { console.log("Error adding track:", err); }
         });
+
+        const activeScreenTrack = screenStream?.getVideoTracks().find((track) => track.readyState !== "ended");
+        const activeCameraTrack = localStream.getVideoTracks().find((track) => track.readyState !== "ended");
+        const outgoingVideoTrack = isScreenSharing ? activeScreenTrack || activeCameraTrack : activeCameraTrack;
+        const outgoingVideoStream = isScreenSharing && activeScreenTrack ? screenStream : localStream;
+
+        if (outgoingVideoTrack && outgoingVideoStream) {
+          try {
+            pc.addTrack(outgoingVideoTrack, outgoingVideoStream);
+          } catch (err) {
+            console.log("Error adding video track:", err);
+          }
+        }
       }
 
       pc.ontrack = (e) => {
@@ -1061,6 +1392,65 @@ const MainPage: React.FC = () => {
       return overflow;
     }
 
+    function createScreenShareBadge() {
+      const badge = document.createElement("div");
+      badge.className = "screen-share-badge";
+      badge.innerHTML = `
+        ${renderIconMarkup(BsDisplay, "w-4 h-4")}
+        <span>Screen Sharing</span>
+      `;
+      return badge;
+    }
+
+    function getVideoTile(ownerId: string, preferScreen = false) {
+      const cameraTile = document.getElementById(`video-${ownerId}`) as HTMLDivElement | null;
+      const screenTile = document.getElementById(`video-screen-${ownerId}`) as HTMLDivElement | null;
+      const container = preferScreen ? screenTile || cameraTile : cameraTile || screenTile;
+      const duplicate = container === screenTile ? cameraTile : screenTile;
+      return { container, duplicate };
+    }
+
+    function updateVideoTileMode(
+      container: HTMLDivElement,
+      ownerId: string,
+      displayName: string,
+      isScreenShare: boolean
+    ) {
+      container.id = isScreenShare ? `video-screen-${ownerId}` : `video-${ownerId}`;
+      container.dataset.ownerId = ownerId;
+      container.dataset.displayName = displayName;
+      container.dataset.streamType = isScreenShare ? "screen" : "camera";
+      container.classList.toggle("screen-share", isScreenShare);
+
+      const label = container.querySelector(".video-label") as HTMLDivElement | null;
+      if (label) {
+        label.textContent = ownerId === "local" ? `${displayName} (You)` : displayName;
+      }
+
+      const badge = container.querySelector(".screen-share-badge");
+      if (isScreenShare) {
+        if (!badge) {
+          container.appendChild(createScreenShareBadge());
+        }
+      } else {
+        badge?.remove();
+      }
+    }
+
+    function syncPeerScreenShareTile(ownerId: string, sharing: boolean) {
+      const { container, duplicate } = getVideoTile(ownerId, sharing);
+      if (!container) return;
+
+      duplicate?.remove();
+      const displayName =
+        container.dataset.displayName ||
+        duplicate?.dataset.displayName ||
+        peers[ownerId]?.username ||
+        "User";
+
+      updateVideoTileMode(container, ownerId, displayName, sharing);
+    }
+
     function appendVisibleTiles(parent: HTMLElement, tiles: HTMLDivElement[], limit: number) {
       const visibleTiles = tiles.slice(0, limit);
       visibleTiles.forEach((tile) => parent.appendChild(tile));
@@ -1072,10 +1462,15 @@ const MainPage: React.FC = () => {
     }
 
     function addVideoStream(id: string, stream: MediaStream, muted = false, displayName = "User", isScreenShare = false) {
-      let container = document.getElementById(`video-${id}`) as HTMLDivElement | null;
+      const ownerId = String(id).replace(/^screen-/, "");
+      const shouldShowAsScreenShare = isScreenShare || activeScreenShareOwners.includes(ownerId);
+      const { container: existingContainer, duplicate } = getVideoTile(ownerId, shouldShowAsScreenShare);
+      let container = existingContainer;
+
+      duplicate?.remove();
+
       if (!container) {
         container = document.createElement("div");
-        container.id = `video-${id}`;
         container.className = "video-container";
         const video = document.createElement("video");
         video.autoplay = true;
@@ -1089,30 +1484,21 @@ const MainPage: React.FC = () => {
         }
         const label = document.createElement("div");
         label.className = "video-label";
-        label.textContent = id === "local" ? `${displayName} (You)` : displayName;
         container.appendChild(video);
         container.appendChild(label);
-        if (isScreenShare) {
-          const badge = document.createElement("div");
-          badge.className = "screen-share-badge";
-          badge.innerHTML = `
-            <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-              <path fill-rule="evenodd" d="M3 5a2 2 0 012-2h10a2 2 0 012 2v8a2 2 0 01-2 2h-2.22l.123.489.804.804A1 1 0 0113 18H7a1 1 0 01-.707-1.707l.804-.804L7.22 15H5a2 2 0 01-2-2V5zm5.771 7H5V5h10v7H8.771z" clip-rule="evenodd"/>
-            </svg>
-            <span>Screen Sharing</span>
-          `;
-          container.appendChild(badge);
-        }
         videos.appendChild(container);
       }
-      container.dataset.streamType = isScreenShare ? "screen" : "camera";
-      container.dataset.ownerId = isScreenShare ? String(id).replace(/^screen-/, "") : id;
-      container.classList.toggle("screen-share", isScreenShare);
-      if (isScreenShare) {
-        registerScreenShareOwner(container.dataset.ownerId || id);
-      }
+      updateVideoTileMode(container, ownerId, displayName, shouldShowAsScreenShare);
       const videoElement = container.querySelector("video") as HTMLVideoElement;
+      videoElement.muted = muted;
+
+      if (shouldShowAsScreenShare) {
+        registerScreenShareOwner(ownerId);
+      }
       videoElement.srcObject = stream;
+      if (!muted && currentSpeakerDeviceId) {
+        void applyAudioOutputDevice(currentSpeakerDeviceId, true);
+      }
       if (!muted) {
         const audioTracks = stream.getAudioTracks();
         console.log(`Video ${id} has ${audioTracks.length} audio tracks`);
@@ -1174,7 +1560,7 @@ const MainPage: React.FC = () => {
         }
         return;
       }
-
+      console.log(containers);
       videos.classList.add("grid-layout");
       appendVisibleTiles(videos, cameraContainers, 9);
     }
@@ -1200,8 +1586,7 @@ const MainPage: React.FC = () => {
           addVideoStream("local", screenStream, true, username, true);
           registerScreenShareOwner("local");
           isScreenSharing = true;
-          const shareBtn = document.getElementById("shareScreenBtn") as HTMLButtonElement;
-          if (shareBtn) shareBtn.classList.add("bg-accent");
+          setIsScreenShareActive(true);
           showToast("Screen sharing started", "success");
           screenTrack.onended = stopScreenShare;
           socket?.emit("screen-share-status", { roomId: currentRoom, sharing: true });
@@ -1234,11 +1619,10 @@ const MainPage: React.FC = () => {
       });
       const oldLocal = document.getElementById("video-local");
       if (oldLocal) oldLocal.remove();
-      if (localStream) addVideoStream("local", localStream, true, username);
       unregisterScreenShareOwner("local");
       isScreenSharing = false;
-      const shareBtn = document.getElementById("shareScreenBtn") as HTMLButtonElement;
-      if (shareBtn) shareBtn.classList.remove("bg-accent");
+      setIsScreenShareActive(false);
+      if (localStream) addVideoStream("local", localStream, true, username);
       showToast("Screen sharing stopped", "info");
       socket?.emit("screen-share-status", { roomId: currentRoom, sharing: false });
     }
@@ -1252,6 +1636,7 @@ const MainPage: React.FC = () => {
       Object.keys(peers).forEach((id) => delete peers[id]);
       videos.innerHTML = "";
       if (screenStream) { screenStream.getTracks().forEach((t) => t.stop()); isScreenSharing = false; }
+      setIsScreenShareActive(false);
       if (audioContext) { audioContext.close(); audioContext = null; }
       currentRoom = null;
       activeRoomRef.current = null;
@@ -1283,7 +1668,12 @@ const MainPage: React.FC = () => {
       try {
         const devices = await navigator.mediaDevices.enumerateDevices();
         const currentAudioInputs = devices.filter((d) => d.kind === "audioinput");
+        const currentAudioOutputs = devices.filter((d) => d.kind === "audiooutput");
         const currentVideoInputs = devices.filter((d) => d.kind === "videoinput");
+        const currentMicDeviceId =
+          localStream?.getAudioTracks().find((audioTrack) => audioTrack !== silentAudioTrack)?.getSettings?.().deviceId || "";
+        const currentCamDeviceId =
+          localStream?.getVideoTracks().find((videoTrack) => (videoTrack as any).label !== "canvas")?.getSettings?.().deviceId || "";
         let newlyDetectedMicId: string | null = null;
         if (autoSwitch) {
           newlyDetectedMicId = currentAudioInputs.find(
@@ -1292,22 +1682,40 @@ const MainPage: React.FC = () => {
         }
         knownDevices.audio = currentAudioInputs.map((d) => d.deviceId);
         knownDevices.video = currentVideoInputs.map((d) => d.deviceId);
-        populateSelect(micSelect, currentAudioInputs);
-        populateSelect(camSelect, currentVideoInputs);
+        populateSelectGroup(micSelects, currentAudioInputs, "No microphone found");
+        populateSelectGroup(speakerSelects, currentAudioOutputs, "No speaker output found");
+        populateSelectGroup(camSelects, currentVideoInputs, "No camera found");
+        if (currentMicDeviceId) setSelectGroupValue(micSelects, currentMicDeviceId);
+        if (currentCamDeviceId) setSelectGroupValue(camSelects, currentCamDeviceId);
+        if (currentSpeakerDeviceId) setSelectGroupValue(speakerSelects, currentSpeakerDeviceId);
         if (newlyDetectedMicId && isInCall) {
           console.log("🆕 New Mic Detected:", newlyDetectedMicId);
-          micSelect.value = newlyDetectedMicId;
+          setSelectGroupValue(micSelects, newlyDetectedMicId);
           await switchDevice("audio", newlyDetectedMicId);
           showToast("Switched to new audio hardware automatically", "success");
         }
+        updateDeviceButtons();
       } catch (err) {
         console.error("Error updating device list:", err);
       }
     }
 
-    function populateSelect(selectElement: HTMLSelectElement, devices: MediaDeviceInfo[]) {
+    function populateSelect(
+      selectElement: HTMLSelectElement,
+      devices: MediaDeviceInfo[],
+      emptyLabel: string
+    ) {
       const currentValue = selectElement.value;
       selectElement.innerHTML = "";
+      if (!devices.length) {
+        const option = document.createElement("option");
+        option.value = "";
+        option.text = emptyLabel;
+        selectElement.appendChild(option);
+        selectElement.disabled = true;
+        return;
+      }
+      selectElement.disabled = false;
       devices.forEach((device) => {
         const option = document.createElement("option");
         option.value = device.deviceId;
@@ -1316,11 +1724,32 @@ const MainPage: React.FC = () => {
       });
       if (Array.from(selectElement.options).some((opt) => opt.value === currentValue)) {
         selectElement.value = currentValue;
+      } else {
+        selectElement.selectedIndex = 0;
       }
+    }
+
+    function populateSelectGroup(
+      selectElements: HTMLSelectElement[],
+      devices: MediaDeviceInfo[],
+      emptyLabel: string
+    ) {
+      selectElements.forEach((selectElement) => {
+        populateSelect(selectElement, devices, emptyLabel);
+      });
+    }
+
+    function setSelectGroupValue(selectElements: HTMLSelectElement[], value: string) {
+      selectElements.forEach((selectElement) => {
+        if (Array.from(selectElement.options).some((opt) => opt.value === value)) {
+          selectElement.value = value;
+        }
+      });
     }
 
     async function switchDevice(type: "audio" | "video", deviceId: string) {
       try {
+        if (!deviceId) return;
         console.log(`Attempting to switch ${type} to: ${deviceId}`);
         const constraints: MediaStreamConstraints = {
           audio: type === "audio" ? { deviceId: { exact: deviceId } } : false,
@@ -1330,10 +1759,20 @@ const MainPage: React.FC = () => {
         const newTrack = newStream.getTracks()[0];
         if (!newTrack || !localStream) throw new Error("No track");
         const oldTracks = type === "audio" ? localStream.getAudioTracks() : localStream.getVideoTracks();
+        if (type === "audio" && silentAudioTrack && oldTracks.includes(silentAudioTrack)) {
+          silentAudioTrack = null;
+        }
         oldTracks.forEach((track) => { track.stop(); localStream!.removeTrack(track); });
         localStream.addTrack(newTrack);
         preview.srcObject = localStream;
         if (type === "video") originalVideoTrack = newTrack;
+        if (type === "audio") {
+          hasMicrophone = true;
+          setSelectGroupValue(micSelects, deviceId);
+        } else {
+          hasCamera = true;
+          setSelectGroupValue(camSelects, deviceId);
+        }
         for (const [peerId, peerData] of Object.entries(peers)) {
           const senders = (peerData as any).pc.getSenders();
           const sender = senders.find((s: RTCRtpSender) => s.track?.kind === type);
@@ -1343,6 +1782,7 @@ const MainPage: React.FC = () => {
           }
         }
         if (type === "audio") socket?.emit("peer-audio-updated", { roomId: currentRoom });
+        updateDeviceButtons();
         showToast(`${type.charAt(0).toUpperCase() + type.slice(1)} updated!`, "success");
       } catch (err: any) {
         console.error("Switch Device Error Detail:", err);
@@ -1354,8 +1794,24 @@ const MainPage: React.FC = () => {
       }
     }
 
-    micSelect.onchange = () => switchDevice("audio", micSelect.value);
-    camSelect.onchange = () => switchDevice("video", camSelect.value);
+    micSelects.forEach((select) => {
+      select.onchange = () => {
+        setSelectGroupValue(micSelects, select.value);
+        void switchDevice("audio", select.value);
+      };
+    });
+    camSelects.forEach((select) => {
+      select.onchange = () => {
+        setSelectGroupValue(camSelects, select.value);
+        void switchDevice("video", select.value);
+      };
+    });
+    speakerSelects.forEach((select) => {
+      select.onchange = () => {
+        setSelectGroupValue(speakerSelects, select.value);
+        void applyAudioOutputDevice(select.value);
+      };
+    });
 
     navigator.mediaDevices.ondevicechange = () => {
       console.log("🔌 Hardware change detected... waiting for drivers to settle.");
@@ -1412,8 +1868,15 @@ const MainPage: React.FC = () => {
   };
 
   const getParticipantStatus = (member: RoomMember) => {
-    if (member.socketId === socket?.id) return "This tab";
-    if (currentUserId && member.userId === currentUserId) return "Your other tab";
+    const memberIsAdmin =
+      huddleAdminUserId != null && member.userId === huddleAdminUserId;
+    if (member.socketId === socket?.id) {
+      return memberIsAdmin ? "Huddle admin (this tab)" : "This tab";
+    }
+    if (currentUserId && member.userId === currentUserId) {
+      return memberIsAdmin ? "Huddle admin (your other tab)" : "Your other tab";
+    }
+    if (memberIsAdmin) return "Huddle admin";
     return "In huddle";
   };
 
@@ -1428,9 +1891,7 @@ const MainPage: React.FC = () => {
           {/* Logo */}
           <div className="flex items-center gap-2.5 mb-1">
             <div className="w-10 h-10 rounded-2xl bg-indigo-600 flex items-center justify-center shadow-lg shadow-indigo-900/40">
-              <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
-              </svg>
+              <BsCameraVideoFill className="w-5 h-5 text-white" />
             </div>
             <span className="text-lg font-semibold tracking-tight">Softechat Huddle</span>
           </div>
@@ -1472,9 +1933,7 @@ const MainPage: React.FC = () => {
                 id="closeSidebar"
                 className="w-7 h-7 rounded-lg hover:bg-accent text-muted-foreground hover:text-sidebar-foreground transition-colors flex items-center justify-center"
               >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
-                </svg>
+                <BsXLg className="w-4 h-4" />
               </button>
             </div>
 
@@ -1522,6 +1981,11 @@ const MainPage: React.FC = () => {
                   <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-2.5">
                     Waiting to Join
                   </p>
+                  {!isHuddleAdmin && pendingAdmissions.length > 0 && (
+                    <p className="mb-2 text-[11px] text-muted-foreground">
+                      Only the huddle admin can admit or deny these requests.
+                    </p>
+                  )}
                   {pendingAdmissions.length > 0 ? (
                     <div className="flex flex-col gap-2">
                       {pendingAdmissions.map((member) => (
@@ -1541,20 +2005,22 @@ const MainPage: React.FC = () => {
                               <p className="text-[11px] text-muted-foreground">Waiting for admission</p>
                             </div>
                           </div>
-                          <div className="mt-2 flex gap-2">
-                            <button
-                              className="flex-1 rounded-lg bg-green-600 hover:bg-green-500 text-white text-xs font-medium py-2 transition"
-                              onClick={() => admitParticipantRef.current(member.socketId)}
-                            >
-                              Admit
-                            </button>
-                            <button
-                              className="flex-1 rounded-lg border border-[var(--border-color)] hover:bg-accent text-xs font-medium py-2 transition"
-                              onClick={() => denyParticipantRef.current(member.socketId)}
-                            >
-                              Deny
-                            </button>
-                          </div>
+                          {isHuddleAdmin && (
+                            <div className="mt-2 flex gap-2">
+                              <button
+                                className="flex-1 rounded-lg bg-green-600 hover:bg-green-500 text-white text-xs font-medium py-2 transition"
+                                onClick={() => admitParticipantRef.current(member.socketId)}
+                              >
+                                Admit
+                              </button>
+                              <button
+                                className="flex-1 rounded-lg border border-[var(--border-color)] hover:bg-accent text-xs font-medium py-2 transition"
+                                onClick={() => denyParticipantRef.current(member.socketId)}
+                              >
+                                Deny
+                              </button>
+                            </div>
+                          )}
                         </div>
                       ))}
                     </div>
@@ -1611,7 +2077,7 @@ const MainPage: React.FC = () => {
                               {getParticipantStatus(member)}
                             </span>
                           </div>
-                          {isMeetingActive && member.socketId !== socket?.id && (
+                          {isMeetingActive && isHuddleAdmin && member.socketId !== socket?.id && (
                             <button
                               className="rounded-lg border border-red-500/30 px-2.5 py-1 text-[11px] font-medium text-red-300 hover:bg-red-500/10 transition"
                               onClick={() => kickParticipantRef.current(member.socketId)}
@@ -1688,11 +2154,9 @@ const MainPage: React.FC = () => {
           {/* ── People Toggle (always in DOM, floats top-right) ──────────── */}
           <button
             id="openSidebar"
-            className="fixed top-3 right-4 z-40 flex items-center gap-1.5 h-9 px-3.5 rounded-xl bg-sidebar border border-[var(--border-color)] hover:bg-accent text-sidebar-foreground text-xs font-medium transition-all shadow-md"
+            className="fixed top-3 right-4 z-40 flex items-center gap-1.5 h-9 px-3.5 rounded-xl bg-sidebar border border-[var(--border-color)] text-sidebar-foreground text-xs font-medium transition-all shadow-md"
           >
-            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-              <path d="M9 6a3 3 0 11-6 0 3 3 0 016 0zM17 6a3 3 0 11-6 0 3 3 0 016 0zM12.93 17c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a5 5 0 015 5v1H1v-1a5 5 0 015-5z" />
-            </svg>
+            <BsPeopleFill className="w-4 h-4" />
             <span>People</span>
           </button>
 
@@ -1703,14 +2167,12 @@ const MainPage: React.FC = () => {
             <div id="prejoin" className="flex-1 flex flex-col overflow-hidden">
               {/* Top bar */}
               <div className="flex items-center justify-between px-5 py-3 border-b border-[var(--border-color)]/40 shrink-0">
-                <div className="flex items-center gap-2">
-                  <div className="w-7 h-7 rounded-lg bg-indigo-600 flex items-center justify-center">
-                    <svg className="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                    </svg>
-                  </div>
-                  <span className="text-sm font-semibold tracking-tight">Softechat Huddle</span>
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-lg bg-indigo-600 flex items-center justify-center">
+                    <BsCameraVideoFill className="w-3.5 h-3.5 text-white" />
                 </div>
+                <span className="text-sm font-semibold tracking-tight">Softechat Huddle</span>
+              </div>
               </div>
 
               {/* Two-panel layout */}
@@ -1729,18 +2191,12 @@ const MainPage: React.FC = () => {
                     <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-3">
                       {/* Mic button + device dropdown */}
                       <div className="relative">
-                        <div id="microphoneDropdown" className="device-dropdown hidden">
-                          <p className="text-xs font-medium text-muted-foreground mb-1.5">Microphone</p>
-                          <select id="microphoneSelect" className="text-sm"><option value="">Select Microphone</option></select>
-                        </div>
                         <button
                           id="toggleMic"
                           className="w-12 h-12 rounded-full bg-transparent hover:bg-white/15 border border-white/25 text-white transition-all duration-150 flex items-center justify-center backdrop-blur-sm"
                           title="Toggle Microphone"
                         >
-                          <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                            <path fillRule="evenodd" d="M7 4a3 3 0 016 0v4a3 3 0 11-6 0V4zm4 10.93A7.001 7.001 0 0017 8a1 1 0 10-2 0A5 5 0 015 8a1 1 0 00-2 0 7.001 7.001 0 006 6.93V17H6a1 1 0 100 2h8a1 1 0 100-2h-3v-2.07z" clipRule="evenodd" />
-                          </svg>
+                          <BsMicFill className="w-5 h-5" />
                         </button>
                         {/* Arrow to open device picker */}
                         <button
@@ -1748,45 +2204,43 @@ const MainPage: React.FC = () => {
                           onClick={() => togglePanel("mic-prejoin-panel", "cam-prejoin-panel")}
                           className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-sidebar border border-[var(--border-color)] text-muted-foreground flex items-center justify-center hover:bg-accent transition-colors"
                         >
-                          <svg className="w-2.5 h-2.5" fill="currentColor" viewBox="0 0 20 20">
-                            <path fillRule="evenodd" d="M14.707 12.707a1 1 0 01-1.414 0L10 9.414l-3.293 3.293a1 1 0 01-1.414-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 010 1.414z" clipRule="evenodd" />
-                          </svg>
+                          <BsChevronUp className="w-2.5 h-2.5" />
                         </button>
                         {/* Mic device panel */}
                         <div className="mic-prejoin-panel device-dropdown hidden">
                           <p className="text-xs font-medium text-muted-foreground mb-1.5">Microphone</p>
-                          <select id="microphoneSelect" className="text-sm"><option value="">Select Microphone</option></select>
+                          <select id="prejoinMicSelect" className="text-sm">
+                            <option value="">Select Microphone</option>
+                          </select>
+                          <p className="mt-3 text-xs font-medium text-muted-foreground mb-1.5">Speaker</p>
+                          <select id="prejoinSpeakerSelect" className="text-sm">
+                            <option value="">Select Speaker</option>
+                          </select>
                         </div>
                       </div>
 
                       {/* Camera button + device dropdown */}
                       <div className="relative">
-                        <div id="cameraDropdown" className="device-dropdown hidden">
-                          <p className="text-xs font-medium text-muted-foreground mb-1.5">Camera</p>
-                          <select id="cameraSelect" className="text-sm"><option value="">Select Camera</option></select>
-                        </div>
                         <button
                           id="toggleCam"
                           className="w-12 h-12 rounded-full bg-transparent hover:bg-white/15 border border-white/25 text-white transition-all duration-150 flex items-center justify-center backdrop-blur-sm"
                           title="Toggle Camera"
                         >
-                          <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                            <path d="M2 6a2 2 0 012-2h6a2 2 0 012 2v8a2 2 0 01-2 2H4a2 2 0 01-2-2V6zM14.553 7.106A1 1 0 0014 8v4a1 1 0 00.553.894l2 1A1 1 0 0018 13V7a1 1 0 00-1.447-.894l-2 1z" />
-                          </svg>
+                          <BsCameraVideoFill className="w-5 h-5" />
                         </button>
                         <button
                           id="toggleCamDropdown"
                           onClick={() => togglePanel("cam-prejoin-panel", "mic-prejoin-panel")}
                           className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-sidebar border border-[var(--border-color)] text-muted-foreground flex items-center justify-center hover:bg-accent transition-colors"
                         >
-                          <svg className="w-2.5 h-2.5" fill="currentColor" viewBox="0 0 20 20">
-                            <path fillRule="evenodd" d="M14.707 12.707a1 1 0 01-1.414 0L10 9.414l-3.293 3.293a1 1 0 01-1.414-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 010 1.414z" clipRule="evenodd" />
-                          </svg>
+                          <BsChevronUp className="w-2.5 h-2.5" />
                         </button>
                         {/* Cam device panel */}
                         <div className="cam-prejoin-panel device-dropdown hidden">
                           <p className="text-xs font-medium text-muted-foreground mb-1.5">Camera</p>
-                          <select id="cameraSelect" className="text-sm"><option value="">Select Camera</option></select>
+                          <select id="prejoinCamSelect" className="text-sm">
+                            <option value="">Select Camera</option>
+                          </select>
                         </div>
                       </div>
                     </div>
@@ -1864,25 +2318,19 @@ const MainPage: React.FC = () => {
                   <div className="flex flex-col gap-3 text-sm text-muted-foreground">
                     <div className="flex items-center gap-2.5">
                       <div className="w-8 h-8 rounded-full bg-green-500/10 flex items-center justify-center shrink-0">
-                        <svg className="w-4 h-4 text-green-400" fill="currentColor" viewBox="0 0 20 20">
-                          <path fillRule="evenodd" d="M7 4a3 3 0 016 0v4a3 3 0 11-6 0V4zm4 10.93A7.001 7.001 0 0017 8a1 1 0 10-2 0A5 5 0 015 8a1 1 0 00-2 0 7.001 7.001 0 006 6.93V17H6a1 1 0 100 2h8a1 1 0 100-2h-3v-2.07z" clipRule="evenodd" />
-                        </svg>
+                        <BsMicFill className="w-4 h-4 text-green-400" />
                       </div>
                       <span>Microphone and camera preview are ready above</span>
                     </div>
                     <div className="flex items-center gap-2.5">
                       <div className="w-8 h-8 rounded-full bg-blue-500/10 flex items-center justify-center shrink-0">
-                        <svg className="w-4 h-4 text-blue-400" fill="currentColor" viewBox="0 0 20 20">
-                          <path d="M9 6a3 3 0 11-6 0 3 3 0 016 0zM17 6a3 3 0 11-6 0 3 3 0 016 0zM12.93 17c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a5 5 0 015 5v1H1v-1a5 5 0 015-5z" />
-                        </svg>
+                        <BsPeopleFill className="w-4 h-4 text-blue-400" />
                       </div>
                       <span>Open <strong className="text-sidebar-foreground">People</strong> to watch admissions and participants</span>
                     </div>
                     <div className="flex items-center gap-2.5">
                       <div className="w-8 h-8 rounded-full bg-amber-500/10 flex items-center justify-center shrink-0">
-                        <svg className="w-4 h-4 text-amber-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
-                        </svg>
+                        <BsLink45Deg className="w-4 h-4 text-amber-300" />
                       </div>
                       <span>Use the invite link to let others knock before joining</span>
                     </div>
@@ -1925,9 +2373,7 @@ const MainPage: React.FC = () => {
                       title="Mute / Unmute"
                       className="w-12 h-12 md:w-14 md:h-14 rounded-full bg-transparent hover:bg-accent border border-[var(--border-color)] text-sidebar-foreground transition-all duration-150 flex items-center justify-center"
                     >
-                      <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                        <path fillRule="evenodd" d="M7 4a3 3 0 016 0v4a3 3 0 11-6 0V4zm4 10.93A7.001 7.001 0 0017 8a1 1 0 10-2 0A5 5 0 015 8a1 1 0 00-2 0 7.001 7.001 0 006 6.93V17H6a1 1 0 100 2h8a1 1 0 100-2h-3v-2.07z" clipRule="evenodd" />
-                      </svg>
+                      <BsMicFill className="w-5 h-5" />
                     </button>
                     <button
                       id="meetingToggleMicDropdown"
@@ -1935,14 +2381,14 @@ const MainPage: React.FC = () => {
                       className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-sidebar border border-[var(--border-color)] text-muted-foreground flex items-center justify-center hover:bg-accent transition-colors z-10"
                       title="Select Microphone"
                     >
-                      <svg className="w-2.5 h-2.5" fill="currentColor" viewBox="0 0 20 20">
-                        <path fillRule="evenodd" d="M14.707 12.707a1 1 0 01-1.414 0L10 9.414l-3.293 3.293a1 1 0 01-1.414-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 010 1.414z" clipRule="evenodd" />
-                      </svg>
+                      <BsChevronUp className="w-2.5 h-2.5" />
                     </button>
                     {/* Mic device select popover */}
                     <div className="mic-meeting-panel hidden absolute bottom-full mb-3 left-1/2 -translate-x-1/2 bg-sidebar border border-[var(--border-color)] rounded-xl p-3 min-w-[220px] shadow-2xl z-50">
                       <p className="text-xs font-medium text-muted-foreground mb-2">Microphone</p>
-                      <select id="micSelect" className="w-full bg-transparent border border-[var(--border-color)] rounded-lg px-2 py-1.5 text-sidebar-foreground text-xs focus:outline-none" />
+                      <select id="meetingMicSelect" className="w-full bg-transparent border border-[var(--border-color)] rounded-lg px-2 py-1.5 text-sidebar-foreground text-xs focus:outline-none" />
+                      <p className="mt-3 text-xs font-medium text-muted-foreground mb-2">Speaker</p>
+                      <select id="meetingSpeakerSelect" className="w-full bg-transparent border border-[var(--border-color)] rounded-lg px-2 py-1.5 text-sidebar-foreground text-xs focus:outline-none" />
                     </div>
                   </div>
 
@@ -1953,9 +2399,7 @@ const MainPage: React.FC = () => {
                       title="Turn Camera On / Off"
                       className="w-12 h-12 md:w-14 md:h-14 rounded-full bg-transparent hover:bg-accent border border-[var(--border-color)] text-sidebar-foreground transition-all duration-150 flex items-center justify-center"
                     >
-                      <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                        <path d="M2 6a2 2 0 012-2h6a2 2 0 012 2v8a2 2 0 01-2 2H4a2 2 0 01-2-2V6zM14.553 7.106A1 1 0 0014 8v4a1 1 0 00.553.894l2 1A1 1 0 0018 13V7a1 1 0 00-1.447-.894l-2 1z" />
-                      </svg>
+                      <BsCameraVideoFill className="w-5 h-5" />
                     </button>
                     <button
                       id="meetingToggleCamDropdown"
@@ -1963,14 +2407,12 @@ const MainPage: React.FC = () => {
                       className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-sidebar border border-[var(--border-color)] text-muted-foreground flex items-center justify-center hover:bg-accent transition-colors z-10"
                       title="Select Camera"
                     >
-                      <svg className="w-2.5 h-2.5" fill="currentColor" viewBox="0 0 20 20">
-                        <path fillRule="evenodd" d="M14.707 12.707a1 1 0 01-1.414 0L10 9.414l-3.293 3.293a1 1 0 01-1.414-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 010 1.414z" clipRule="evenodd" />
-                      </svg>
+                      <BsChevronUp className="w-2.5 h-2.5" />
                     </button>
                     {/* Camera device select popover */}
                     <div className="cam-meeting-panel hidden absolute bottom-full mb-3 left-1/2 -translate-x-1/2 bg-sidebar border border-[var(--border-color)] rounded-xl p-3 min-w-[220px] shadow-2xl z-50">
                       <p className="text-xs font-medium text-muted-foreground mb-2">Camera</p>
-                      <select id="camSelect" className="w-full bg-transparent border border-[var(--border-color)] rounded-lg px-2 py-1.5 text-sidebar-foreground text-xs focus:outline-none" />
+                      <select id="meetingCamSelect" className="w-full bg-transparent border border-[var(--border-color)] rounded-lg px-2 py-1.5 text-sidebar-foreground text-xs focus:outline-none" />
                     </div>
                   </div>
 
@@ -1978,11 +2420,13 @@ const MainPage: React.FC = () => {
                   <button
                     id="shareScreenBtn"
                     title="Share Screen"
-                    className="hidden md:flex w-12 h-12 md:w-14 md:h-14 rounded-full bg-transparent hover:bg-accent border border-[var(--border-color)] text-sidebar-foreground transition-all duration-150 items-center justify-center"
+                    className={`hidden md:flex w-12 h-12 md:w-14 md:h-14 rounded-full border transition-all duration-150 items-center justify-center ${
+                      isScreenShareActive
+                        ? "bg-accent border-blue-400/60 text-blue-200 shadow-lg shadow-blue-900/30"
+                        : "bg-transparent hover:bg-accent border-[var(--border-color)] text-sidebar-foreground"
+                    }`}
                   >
-                    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M3 5a2 2 0 012-2h10a2 2 0 012 2v8a2 2 0 01-2 2h-2.22l.123.489.804.804A1 1 0 0113 18H7a1 1 0 01-.707-1.707l.804-.804L7.22 15H5a2 2 0 01-2-2V5zm5.771 7H5V5h10v7H8.771z" clipRule="evenodd" />
-                    </svg>
+                    <BsDisplay className="w-5 h-5" />
                   </button>
 
                   {/* Leave call */}
@@ -1991,10 +2435,7 @@ const MainPage: React.FC = () => {
                     title="Leave"
                     className="w-12 h-12 md:w-14 md:h-14 rounded-full bg-red-600 hover:bg-red-500 text-white transition-all duration-150 flex items-center justify-center shadow-lg shadow-red-900/40 ml-1"
                   >
-                    {/* Phone hang-up icon */}
-                    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-                      <path d="M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z" />
-                    </svg>
+                    <BsTelephoneXFill className="w-5 h-5" />
                   </button>
                 </div>
 
@@ -2005,9 +2446,7 @@ const MainPage: React.FC = () => {
                     title="People"
                     className="w-10 h-10 rounded-full bg-transparent hover:bg-accent border border-[var(--border-color)] text-muted-foreground hover:text-sidebar-foreground transition-all duration-150 flex items-center justify-center"
                   >
-                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                      <path d="M9 6a3 3 0 11-6 0 3 3 0 016 0zM17 6a3 3 0 11-6 0 3 3 0 016 0zM12.93 17c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a5 5 0 015 5v1H1v-1a5 5 0 015-5z" />
-                    </svg>
+                    <BsPeopleFill className="w-4 h-4" />
                   </button>
                 </div>
               </div>

@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useContext, useEffect, useState } from "react";
+import axios from "axios";
 import { io, Socket } from "socket.io-client";
 import api from "@/lib/axios";
 
@@ -28,17 +29,104 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [isOnline, setIsOnline] = useState(false);
   const [socket, setSocket] = useState<Socket | null>(null);
   const [token, setToken] = useState<string | null>(null);
+  const [authReady, setAuthReady] = useState(false);
+
+  const clearStoredAuth = () => {
+    localStorage.removeItem("access_token");
+    document.cookie = "access_token=; Max-Age=0; path=/";
+    document.cookie = "refresh_token=; Max-Age=0; path=/";
+    document.cookie = "user_id=; Max-Age=0; path=/";
+    document.cookie = "username=; Max-Age=0; path=/";
+  };
+
+  const getTokenExpiryMs = (value: string) => {
+    try {
+      const [, payload] = value.split(".");
+      if (!payload) return null;
+
+      const normalized = payload.replace(/-/g, "+").replace(/_/g, "/");
+      const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=");
+      const decoded = JSON.parse(atob(padded));
+
+      return typeof decoded?.exp === "number" ? decoded.exp * 1000 : null;
+    } catch {
+      return null;
+    }
+  };
+
+  const isTokenFresh = (value: string, minTtlMs = 60_000) => {
+    const expiryMs = getTokenExpiryMs(value);
+    if (!expiryMs) return true;
+    return expiryMs - Date.now() > minTtlMs;
+  };
+
+  const refreshAccessToken = async () => {
+    try {
+      const response = await axios.post(
+        `${process.env.NEXT_PUBLIC_SERVER_URL}/auth/refresh`,
+        {},
+        { withCredentials: true }
+      );
+      const refreshedToken = response.data?.accessToken ?? null;
+
+      if (!refreshedToken) {
+        clearStoredAuth();
+        setToken(null);
+        setUser(null);
+        return null;
+      }
+
+      localStorage.setItem("access_token", refreshedToken);
+      setToken(refreshedToken);
+      return refreshedToken;
+    } catch {
+      clearStoredAuth();
+      setToken(null);
+      setUser(null);
+      return null;
+    }
+  };
 
   useEffect(() => {
-    const storedToken = localStorage.getItem("access_token");
-    if (storedToken) {
-      setToken(storedToken);
-    }
+    let cancelled = false;
+
+    const bootstrapAuth = async () => {
+      const storedToken = localStorage.getItem("access_token");
+
+      if (!storedToken) {
+        if (!cancelled) {
+          setToken(null);
+          setAuthReady(true);
+        }
+        return;
+      }
+
+      if (isTokenFresh(storedToken)) {
+        if (!cancelled) {
+          setToken(storedToken);
+          setAuthReady(true);
+        }
+        return;
+      }
+
+      const refreshedToken = await refreshAccessToken();
+      if (!cancelled) {
+        setToken(refreshedToken);
+        setAuthReady(true);
+      }
+    };
+
+    void bootstrapAuth();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const login = (newToken: string) => {
     localStorage.setItem("access_token", newToken);
     setToken(newToken);
+    setAuthReady(true);
   };
 
   const updateUser = (partial: Partial<UserType>) => {
@@ -54,15 +142,12 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     } catch {
       // Ignore cleanup error
     }
-    localStorage.removeItem("access_token");
-    document.cookie = "access_token=; Max-Age=0; path=/";
-    document.cookie = "refresh_token=; Max-Age=0; path=/";
-    document.cookie = "user_id=; Max-Age=0; path=/";
-    document.cookie = "username=; Max-Age=0; path=/";
+    clearStoredAuth();
     setToken(null);
     setUser(null);
     socket?.disconnect();
     setSocket(null);
+    setAuthReady(true);
   };
 
   useEffect(() => {
@@ -74,6 +159,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   }, [socket]);
 
   useEffect(() => {
+    if (!authReady) return;
     if (!token) return;
     if (socket) return; 
 
@@ -115,7 +201,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       s.disconnect();
       setSocket(null);
     };
-  }, [token]);
+  }, [authReady, token]);
 
   return (
     <AuthContext.Provider

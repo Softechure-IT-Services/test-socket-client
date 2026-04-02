@@ -11,6 +11,7 @@ const PROTECTED_ROUTES = [
   '/channel',
   '/dm',
   '/threads',
+  '/calls',
 ];
 
 export function middleware(request: NextRequest) {

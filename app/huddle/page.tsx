@@ -11,6 +11,10 @@ import type { IconType } from "react-icons";
 import { useAuth } from "@/app/components/context/userId_and_connection/provider";
 import api from "@/lib/axios";
 import {
+  markStoredHuddleCallLeft,
+  upsertStoredHuddleCall,
+} from "@/lib/huddle-calls";
+import {
   BsCameraVideoFill,
   BsCameraVideoOffFill,
   BsChevronUp,
@@ -70,6 +74,27 @@ const MainPage: React.FC = () => {
   const [chatMessages, setChatMessages] = useState<HuddleChatMessage[]>([]);
   const [chatDraft, setChatDraft] = useState("");
   const [sidebarTab, setSidebarTab] = useState<"people" | "chat">("people");
+  const chatScrollRef = useRef<HTMLDivElement | null>(null);
+  const scrollHuddleChatToBottom = React.useCallback(
+    (behavior: "auto" | "smooth" = "auto") => {
+      const el = chatScrollRef.current;
+      if (!el) return;
+
+      requestAnimationFrame(() => {
+        el.scrollTo({
+          top: el.scrollHeight,
+          behavior,
+        });
+      });
+    },
+    []
+  );
+
+  useEffect(() => {
+    if (sidebarTab === "chat") {
+      scrollHuddleChatToBottom("auto");
+    }
+  }, [chatMessages, sidebarTab, scrollHuddleChatToBottom]);
   const [unreadChatCount, setUnreadChatCount] = useState(0);
   const [isMeetingActive, setIsMeetingActive] = useState(false);
   const [isScreenShareActive, setIsScreenShareActive] = useState(false);
@@ -90,6 +115,9 @@ const MainPage: React.FC = () => {
   const activeRoomRef = useRef<string | null>(null);
   const isInCallRef = useRef(false);
   const channelAccessReadyRef = useRef(!channelId || !currentUserId);
+  const resolvedChannelNameRef = useRef<string | null>(null);
+  const isDmChannelRef = useRef(false);
+  const huddleAdminUserIdRef = useRef<string | null>(null);
   const canJoinWithoutAdmissionRef = useRef(false);
   const isHuddleAdminRef = useRef(false);
   const sidebarTabRef = useRef<"people" | "chat">("people");
@@ -113,6 +141,44 @@ const MainPage: React.FC = () => {
   const canJoinWithoutAdmission =
     !!channelId && !!currentUserId && isChannelMember;
 
+  const updateHuddleAdminUserId = (userId: string | number | null | undefined) => {
+    const normalizedUserId = userId != null ? String(userId) : null;
+    huddleAdminUserIdRef.current = normalizedUserId;
+    setHuddleAdminUserId(normalizedUserId);
+    return normalizedUserId;
+  };
+
+  const resolveHuddleDisplayName = (
+    fallbackTitle?: string | null,
+    startedByUserId?: string | null
+  ) => {
+    const normalizedFallback =
+      typeof fallbackTitle === "string" && fallbackTitle.trim()
+        ? fallbackTitle.trim()
+        : null;
+
+    if (channelId) {
+      if (isDmChannelRef.current) {
+        if (startedByUserId) return `Started by ${startedByUserId}`;
+        if (normalizedFallback && normalizedFallback !== `Channel ${channelId}`) {
+          return normalizedFallback;
+        }
+        return "Direct message";
+      }
+
+      return (
+        resolvedChannelNameRef.current ||
+        normalizedFallback ||
+        `Channel ${channelId}`
+      );
+    }
+
+    return (
+      normalizedFallback ||
+      (resolvedRoomIdRef.current ? `Room: ${resolvedRoomIdRef.current}` : "Room")
+    );
+  };
+
   const applyResolvedHuddleSession = (payload: any) => {
     const roomId = payload?.room_id ?? payload?.session?.meeting_id ?? null;
     const adminUserId = payload?.session?.started_by ?? payload?.started_by ?? null;
@@ -122,7 +188,7 @@ const MainPage: React.FC = () => {
       resolvedRoomIdRef.current = roomId;
     }
 
-    setHuddleAdminUserId(adminUserId != null ? String(adminUserId) : null);
+    updateHuddleAdminUserId(adminUserId);
   };
 
   useEffect(() => {
@@ -184,6 +250,7 @@ const MainPage: React.FC = () => {
   }, [resolvedRoomId]);
 
   useEffect(() => {
+    huddleAdminUserIdRef.current = huddleAdminUserId;
     isHuddleAdminRef.current = isHuddleAdmin;
   }, [huddleAdminUserId, isHuddleAdmin]);
 
@@ -205,29 +272,42 @@ const MainPage: React.FC = () => {
 
   useEffect(() => {
     if (!channelId) {
+      resolvedChannelNameRef.current = null;
+      isDmChannelRef.current = false;
       setIsChannelMember(false);
       setChannelAccessReady(true);
       return;
     }
 
     if (!currentUserId) {
+      resolvedChannelNameRef.current = null;
+      isDmChannelRef.current = false;
       setIsChannelMember(false);
       setChannelAccessReady(true);
       return;
     }
 
     let cancelled = false;
+    resolvedChannelNameRef.current = null;
+    isDmChannelRef.current = false;
     setChannelAccessReady(false);
 
     api
       .get(`/channels/${channelId}`)
       .then(({ data }) => {
         if (cancelled) return;
+        resolvedChannelNameRef.current =
+          typeof data?.channel?.name === "string" && data.channel.name.trim()
+            ? data.channel.name.trim()
+            : null;
+        isDmChannelRef.current = data?.channel?.is_dm === true;
         setIsChannelMember(data?.is_member === true);
       })
       .catch((err) => {
         if (cancelled) return;
         console.error("Failed to resolve channel membership for huddle:", err);
+        resolvedChannelNameRef.current = null;
+        isDmChannelRef.current = false;
         setIsChannelMember(false);
       })
       .finally(() => {
@@ -375,7 +455,10 @@ const MainPage: React.FC = () => {
     const videos = document.getElementById("videos")!;
     const prejoin = document.getElementById("prejoin")!;
     const meeting = document.getElementById("meeting")!;
-    const roomName = document.getElementById("roomName")!;
+    const roomNameEls = [
+      document.getElementById("roomName"),
+      document.getElementById("roomNameMobile"),
+    ].filter(Boolean) as HTMLElement[];
     const incomingCallModal = document.getElementById("incomingCallModal")!;
     const callerName = document.getElementById("callerName")!;
     const callerInitial = document.getElementById("callerInitial")!;
@@ -478,7 +561,7 @@ const MainPage: React.FC = () => {
         const participants = normalizeMembers(snapshot?.participants);
         const pending = normalizeMembers(snapshot?.pending);
         if (snapshot?.adminUserId != null) {
-          setHuddleAdminUserId(String(snapshot.adminUserId));
+          updateHuddleAdminUserId(snapshot.adminUserId);
         }
         setRoomParticipants(participants);
         setPendingAdmissions(pending);
@@ -1050,10 +1133,21 @@ const MainPage: React.FC = () => {
         setUnreadChatCount(0);
         prejoin.classList.add("hidden");
         meeting.classList.remove("hidden");
-        roomName.textContent = displayName;
-        if (response?.adminUserId != null) {
-          setHuddleAdminUserId(String(response.adminUserId));
-        }
+        const adminUserId =
+          response?.adminUserId != null
+            ? updateHuddleAdminUserId(response.adminUserId)
+            : huddleAdminUserIdRef.current;
+        const resolvedDisplayName = resolveHuddleDisplayName(displayName, adminUserId);
+
+        roomNameEls.forEach((element) => {
+          element.textContent = resolvedDisplayName;
+        });
+        upsertStoredHuddleCall({
+          roomId,
+          channelId,
+          title: resolvedDisplayName,
+          startedByUserId: adminUserId,
+        });
         setRoomParticipants(normalizeMembers(response?.participants));
         setPendingAdmissions(normalizeMembers(response?.pending));
         setChatMessages(normalizeChatMessages(response?.chatHistory));
@@ -1631,6 +1725,9 @@ const MainPage: React.FC = () => {
     document.getElementById("leaveBtn")!.onclick = leaveMeeting;
 
     function resetMeetingUi(message: string, type = "info") {
+      if (currentRoom) {
+        markStoredHuddleCallLeft(currentRoom);
+      }
       if (deviceCheckInterval) { clearInterval(deviceCheckInterval); deviceCheckInterval = null; }
       Object.values(peers).forEach(({ pc }: any) => pc.close());
       Object.keys(peers).forEach((id) => delete peers[id]);
@@ -1884,10 +1981,13 @@ const MainPage: React.FC = () => {
     <>
       <div className="bg-sidebar text-sidebar-foreground fixed inset-0 z-[999] overflow-hidden">
         {/* ── Toasts ─────────────────────────────────────────────────────── */}
-        <div id="toastContainer" className="fixed top-4 right-4 z-[60] space-y-2 pointer-events-none" />
+        <div
+          id="toastContainer"
+          className="fixed top-3 left-3 right-3 sm:top-4 sm:left-auto sm:right-4 z-[60] space-y-2 pointer-events-none"
+        />
 
         {/* ── Username Screen ─────────────────────────────────────────────── */}
-        <div id="usernameScreen" className="min-h-screen flex flex-col items-center justify-center p-6 gap-5">
+        <div id="usernameScreen" className="min-h-screen flex flex-col items-center justify-center p-4 sm:p-6 gap-5">
           {/* Logo */}
           <div className="flex items-center gap-2.5 mb-1">
             <div className="w-10 h-10 rounded-2xl bg-indigo-600 flex items-center justify-center shadow-lg shadow-indigo-900/40">
@@ -1896,7 +1996,7 @@ const MainPage: React.FC = () => {
             <span className="text-lg font-semibold tracking-tight">Softechat Huddle</span>
           </div>
 
-          <div className="bg-sidebar border border-[var(--border-color)] rounded-2xl shadow-2xl p-8 w-full max-w-sm">
+          <div className="bg-sidebar border border-[var(--border-color)] rounded-2xl shadow-2xl p-6 sm:p-8 w-full max-w-sm">
             <h1 className="text-xl font-semibold mb-1.5 text-center">What's your name?</h1>
             <p className="text-muted-foreground text-sm mb-6 text-center leading-snug">You'll join the huddle right after</p>
             <div className="space-y-3">
@@ -1924,7 +2024,7 @@ const MainPage: React.FC = () => {
           {/* ── People Sidebar (slides from RIGHT) ───────────────────────── */}
           <div
             id="sidebar"
-            className="sidebar fixed top-0 right-0 h-full w-72 bg-sidebar border-l border-[var(--border-color)] flex flex-col z-50 shadow-2xl"
+            className="sidebar fixed top-0 right-0 h-full w-full max-w-[22rem] sm:max-w-none sm:w-72 bg-sidebar border-l border-[var(--border-color)] flex flex-col z-50 shadow-2xl"
           >
             {/* Sidebar header */}
             <div className="flex items-center justify-between px-4 py-3.5 border-b border-[var(--border-color)]">
@@ -2097,7 +2197,7 @@ const MainPage: React.FC = () => {
               </>
             ) : (
               <div className="flex-1 min-h-0 flex flex-col">
-                <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
+                <div ref={chatScrollRef} className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
                   {chatMessages.length > 0 ? (
                     chatMessages.map((message) => (
                       <div key={message.id} className="rounded-xl border border-[var(--border-color)] bg-black/10 p-3">
@@ -2154,10 +2254,10 @@ const MainPage: React.FC = () => {
           {/* ── People Toggle (always in DOM, floats top-right) ──────────── */}
           <button
             id="openSidebar"
-            className="fixed top-3 right-4 z-40 flex items-center gap-1.5 h-9 px-3.5 rounded-xl bg-sidebar border border-[var(--border-color)] text-sidebar-foreground text-xs font-medium transition-all shadow-md"
+            className="fixed top-3 right-3 sm:right-4 z-40 flex items-center justify-center gap-1.5 h-10 w-10 sm:h-9 sm:w-auto sm:px-3.5 rounded-xl bg-sidebar/95 backdrop-blur-md border border-[var(--border-color)] text-sidebar-foreground text-xs font-medium transition-all shadow-md"
           >
             <BsPeopleFill className="w-4 h-4" />
-            <span>People</span>
+            <span className="hidden sm:inline">People</span>
           </button>
 
           {/* ── Content Area ─────────────────────────────────────────────── */}
@@ -2166,17 +2266,17 @@ const MainPage: React.FC = () => {
             {/* ── Pre-join Screen (Google Meet style) ──────────────────── */}
             <div id="prejoin" className="flex-1 flex flex-col overflow-hidden">
               {/* Top bar */}
-              <div className="flex items-center justify-between px-5 py-3 border-b border-[var(--border-color)]/40 shrink-0">
-              <div className="flex items-center gap-2">
-                <div className="w-7 h-7 rounded-lg bg-indigo-600 flex items-center justify-center">
+              <div className="flex items-center justify-between px-4 sm:px-5 py-3 border-b border-[var(--border-color)]/40 shrink-0">
+                <div className="flex items-center gap-2">
+                  <div className="w-7 h-7 rounded-lg bg-indigo-600 flex items-center justify-center">
                     <BsCameraVideoFill className="w-3.5 h-3.5 text-white" />
+                  </div>
+                  <span className="text-sm font-semibold tracking-tight">Softechat Huddle</span>
                 </div>
-                <span className="text-sm font-semibold tracking-tight">Softechat Huddle</span>
-              </div>
               </div>
 
               {/* Two-panel layout */}
-              <div className="flex-1 flex items-center justify-center p-6 md:p-10 gap-10 flex-col md:flex-row overflow-auto">
+              <div className="flex-1 flex items-center justify-center p-4 sm:p-6 md:p-10 gap-6 md:gap-10 flex-col md:flex-row overflow-auto">
 
                 {/* LEFT: Camera preview */}
                 <div className="w-full max-w-lg shrink-0">
@@ -2188,7 +2288,7 @@ const MainPage: React.FC = () => {
                     <div className="absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-black/80 to-transparent pointer-events-none" />
 
                     {/* Prejoin mic/cam controls */}
-                    <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-3">
+                    <div className="absolute bottom-3 sm:bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-2.5 sm:gap-3">
                       {/* Mic button + device dropdown */}
                       <div className="relative">
                         <button
@@ -2207,7 +2307,7 @@ const MainPage: React.FC = () => {
                           <BsChevronUp className="w-2.5 h-2.5" />
                         </button>
                         {/* Mic device panel */}
-                        <div className="mic-prejoin-panel device-dropdown hidden">
+                        <div className="mic-prejoin-panel device-dropdown device-panel-popover hidden">
                           <p className="text-xs font-medium text-muted-foreground mb-1.5">Microphone</p>
                           <select id="prejoinMicSelect" className="text-sm">
                             <option value="">Select Microphone</option>
@@ -2236,7 +2336,7 @@ const MainPage: React.FC = () => {
                           <BsChevronUp className="w-2.5 h-2.5" />
                         </button>
                         {/* Cam device panel */}
-                        <div className="cam-prejoin-panel device-dropdown hidden">
+                        <div className="cam-prejoin-panel device-dropdown device-panel-popover hidden">
                           <p className="text-xs font-medium text-muted-foreground mb-1.5">Camera</p>
                           <select id="prejoinCamSelect" className="text-sm">
                             <option value="">Select Camera</option>
@@ -2248,14 +2348,14 @@ const MainPage: React.FC = () => {
                 </div>
 
                 {/* RIGHT: Ready to join panel */}
-                <div className="w-full md:w-80 flex flex-col gap-5">
+                <div className="w-full max-w-lg md:w-80 flex flex-col gap-5">
                   <div>
-                    <h1 className="text-2xl font-semibold mb-1.5 leading-tight">{lobbyState.title}</h1>
+                    <h1 className="text-xl sm:text-2xl font-semibold mb-1.5 leading-tight">{lobbyState.title}</h1>
                     <p className="text-muted-foreground text-sm leading-relaxed">{lobbyState.description}</p>
                   </div>
 
                   <div className="rounded-2xl border border-[var(--border-color)] bg-black/10 p-4 flex flex-col gap-4">
-                    <div className="flex items-center justify-between gap-3">
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                       <div>
                         <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
                           Room Status
@@ -2340,10 +2440,10 @@ const MainPage: React.FC = () => {
             </div>
 
             {/* ── Meeting Screen ────────────────────────────────────────── */}
-            <div id="meeting" className="hidden flex-1 flex flex-col h-screen">
+            <div id="meeting" className="hidden flex-1 flex flex-col h-screen min-h-0">
 
               {/* Video grid */}
-              <div className="flex-1 relative overflow-hidden bg-[#111]">
+              <div className="flex-1 min-h-0 relative overflow-hidden bg-[#111]">
                 <div
                   id="videos"
                   className="grid gap-2 md:gap-3 p-2 md:p-3 h-full grid-cols-1 sm:grid-cols-2 lg:grid-cols-3"
@@ -2351,7 +2451,14 @@ const MainPage: React.FC = () => {
               </div>
 
               {/* ── Google Meet–style bottom control bar ────────────────── */}
-              <div className="bg-sidebar border-t border-[var(--border-color)] px-4 md:px-6 flex items-center justify-between min-h-[76px] gap-3 shrink-0">
+              <div className="bg-sidebar border-t border-[var(--border-color)] px-3 sm:px-4 md:px-6 py-3 flex flex-col sm:flex-row items-center justify-between min-h-[76px] gap-3 shrink-0">
+
+                {/* Mobile: time + room name */}
+                <div className="flex sm:hidden items-center gap-2 text-[11px] text-muted-foreground w-full justify-center">
+                  <span className="font-medium text-sidebar-foreground tabular-nums">{meetingTime}</span>
+                  <span className="text-[var(--border-color)]">|</span>
+                  <span id="roomNameMobile" className="truncate max-w-[140px]" />
+                </div>
 
                 {/* Left: time + room name */}
                 <div className="hidden sm:flex items-center gap-2 text-xs text-muted-foreground min-w-[120px]">
@@ -2361,7 +2468,7 @@ const MainPage: React.FC = () => {
                 </div>
 
                 {/* Center: control buttons */}
-                <div className="flex items-center gap-2 md:gap-3 mx-auto">
+                <div className="flex items-center justify-center flex-wrap sm:flex-nowrap gap-2 md:gap-3 mx-0 sm:mx-auto w-full sm:w-auto">
 
                   {/* Hidden utility: refresh devices */}
                   <button id="refreshDevicesBtn" className="hidden" title="Refresh Devices">refresh</button>
@@ -2384,7 +2491,7 @@ const MainPage: React.FC = () => {
                       <BsChevronUp className="w-2.5 h-2.5" />
                     </button>
                     {/* Mic device select popover */}
-                    <div className="mic-meeting-panel hidden absolute bottom-full mb-3 left-1/2 -translate-x-1/2 bg-sidebar border border-[var(--border-color)] rounded-xl p-3 min-w-[220px] shadow-2xl z-50">
+                    <div className="mic-meeting-panel device-panel-popover hidden absolute bottom-full mb-3 left-1/2 -translate-x-1/2 bg-sidebar border border-[var(--border-color)] rounded-xl p-3 min-w-[220px] shadow-2xl z-50">
                       <p className="text-xs font-medium text-muted-foreground mb-2">Microphone</p>
                       <select id="meetingMicSelect" className="w-full bg-transparent border border-[var(--border-color)] rounded-lg px-2 py-1.5 text-sidebar-foreground text-xs focus:outline-none" />
                       <p className="mt-3 text-xs font-medium text-muted-foreground mb-2">Speaker</p>
@@ -2410,7 +2517,7 @@ const MainPage: React.FC = () => {
                       <BsChevronUp className="w-2.5 h-2.5" />
                     </button>
                     {/* Camera device select popover */}
-                    <div className="cam-meeting-panel hidden absolute bottom-full mb-3 left-1/2 -translate-x-1/2 bg-sidebar border border-[var(--border-color)] rounded-xl p-3 min-w-[220px] shadow-2xl z-50">
+                    <div className="cam-meeting-panel device-panel-popover hidden absolute bottom-full mb-3 left-1/2 -translate-x-1/2 bg-sidebar border border-[var(--border-color)] rounded-xl p-3 min-w-[220px] shadow-2xl z-50">
                       <p className="text-xs font-medium text-muted-foreground mb-2">Camera</p>
                       <select id="meetingCamSelect" className="w-full bg-transparent border border-[var(--border-color)] rounded-lg px-2 py-1.5 text-sidebar-foreground text-xs focus:outline-none" />
                     </div>
@@ -2420,7 +2527,7 @@ const MainPage: React.FC = () => {
                   <button
                     id="shareScreenBtn"
                     title="Share Screen"
-                    className={`hidden md:flex w-12 h-12 md:w-14 md:h-14 rounded-full border transition-all duration-150 items-center justify-center ${
+                    className={`flex w-12 h-12 md:w-14 md:h-14 rounded-full border transition-all duration-150 items-center justify-center ${
                       isScreenShareActive
                         ? "bg-accent border-blue-400/60 text-blue-200 shadow-lg shadow-blue-900/30"
                         : "bg-transparent hover:bg-accent border-[var(--border-color)] text-sidebar-foreground"
@@ -2491,10 +2598,11 @@ const MainPage: React.FC = () => {
 
         /* Sidebar slides from the RIGHT on all viewports */
         .sidebar {
-          right: -320px;
-          transition: right 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+          right: 0;
+          transform: translateX(100%);
+          transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
         }
-        .sidebar.open { right: 0 !important; }
+        .sidebar.open { transform: translateX(0) !important; }
 
         /* Video tiles */
         .video-container {
@@ -2590,6 +2698,11 @@ const MainPage: React.FC = () => {
           padding: 14px; min-width: 230px;
           box-shadow: 0 16px 40px rgba(0,0,0,0.45); z-index: 100;
         }
+        .device-panel-popover {
+          width: min(280px, calc(100vw - 24px));
+          max-width: calc(100vw - 24px);
+          min-width: 0;
+        }
         .device-dropdown select {
           width: 100%; background: transparent; color: var(--sidebar-foreground);
           border: 1px solid var(--border-color); border-radius: 8px;
@@ -2625,10 +2738,29 @@ const MainPage: React.FC = () => {
             overflow-y: hidden;
           }
           .thumbnails-container::-webkit-scrollbar { height: 4px; width: auto; }
+          #videos.grid-layout {
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+          }
         }
 
         @media (max-width: 640px) {
+          .sidebar {
+            max-width: min(22rem, 100vw);
+          }
+          #videos {
+            padding: 8px;
+            gap: 8px;
+          }
           .video-label { font-size: 11px; padding: 2px 7px; }
+          .screen-share-badge {
+            top: 8px; right: 8px;
+            padding: 2px 8px;
+            font-size: 10px;
+          }
+          .device-panel-popover {
+            width: min(260px, calc(100vw - 20px));
+            max-width: calc(100vw - 20px);
+          }
           .thumbnails-container .video-container,
           .thumbnails-container .video-overflow-card { min-width: 140px; min-height: 90px; }
         }

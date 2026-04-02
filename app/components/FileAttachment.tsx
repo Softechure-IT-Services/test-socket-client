@@ -497,7 +497,7 @@ export function FileAttachmentList({
             <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2">
               {mediaFiles.map((file, i) => (
                 <TabMediaCard
-                  key={file.id ?? file.message_id ?? i}
+                  key={`${file.message_id ?? ""}-${file.id ?? file.url}-${i}`}
                   file={file}
                   onDownload={onDownload}
                   onShare={onShare}
@@ -515,7 +515,7 @@ export function FileAttachmentList({
             <div className="space-y-2">
               {genericFiles.map((file, i) => (
                 <TabFileRow
-                  key={file.id ?? file.message_id ?? i}
+                  key={`${file.message_id ?? ""}-${file.id ?? file.url}-${i}`}
                   file={file}
                   onDownload={onDownload}
                   onShare={onShare}
@@ -544,7 +544,7 @@ return (
       <div className={imageWrapperClass}>
         {images.map((file, i) => (
           <InlineImageAttachment
-            key={file.id ?? i}
+          key={`${file.message_id ?? ""}-${file.id ?? file.url}-${i}`}
             file={file}
             onDownload={onDownload}
             onShare={onShare}
@@ -559,7 +559,7 @@ return (
 
     {others.map((file, i) => (
       <InlineGenericAttachment
-        key={file.id ?? i}
+        key={`${file.message_id ?? ""}-${file.id ?? file.url}-${i}`}
         file={file}
         onDownload={onDownload}
         onShare={onShare}

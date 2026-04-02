@@ -1099,7 +1099,7 @@ export default function MessageInput({
 
             {/* Emoji picker */}
             <Popover open={showEmoji} onOpenChange={setShowEmoji}>
-              <PopoverTrigger>
+              <PopoverTrigger asChild>
                 <Button size="md" variant="editor_buttons">
                   <img
                     src="/assets/icons/emoji.svg"
@@ -1116,7 +1116,7 @@ export default function MessageInput({
 
             {/* GIF picker */}
             <Popover open={showGifPicker} onOpenChange={setShowGifPicker}>
-              <PopoverTrigger>
+              <PopoverTrigger asChild>
                 <Button size="md" variant="editor_buttons" title="Send a GIF">
                   <span className="text-[10px] font-bold leading-none tracking-tight">
                     GIF

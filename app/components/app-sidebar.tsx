@@ -2,22 +2,28 @@
 
 import * as React from "react";
 import api from "@/lib/axios";
-import { Frame, PieChart } from "lucide-react";
+import { Frame, PhoneCall } from "lucide-react";
 import { HiHashtag } from "react-icons/hi";
 import { IoChatbubblesOutline } from "react-icons/io5";
 
 import { NavMain } from "@/app/components/nav-main";
 import { NavProjects } from "@/app/components/nav-projects";
 import { NavUser } from "@/app/components/nav-user";
+import { HuddleInviteToast } from "@/app/components/HuddleInviteToast";
 import {
   Sidebar,
   SidebarContent,
   SidebarFooter,
   SidebarRail,
+  SidebarGroup,
+  SidebarMenu,
+  SidebarMenuItem,
+  SidebarMenuButton,
 } from "@/app/components/ui/sidebar";
+
 import CreateModal from "@/app/components/modals/CreateNew";
 import { useAuth } from "@/app/components/context/userId_and_connection/provider";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { UserType } from "@/app/components/context/userId_and_connection/provider";
 import { useUnread } from "@/app/components/context/UnreadContext";
 import { usePushNotifications } from "@/hooks/usePushNotifications";
@@ -57,6 +63,21 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const { user, socket } = useAuth();
   const [modalOpen, setModalOpen] = React.useState(false);
   const [modalType, setModalType] = React.useState<"channel" | "dm">("channel");
+  
+  const pathname = usePathname();
+  const router = useRouter();
+
+  // ─── Active huddle tracking (current user's huddle via URL) ─────────────
+  const searchParams = useSearchParams();
+  const activeHuddleChannelId = pathname === "/huddle" ? searchParams.get("channel_id") : null;
+
+  // ─── Huddle invite toasts ────────────────────────────────────────────────
+  type HuddleInvite = { id: string; channel_id: number; channel_name: string | null; meeting_id: string; started_by: number; isDm?: boolean };
+  const [huddleInvites, setHuddleInvites] = React.useState<HuddleInvite[]>([]);
+
+  const dismissInvite = React.useCallback((id: string) => {
+    setHuddleInvites((prev) => prev.filter((inv) => inv.id !== id));
+  }, []);
 
   const { unreadCounts, seedFromStorage, incrementUnread, clearUnread } = useUnread();
   const { requestPermission, showNotification } = usePushNotifications();
@@ -101,9 +122,6 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
     const stored = getStoredUnread(THREAD_UNREAD_KEY);
     if (stored > 0) setThreadUnreadCount(stored);
   }, []);
-
-  const pathname = usePathname();
-  const router = useRouter();
 
   // ─── Derive active channel/DM id from URL ───────────────────────────────
   const currentChannelId = React.useMemo(() => {
@@ -462,8 +480,69 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
     };
   }, [socket, currentChannelId, router, user]);
 
+  // ─── Socket: huddle started / ended ─────────────────────────────────────
+  React.useEffect(() => {
+    if (!socket) return;
+
+    const handleHuddleStarted = (data: any) => {
+      const chId = String(data.channel_id);
+
+      // Don't show invite to the person who started the huddle
+      if (user && String(data.started_by) === String(user.id)) return;
+
+      // Skip if this user is already on the huddle page
+      if (typeof window !== "undefined" && window.location.pathname === "/huddle") return;
+
+      // Only show the invite if the user is a member of that channel
+      // (the backend already emits to channel_<id> room so server-side filtering is done)
+      const isDm = channels.find((ch) => String(ch.id) === chId)?.is_dm ??
+        users.find((u) => String(u.id) === chId) != null;
+
+      setHuddleInvites((prev) => {
+        // Avoid duplicate invites for same channel
+        if (prev.some((inv) => String(inv.channel_id) === chId)) return prev;
+        return [
+          ...prev,
+          {
+            id: `${chId}-${Date.now()}`,
+            channel_id: Number(chId),
+            channel_name: data.channel_name ?? null,
+            meeting_id: data.meeting_id,
+            started_by: data.started_by,
+            isDm: !!isDm,
+          },
+        ];
+      });
+    };
+
+    const handleHuddleEnded = (data: any) => {
+      const chId = String(data.channel_id);
+      // Remove any pending invite for this channel
+      setHuddleInvites((prev) => prev.filter((inv) => String(inv.channel_id) !== chId));
+    };
+
+    socket.on("huddleStarted", handleHuddleStarted);
+    socket.on("huddleEnded", handleHuddleEnded);
+    return () => {
+      socket.off("huddleStarted", handleHuddleStarted);
+      socket.off("huddleEnded", handleHuddleEnded);
+    };
+  }, [socket, channels, users]);
+
   const handleAddChannel = () => { setModalType("channel"); setModalOpen(true); };
   const handleAddDM = () => { setModalType("dm"); setModalOpen(true); };
+
+  const handleInstantHuddle = async () => {
+    try {
+      // Manage the huddle ID ourselves using the backend API
+      const res = await api.post(`/huddle/instant`);
+      if (res.data?.room_id) {
+        router.push(`/huddle?meeting_id=${res.data.room_id}`);
+      }
+    } catch (err) {
+      console.error("Failed to start instant huddle:", err);
+    }
+  };
 
   const navMain = [
     {
@@ -476,6 +555,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         ...ch,
         unread: unreadCounts[String(ch.id)] ?? 0,
         mentions: mentionCounts[String(ch.id)] ?? 0,
+        hasActiveHuddle: String(ch.id) === activeHuddleChannelId,
       })),
       onAdd: handleAddChannel,
     },
@@ -489,6 +569,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         ...u,
         unread: unreadCounts[String(u.id)] ?? 0,
         mentions: mentionCounts[String(u.id)] ?? 0,
+        hasActiveHuddle: String(u.id) === activeHuddleChannelId,
       })),
       onAdd: handleAddDM,
     },
@@ -496,13 +577,22 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
 
   const projects = [
     { name: "Threads", url: "/threads", icon: Frame, unread: threadUnreadCount },
-    { name: "Calls", url: "/calls", icon: PieChart },
   ];
 
   return (
     <Sidebar collapsible="icon" {...props}>
       <SidebarContent>
         <NavProjects projects={projects} />
+        <SidebarGroup>
+          <SidebarMenu>
+            <SidebarMenuItem>
+               <SidebarMenuButton onClick={handleInstantHuddle}>
+                 <PhoneCall className="h-4 w-4 shrink-0" />
+                 <span>Instant Huddle</span>
+               </SidebarMenuButton>
+            </SidebarMenuItem>
+          </SidebarMenu>
+        </SidebarGroup>
         <NavMain items={navMain} />
       </SidebarContent>
       <SidebarFooter>
@@ -514,6 +604,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         type={modalType}
         onClose={() => setModalOpen(false)}
       />
+      <HuddleInviteToast invites={huddleInvites} onDecline={dismissInvite} />
     </Sidebar>
   );
 }

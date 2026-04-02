@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { AppSidebar } from "@/app/components/app-sidebar"
 import AppNavbar from "@/app/components/app-navbar"
 import {
@@ -13,7 +14,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <UnreadProvider>
       <Toaster />
       <SidebarProvider defaultOpen={true}>
-        <AppSidebar />
+        <Suspense fallback={null}>
+          <AppSidebar />
+        </Suspense>
         <AppNavbar />
         <SidebarInset>
           <div className="flex flex-1 flex-col gap-4 p-0 pt-0">

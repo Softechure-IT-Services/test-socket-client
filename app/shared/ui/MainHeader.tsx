@@ -95,7 +95,7 @@ function IconButton({
       onClick={onClick}
       title={title}
       disabled={disabled}
-      className={`rounded-sm p-2 border border-[var(--border-color)] hover:bg-[var(--accent)] text-[var(--sidebar-foreground)] transition-colors duration-150 cursor-pointer ${
+      className={`flex rounded-sm p-2 border border-[var(--border-color)] hover:bg-[var(--accent)] text-[var(--sidebar-foreground)] transition-colors duration-150 cursor-pointer ${
         active ? "bg-[var(--accent)]" : ""
       } ${disabled ? "opacity-50 cursor-not-allowed" : ""}`}
     >

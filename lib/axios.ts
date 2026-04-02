@@ -1,4 +1,5 @@
 import axios from "axios";
+import { refreshAccessToken } from "@/lib/auth-session";
 
 const axiosInstance = axios.create({
   baseURL: process.env.NEXT_PUBLIC_SERVER_URL || "",
@@ -55,13 +56,7 @@ axiosInstance.interceptors.response.use(
       isRefreshing = true;
 
       try {
-        const res = await axios.post(
-          `${process.env.NEXT_PUBLIC_SERVER_URL}/auth/refresh`,
-          {},
-          { withCredentials: true }
-        );
-
-        const newAccessToken = res.data.accessToken;
+        const newAccessToken = await refreshAccessToken();
         if (newAccessToken) {
           localStorage.setItem("access_token", newAccessToken);
           axiosInstance.defaults.headers.common["Authorization"] = `Bearer ${newAccessToken}`;

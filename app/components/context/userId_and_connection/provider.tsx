@@ -1,9 +1,9 @@
 "use client";
 
 import { createContext, useContext, useEffect, useState } from "react";
-import axios from "axios";
 import { io, Socket } from "socket.io-client";
 import api from "@/lib/axios";
+import { clearStoredAuth, refreshAccessToken } from "@/lib/auth-session";
 
 export type UserType = {
   id: string;
@@ -31,14 +31,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [token, setToken] = useState<string | null>(null);
   const [authReady, setAuthReady] = useState(false);
 
-  const clearStoredAuth = () => {
-    localStorage.removeItem("access_token");
-    document.cookie = "access_token=; Max-Age=0; path=/";
-    document.cookie = "refresh_token=; Max-Age=0; path=/";
-    document.cookie = "user_id=; Max-Age=0; path=/";
-    document.cookie = "username=; Max-Age=0; path=/";
-  };
-
   const getTokenExpiryMs = (value: string) => {
     try {
       const [, payload] = value.split(".");
@@ -58,33 +50,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     const expiryMs = getTokenExpiryMs(value);
     if (!expiryMs) return true;
     return expiryMs - Date.now() > minTtlMs;
-  };
-
-  const refreshAccessToken = async () => {
-    try {
-      const response = await axios.post(
-        `${process.env.NEXT_PUBLIC_SERVER_URL}/auth/refresh`,
-        {},
-        { withCredentials: true }
-      );
-      const refreshedToken = response.data?.accessToken ?? null;
-
-      if (!refreshedToken) {
-        clearStoredAuth();
-        setToken(null);
-        setUser(null);
-        return null;
-      }
-
-      localStorage.setItem("access_token", refreshedToken);
-      setToken(refreshedToken);
-      return refreshedToken;
-    } catch {
-      clearStoredAuth();
-      setToken(null);
-      setUser(null);
-      return null;
-    }
   };
 
   useEffect(() => {
@@ -109,10 +74,19 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         return;
       }
 
-      const refreshedToken = await refreshAccessToken();
-      if (!cancelled) {
-        setToken(refreshedToken);
-        setAuthReady(true);
+      try {
+        const refreshedToken = await refreshAccessToken();
+        if (!cancelled) {
+          setToken(refreshedToken);
+          setAuthReady(true);
+        }
+      } catch {
+        clearStoredAuth();
+        if (!cancelled) {
+          setToken(null);
+          setUser(null);
+          setAuthReady(true);
+        }
       }
     };
 

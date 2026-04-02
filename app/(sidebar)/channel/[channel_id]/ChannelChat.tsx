@@ -122,7 +122,6 @@ export default function ChannelChat({ channelId }: ChannelChatProps) {
   const [isDm, setIsDm] = useState(false);
   const [dmOtherUser, setDmOtherUser] = useState<DmUser | null>(null);
   const [channel, setChannel] = useState<Channel | null>(null);
-  const bottomRef = useRef<HTMLDivElement | null>(null);
 
   const [initialLoading, setInitialLoading] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
@@ -165,6 +164,20 @@ const canSendMessages = isMember;
   const { seedUsers, isOnline: presenceIsOnline, getLastSeen } = usePresence();
   const userId = user?.id;
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const scrollChatToBottom = useCallback(
+    (behavior: "auto" | "smooth" = "auto") => {
+      const el = containerRef.current;
+      if (!el) return;
+
+      requestAnimationFrame(() => {
+        el.scrollTo({
+          top: el.scrollHeight,
+          behavior,
+        });
+      });
+    },
+    []
+  );
   const [hoveredId, setHoveredId] = useState<string | number | null>(null);
   const [lockedId, setLockedId] = useState<string | number | null>(null);
   const SERVER_URL =
@@ -993,16 +1006,11 @@ sweetToast({
   useEffect(() => {
     if (!initialLoading) return;
 
-    const el = containerRef.current;
-    if (!el) return;
-
     if (scrollTargetId) return;
 
-    requestAnimationFrame(() => {
-      el.scrollTop = el.scrollHeight;
-      didInitialScrollRef.current = true;
-    });
-  }, [initialLoading]);
+    scrollChatToBottom("auto");
+    didInitialScrollRef.current = true;
+  }, [initialLoading, scrollTargetId, scrollChatToBottom]);
 
   // ─── After initial load: place NEW divider + save lastRead ────────────────────
   // Uses a ref to detect the true→false transition of initialLoading.
@@ -1023,10 +1031,7 @@ sweetToast({
     }
 
     // Scroll to bottom instantly (no animation) now that the first batch is ready
-    const el = containerRef.current;
-    if (el) {
-      el.scrollTop = el.scrollHeight;
-    }
+    scrollChatToBottom("auto");
     hasCompletedInitialLoadRef.current = true;
 
     const lastReadId = lastReadAtOpenRef.current;
@@ -1052,7 +1057,7 @@ sweetToast({
     if (newestId > 0) {
       setLastRead(channelId, newestId);
     }
-  }, [initialLoading]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [initialLoading, scrollChatToBottom]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!socket) return;
@@ -1087,9 +1092,8 @@ sweetToast({
     if (isLoadingNewer || hasMoreNewer) return;
     if (!shouldAutoScrollRef.current) return;
 
-    // Use instant (no animation) for the initial load batch; smooth for live new messages
-    bottomRef.current?.scrollIntoView({ behavior: hasCompletedInitialLoadRef.current ? "smooth" : "instant" });
-  }, [lastMessageId]);
+    scrollChatToBottom(hasCompletedInitialLoadRef.current ? "smooth" : "auto");
+  }, [lastMessageId, isLoadingMore, isLoadingNewer, hasMoreNewer, scrollChatToBottom]);
 
   const handleDownload = async (file: any) => {
     try {
@@ -1312,8 +1316,7 @@ sweetToast({
       loadMessages(true);
       // Force scroll to bottom after state re-stabilizes
       setTimeout(() => {
-        const el = containerRef.current;
-        if (el) el.scrollTop = el.scrollHeight;
+        scrollChatToBottom("auto");
       }, 500);
     } else {
       setMessages((prev) => [...prev, newMsg]);
@@ -1322,8 +1325,7 @@ sweetToast({
     shouldAutoScrollRef.current = true;
     // Extra boost for scroll to bottom to ensure it works even if we were just slightly off-bottom
     setTimeout(() => {
-      const el = containerRef.current;
-      if (el) el.scrollTop = el.scrollHeight;
+      scrollChatToBottom("auto");
     }, 100);
 
     socket.emit("sendMessage", {
@@ -1704,7 +1706,7 @@ sweetToast({
             <button
               className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-1.5 rounded-full shadow-lg text-sm flex items-center gap-2 transition-colors"
               onClick={() => {
-                bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+                scrollChatToBottom("smooth");
                 setHasNewMessages(false);
                 setNewMessageCount(0);
                 // Do NOT clear newMessageSeparatorId — NEW divider stays until nav
@@ -1873,7 +1875,6 @@ sweetToast({
             </div>
           )}
         </div>
-        <div ref={bottomRef} />
         <CreateNew
           open={!!forwardMessageId}
           onClose={() => setForwardMessageId(null)}

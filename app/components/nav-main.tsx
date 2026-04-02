@@ -1,7 +1,7 @@
 "use client"
 
 import React from "react"
-import { ChevronRight, Plus, Hash, Lock } from "lucide-react"
+import { ChevronRight, Plus, Hash, Lock, Headphones } from "lucide-react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 
@@ -38,6 +38,8 @@ type SubItem = {
   unread?: number
   /** Number of times the current user was @mentioned in this channel */
   mentions?: number
+  /** Whether there is an active huddle in this channel/DM */
+  hasActiveHuddle?: boolean
 }
 
 type NavItem = {
@@ -298,7 +300,7 @@ export function NavMain({ items }: { items: NavItem[] }) {
                                 ) : (
                                   sub.is_dm === false && <ChannelIcon sub={sub} />
                                 )}
-                                <span className="flex flex-row items-center min-w-0">
+                                <span className="flex flex-row items-center min-w-0 gap-1">
                                   <span
                                     className={
                                       hasActivity ? "truncate font-semibold" : "truncate"
@@ -306,6 +308,9 @@ export function NavMain({ items }: { items: NavItem[] }) {
                                   >
                                     {sub.title}
                                   </span>
+                                  {sub.hasActiveHuddle && (
+                                    <Headphones className="h-3 w-3 shrink-0 text-indigo-400 animate-pulse" aria-label="Active huddle" />
+                                  )}
                                   {item.type === "dm" && (
                                     <span className="text-[11px] ps-1 truncate">
                                       {statusLabel}

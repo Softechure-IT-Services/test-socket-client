@@ -11,12 +11,15 @@ export type UserType = {
   username: string;
   email: string;
   avatar_url?: string;
+  status?: string | null;
 };
 
 type AuthContextType = {
   user: UserType | null;
   isOnline: boolean;
   socket: Socket | null;
+  authReady: boolean;
+  hasToken: boolean;
   login: (token: string) => void;
   logout: () => void;
   updateUser: (partial: Partial<UserType>) => void;
@@ -183,6 +186,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         user,
         isOnline,
         socket,
+        authReady,
+        hasToken: !!token,
         login,
         logout,
         updateUser,

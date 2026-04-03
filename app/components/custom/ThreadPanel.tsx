@@ -91,6 +91,7 @@ export default function ThreadPanel({
   const bottomRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const initialRepliesLoadedRef = useRef(false);
+  const lastReportedReplyCountRef = useRef<number | null>(null);
 
   // ─── Hover / lock state (mirrors ChannelChat) ─────────────────────────────
   const [hoveredId, setHoveredId] = useState<string | number | null>(null);
@@ -117,6 +118,10 @@ export default function ThreadPanel({
     highlightedScrollIds.current.clear();
     setLiveParent(parentMessage);
   }, [parentMessage?.id, parentMessage]);
+
+  useEffect(() => {
+    lastReportedReplyCountRef.current = null;
+  }, [parentMessage?.id]);
 
   useEffect(() => {
     const scrollToId = searchParams?.get("scrollTo");
@@ -278,6 +283,8 @@ export default function ThreadPanel({
   useEffect(() => {
     if (!parentMessage?.id || !onReplyCountChange) return;
     const count = replies.filter((r) => !String(r.id).startsWith("temp-")).length;
+    if (lastReportedReplyCountRef.current === count) return;
+    lastReportedReplyCountRef.current = count;
     onReplyCountChange(parentMessage.id, count);
   }, [replies.length, parentMessage?.id, onReplyCountChange]);
 
@@ -357,7 +364,7 @@ export default function ThreadPanel({
     return () => {
       socket.off("threadReplyAdded", handleNewReply);
     };
-  }, [socket, parentMessage?.id, onReplyCountChange]);
+  }, [socket, parentMessage?.id]);
   
   // ─── Socket: sync reactions from server ──────────────────────────────────
   useEffect(() => {
@@ -611,7 +618,7 @@ return () => {
           break;
       }
     },
-    [replies, parentMessage, onReplyCountChange, socket]
+    [replies, parentMessage, socket]
   );
 
   // ─── Toggle reaction (pill click) ────────────────────────────────────────

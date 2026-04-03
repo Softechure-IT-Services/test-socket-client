@@ -4,10 +4,13 @@ import React, { useState, useRef, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/app/components/context/userId_and_connection/provider";
 import api from "@/lib/axios";
+import { suggestUsernameFromName } from "@/lib/username";
 import {
   Camera,
   Check,
+  CheckCircle2,
   X,
+  XCircle,
   LogOut,
   User,
   Bell,
@@ -17,8 +20,6 @@ import {
   Eye,
   EyeOff,
   Trash2,
-  CheckCircle2,
-  XCircle,
 } from "lucide-react";
 
 type Section = "profile" | "notifications" | "privacy";
@@ -79,7 +80,7 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
   );
 }
 
-function StyledInput({ value, onChange, placeholder, type = "text", disabled = false, rightElement }: { value: string; onChange?: (e: React.ChangeEvent<HTMLInputElement>) => void; placeholder?: string; type?: string; disabled?: boolean; rightElement?: React.ReactNode }) {
+function StyledInput({ value, onChange, placeholder, type = "text", disabled = false, readOnly = false, rightElement, className = "" }: { value: string; onChange?: (e: React.ChangeEvent<HTMLInputElement>) => void; placeholder?: string; type?: string; disabled?: boolean; readOnly?: boolean; rightElement?: React.ReactNode; className?: string }) {
   return (
     <div className="relative group/input">
       <input
@@ -88,7 +89,8 @@ function StyledInput({ value, onChange, placeholder, type = "text", disabled = f
         onChange={onChange}
         placeholder={placeholder}
         disabled={disabled}
-        className="w-full h-11 px-4 pr-10 text-sm rounded-xl border border-input bg-background focus:outline-none focus:ring-2 focus:ring-ring/50 focus:border-ring disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-sm placeholder:text-neutral-500 dark:text-neutral-400/70 text-foreground"
+        readOnly={readOnly}
+        className={`w-full h-11 px-4 pr-10 text-sm rounded-xl border border-input bg-background focus:outline-none focus:ring-2 focus:ring-ring/50 focus:border-ring disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-sm placeholder:text-neutral-500 dark:text-neutral-400/70 text-foreground ${className}`}
       />
       {rightElement && (
         <div className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-500 dark:text-neutral-400 hover:text-foreground transition-colors">
@@ -150,11 +152,10 @@ export default function ProfilePage() {
   const [status, setStatus] = useState("");
   const [bio, setBio] = useState("");
   const [username, setUsername] = useState(user?.username ?? "");
-
-  // Username availability check
-  type UsernameStatus = "idle" | "checking" | "available" | "taken" | "invalid";
-  const [usernameStatus, setUsernameStatus] = useState<UsernameStatus>("idle");
-  const usernameDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [savedUsername, setSavedUsername] = useState(user?.username ?? "");
+  const [usernameStatus, setUsernameStatus] = useState<"idle" | "checking" | "available" | "taken" | "invalid">("idle");
+  const [usernameMessage, setUsernameMessage] = useState("");
+  const usernameCheckRequestRef = useRef(0);
 
   const [currentPw, setCurrentPw] = useState("");
   const [newPw, setNewPw] = useState("");
@@ -186,8 +187,17 @@ export default function ProfilePage() {
       setBio(data.bio ?? "");
       setEmail(data.email ?? "");
       setUsername(data.username ?? "");
+      setSavedUsername(data.username ?? "");
+      setUsernameStatus("idle");
+      setUsernameMessage("");
       if (typeof updateUser === "function") {
-        updateUser({ name: data.name, avatar_url: data.avatar_url, email: data.email });
+        updateUser({
+          name: data.name,
+          avatar_url: data.avatar_url,
+          email: data.email,
+          username: data.username,
+          status: data.status,
+        });
       }
     } catch (err) {
       console.error("Failed to load profile:", err);
@@ -204,34 +214,58 @@ export default function ProfilePage() {
       setAvatarUrl(user.avatar_url ?? "");
       setEmail(user.email ?? "");
       setUsername(user.username ?? "");
+      setSavedUsername(user.username ?? "");
     }
   }, [user]);
+  const displayUsername = username.trim() || suggestUsernameFromName(name);
 
-  // Debounced username availability check (exclude self)
   useEffect(() => {
-    const currentUsername = user?.username ?? "";
-    if (!username || username === currentUsername) {
+    const trimmedUsername = username.trim().toLowerCase();
+    const currentUsername = savedUsername.trim().toLowerCase();
+
+    if (!trimmedUsername) {
       setUsernameStatus("idle");
+      setUsernameMessage("");
       return;
     }
-    if (!/^[a-z0-9_-]{3,30}$/.test(username)) {
+
+    if (!/^[a-z0-9_-]{3,30}$/.test(trimmedUsername)) {
       setUsernameStatus("invalid");
+      setUsernameMessage("Username must be 3-30 characters and use only letters, numbers, _ or -.");
       return;
     }
+
+    if (trimmedUsername === currentUsername) {
+      setUsernameStatus("available");
+      setUsernameMessage("This username is okay to use.");
+      return;
+    }
+
     setUsernameStatus("checking");
-    if (usernameDebounceRef.current) clearTimeout(usernameDebounceRef.current);
-    usernameDebounceRef.current = setTimeout(async () => {
+    setUsernameMessage("Checking availability...");
+    const requestId = ++usernameCheckRequestRef.current;
+
+    const timeoutId = window.setTimeout(async () => {
       try {
-        const res = await api.get(`/users/check-username?username=${encodeURIComponent(username)}&exclude_self=true`);
-        setUsernameStatus(res.data.available ? "available" : "taken");
+        const res = await api.get(`/users/check-username?username=${encodeURIComponent(trimmedUsername)}`);
+        if (requestId !== usernameCheckRequestRef.current) return;
+
+        if (res.data.available) {
+          setUsernameStatus("available");
+          setUsernameMessage("This username is available.");
+        } else {
+          setUsernameStatus("taken");
+          setUsernameMessage(res.data.error ?? "This username is already taken.");
+        }
       } catch {
+        if (requestId !== usernameCheckRequestRef.current) return;
         setUsernameStatus("idle");
+        setUsernameMessage("");
       }
-    }, 450);
-    return () => {
-      if (usernameDebounceRef.current) clearTimeout(usernameDebounceRef.current);
-    };
-  }, [username, user?.username]);
+    }, 350);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [username, savedUsername]);
 
   async function handleAvatarChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -283,25 +317,44 @@ export default function ProfilePage() {
 
   async function handleSaveProfile() {
     setProfileError("");
-    if (usernameStatus === "taken") {
-      setProfileError("Username is already taken. Please choose another.");
+    if (!name.trim()) {
+      setProfileError("Display name cannot be empty.");
+      return;
+    }
+    if (!username.trim()) {
+      setProfileError("Username cannot be empty.");
+      return;
+    }
+    if (usernameStatus === "invalid") {
+      setProfileError("Username must be 3-30 characters and use only letters, numbers, _ or -.");
       return;
     }
     if (usernameStatus === "checking") {
-      setProfileError("Still checking username availability, please wait.");
+      setProfileError("Please wait while the username availability is being checked.");
       return;
     }
-    if (username && !/^[a-z0-9_-]{3,30}$/.test(username)) {
-      setProfileError("Username must be 3–30 chars: letters, numbers, _ or - only.");
+    if (usernameStatus === "taken") {
+      setProfileError("Please choose an available username.");
       return;
     }
     setProfileSaving(true);
     try {
-      const res = await api.patch("/users/me", { name, username, status, bio });
+      const res = await api.patch("/users/me", {
+        name,
+        username: username.trim(),
+        status,
+        bio,
+      });
+      const updatedName = res.data.user?.name ?? name;
+      const updatedUsername = res.data.user?.username ?? username;
+      setName(updatedName);
+      setUsername(updatedUsername);
+      setSavedUsername(updatedUsername);
+      setUsernameStatus("available");
+      setUsernameMessage("This is your current username is okay to use.");
       if (typeof updateUser === "function") {
-        updateUser({ name: res.data.user?.name ?? name, username: res.data.user?.username ?? username });
+        updateUser({ name: updatedName, username: updatedUsername, status });
       }
-      setUsernameStatus("idle");
       setProfileSaved(true);
       setTimeout(() => setProfileSaved(false), 2500);
     } catch (err: any) {
@@ -389,7 +442,7 @@ export default function ProfilePage() {
                 className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-destructive hover:bg-destructive/10 transition-colors group"
               >
                 <LogOut className="w-4 h-4 shrink-0 group-hover:-translate-x-1 transition-transform" />
-                Sign out
+                Logout
               </button>
             </nav>
           </aside>
@@ -439,8 +492,8 @@ export default function ProfilePage() {
 
                     <div className="flex-1 text-center sm:text-left mt-3 sm:mt-12">
                       <h2 className="text-xl font-bold text-foreground tracking-tight">{name || "Your Name"}</h2>
-                      {username && (
-                        <p className="text-xs font-mono text-primary/70 mt-0.5">@{username}</p>
+                      {displayUsername && (
+                        <p className="text-xs font-mono text-primary/70 mt-0.5">@{displayUsername}</p>
                       )}
                       <p className="text-sm font-medium text-neutral-500 dark:text-neutral-400 mt-0.5">{email}</p>
                     </div>
@@ -480,33 +533,45 @@ export default function ProfilePage() {
                       <StyledInput value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Alex" />
                     </Field>
 
-                    <Field label="Username" hint="Unique handle used to identify you.">
+                    <Field label="Username" hint="You can edit your username here. Only letters, numbers, _ and - are allowed.">
                       <div className="relative">
                         <span className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400 text-sm select-none z-10">@</span>
                         <StyledInput
                           value={username}
-                          onChange={(e) => {
-                            const cleaned = e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, "").slice(0, 30);
-                            setUsername(cleaned);
-                          }}
-                          placeholder="your_handle"
+                          onChange={(e) =>
+                            setUsername(
+                              e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, "").slice(0, 30)
+                            )
+                          }
+                          placeholder={suggestUsernameFromName(name) || "your_handle"}
+                          className="pl-8"
+                          rightElement={
+                            usernameStatus === "checking" ? (
+                              <Loader2 className="w-4 h-4 animate-spin text-neutral-400" />
+                            ) : usernameStatus === "available" ? (
+                              <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                            ) : usernameStatus === "taken" || usernameStatus === "invalid" ? (
+                              <XCircle className="w-4 h-4 text-red-500" />
+                            ) : null
+                          }
                         />
-                        {/* overlay the @ prefix by adjusting padding */}
-                        <span className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
-                          {usernameStatus === "checking" && <Loader2 className="w-4 h-4 animate-spin text-neutral-400" />}
-                          {usernameStatus === "available" && <CheckCircle2 className="w-4 h-4 text-emerald-500" />}
-                          {usernameStatus === "taken" && <XCircle className="w-4 h-4 text-red-500" />}
-                          {usernameStatus === "invalid" && <XCircle className="w-4 h-4 text-amber-500" />}
-                        </span>
                       </div>
-                      {usernameStatus === "available" && (
-                        <p className="text-xs text-emerald-500 mt-1">@{username} is available!</p>
-                      )}
-                      {usernameStatus === "taken" && (
-                        <p className="text-xs text-red-500 mt-1">@{username} is already taken.</p>
-                      )}
-                      {usernameStatus === "invalid" && (
-                        <p className="text-xs text-amber-500 mt-1">3–30 chars: letters, numbers, _ or - only.</p>
+                      {usernameMessage ? (
+                        <p
+                          className={`text-xs ${
+                            usernameStatus === "available"
+                              ? "text-emerald-500"
+                              : usernameStatus === "taken" || usernameStatus === "invalid"
+                              ? "text-red-500"
+                              : "text-neutral-500 dark:text-neutral-400"
+                          }`}
+                        >
+                          {usernameMessage}
+                        </p>
+                      ) : (
+                        <p className="text-xs text-neutral-500 dark:text-neutral-400">
+                          Your username will stay the same unless you change it here and save.
+                        </p>
                       )}
                     </Field>
                     

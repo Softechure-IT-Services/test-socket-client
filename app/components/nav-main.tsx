@@ -33,6 +33,7 @@ type SubItem = {
   is_dm?: boolean
   avatar_url?: string
   target_user_id?: string | number | null
+  status?: string | null
   last_seen?: string | null
   is_online?: boolean
   unread?: number
@@ -254,7 +255,19 @@ export function NavMain({ items }: { items: NavItem[] }) {
                           sub.last_seen ??
                           null
                         const relativeLastSeen = lastSeen ? formatRelativeTime(lastSeen) : null
-                        const statusLabel = online
+                        const customStatus =
+                          typeof sub.status === "string" && sub.status.trim()
+                            ? sub.status.trim()
+                            : null
+                        // const statusLabel = customStatus
+                        //   ? customStatus
+                        //   : online
+                        //   ? "Online"
+                        //   : relativeLastSeen
+                        //   ? `Last seen ${relativeLastSeen}`
+                        //   : "Offline"
+
+                          const statusLabel = online
                           ? ""
                           : relativeLastSeen
                           ? `Last seen ${relativeLastSeen}`
@@ -317,6 +330,9 @@ export function NavMain({ items }: { items: NavItem[] }) {
                                     </span>
                                   )}
                                 </span>
+                                {customStatus &&(<span className="text-[12px]/[14px] font-bold">
+                                  "{customStatus}"
+                                </span>)}
                               </Link>
                             </SidebarMenuSubButton>
 

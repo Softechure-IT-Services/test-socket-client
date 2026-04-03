@@ -62,10 +62,33 @@ interface SearchData {
   messages: MessageResult[];
 }
 
+type SearchMode = "all" | "channel" | "people" | "context";
+
+interface SearchScope {
+  channelId: string;
+  type: "channel" | "dm";
+  label: string;
+}
+
+interface SearchIntent {
+  mode: SearchMode;
+  requestQuery: string;
+  highlightQuery: string;
+}
+
+interface FocusNavSearchDetail {
+  prefill?: string;
+  channelId?: MaybeId;
+  type?: "channel" | "dm";
+  scopeLabel?: string;
+}
+
 interface NavHistory {
   stack: string[];
   index: number;
 }
+
+const EMPTY_SEARCH_DATA: SearchData = { channels: [], people: [], messages: [] };
 
 function findBackTargetIndex(stack: string[], currentIndex: number, isLoginPath: (p: string) => boolean) {
   let idx = currentIndex - 1;
@@ -194,6 +217,91 @@ function flattenResults(data: SearchData): AnyResult[] {
   return [...data.channels, ...data.people, ...data.messages];
 }
 
+function parseSearchIntent(query: string, scope: SearchScope | null): SearchIntent {
+  const trimmed = query.trim();
+
+  if (scope) {
+    const normalizedLabel = scope.label.trim().toLowerCase();
+    const normalizedQuery = trimmed.toLowerCase();
+    const scopedQuery =
+      normalizedLabel && normalizedQuery.startsWith(normalizedLabel)
+        ? trimmed.slice(scope.label.trim().length).trim()
+        : trimmed;
+
+    return {
+      mode: "context",
+      requestQuery: scopedQuery,
+      highlightQuery: scopedQuery,
+    };
+  }
+
+  if (query.startsWith("#")) {
+    const stripped = query.slice(1).trim();
+    return {
+      mode: "channel",
+      requestQuery: stripped,
+      highlightQuery: stripped,
+    };
+  }
+
+  if (query.startsWith("@")) {
+    const stripped = query.slice(1).trim();
+    return {
+      mode: "people",
+      requestQuery: stripped,
+      highlightQuery: stripped,
+    };
+  }
+
+  return {
+    mode: "all",
+    requestQuery: trimmed,
+    highlightQuery: trimmed,
+  };
+}
+
+function filterSearchData(
+  data: SearchData,
+  userId: MaybeId,
+  mode: SearchMode,
+  scope: SearchScope | null
+): SearchData {
+  const people = data.people.filter(
+    (person) => String(person.id) !== String(userId)
+  );
+
+  if (scope) {
+    return {
+      channels: [],
+      people: [],
+      messages: data.messages.filter(
+        (message) => String(message.channel_id) === scope.channelId
+      ),
+    };
+  }
+
+  if (mode === "channel") {
+    return {
+      channels: data.channels,
+      people: [],
+      messages: [],
+    };
+  }
+
+  if (mode === "people") {
+    return {
+      channels: [],
+      people,
+      messages: [],
+    };
+  }
+
+  return {
+    ...data,
+    people,
+  };
+}
+
 // ─── Main Navbar ──────────────────────────────────────────────────────────────
 export default function AppNavbar() {
   const { isMobile } = useSidebar();
@@ -251,10 +359,11 @@ export default function AppNavbar() {
   }
 
   const [query, setQuery] = useState("");
-  const [data, setData] = useState<SearchData>({ channels: [], people: [], messages: [] });
+  const [data, setData] = useState<SearchData>(EMPTY_SEARCH_DATA);
   const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
+  const [searchScope, setSearchScope] = useState<SearchScope | null>(null);
 
   const inputRef = useRef<HTMLInputElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -262,16 +371,43 @@ export default function AppNavbar() {
 
   const flat = flattenResults(data);
   const hasResults = flat.length > 0;
+  const liveSearchIntent = parseSearchIntent(query, searchScope);
+  const debouncedSearchIntent = parseSearchIntent(debouncedQuery, searchScope);
+  const mode = liveSearchIntent.mode;
+  const requestMode = debouncedSearchIntent.mode;
+  const searchTerm = liveSearchIntent.highlightQuery;
+  const effectiveQuery = debouncedSearchIntent.requestQuery;
+  const modePill = searchScope
+    ? {
+        label: `In ${searchScope.label}`,
+        className:
+          searchScope.type === "dm"
+            ? "bg-emerald-500/15 text-emerald-400"
+            : "bg-blue-500/15 text-blue-400",
+      }
+    : query && mode !== "all"
+      ? {
+          label: mode === "channel" ? "# Channels only" : "@ People only",
+          className:
+            mode === "channel"
+              ? "bg-blue-500/15 text-blue-400"
+              : "bg-emerald-500/15 text-emerald-400",
+        }
+      : null;
 
-  // Determine mode from prefix for UI hints
-  const mode = query.startsWith("#") ? "channel" : query.startsWith("@") ? "people" : "all";
-  const searchTerm = query.startsWith("#") || query.startsWith("@") ? query.slice(1).trim() : query.trim();
+  function clearSearch() {
+    setQuery("");
+    setSearchScope(null);
+    setData(EMPTY_SEARCH_DATA);
+    setOpen(false);
+    setActiveIndex(-1);
+    inputRef.current?.focus();
+  }
 
   // ── Fetch ────────────────────────────────────────────────────────────────────
   useEffect(() => {
-    const trimmed = debouncedQuery.trim();
-    if (!trimmed) {
-      setData({ channels: [], people: [], messages: [] });
+    if (!effectiveQuery) {
+      setData(EMPTY_SEARCH_DATA);
       setOpen(false);
       return;
     }
@@ -280,23 +416,28 @@ export default function AppNavbar() {
     setLoading(true);
 
     axiosInstance
-      .get<{ success: boolean; data: SearchData }>("/search", { params: { q: trimmed } })
+      .get<{ success: boolean; data: SearchData }>("/search", {
+        params: {
+          q: effectiveQuery,
+          ...(searchScope ? { channelId: searchScope.channelId } : {}),
+        },
+      })
       .then(({ data: res }) => {
         if (!cancelled && res.success) {
-          setData(res.data);
+          setData(filterSearchData(res.data, user?.id, requestMode, searchScope));
           setOpen(true);
           setActiveIndex(-1);
         }
       })
       .catch(() => {
-        if (!cancelled) setData({ channels: [], people: [], messages: [] });
+        if (!cancelled) setData(EMPTY_SEARCH_DATA);
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
       });
 
     return () => { cancelled = true; };
-  }, [debouncedQuery]);
+  }, [effectiveQuery, requestMode, searchScope, user?.id]);
 
   // ── Outside click ────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -314,13 +455,33 @@ export default function AppNavbar() {
   // ── Listen for focusNavSearch event from MainHeader ──────────────────────
   useEffect(() => {
     function onFocusNavSearch(e: Event) {
-      const { prefill } = (e as CustomEvent<{ prefill: string }>).detail;
-      setQuery(prefill ?? "");
+      const detail = (e as CustomEvent<FocusNavSearchDetail>).detail ?? {};
+      const scopeChannelId = normalizeId(detail.channelId);
+      const scopeLabel = detail.scopeLabel?.trim();
+      const hasScope = !!(scopeChannelId && detail.type && scopeLabel);
+
+      setData(EMPTY_SEARCH_DATA);
+      setOpen(false);
+      setActiveIndex(-1);
+
+      if (hasScope) {
+        setSearchScope({
+          channelId: scopeChannelId!,
+          type: detail.type!,
+          label: scopeLabel!,
+        });
+        setQuery(detail.prefill ?? detail.scopeLabel ?? "");
+      } else {
+        setSearchScope(null);
+        setQuery(detail.prefill ?? "");
+      }
+
       // Small delay so state flushes before focus
       setTimeout(() => {
         inputRef.current?.focus();
-        // Place cursor at end
-        const len = (prefill ?? "").length;
+        const len = hasScope
+          ? (detail.prefill ?? detail.scopeLabel ?? "").length
+          : (detail.prefill ?? "").length;
         inputRef.current?.setSelectionRange(len, len);
       }, 50);
     }
@@ -330,18 +491,27 @@ export default function AppNavbar() {
 
   // ── Navigate ─────────────────────────────────────────────────────────────────
   const navigate = useCallback(
-    (result: AnyResult) => {
+    async (result: AnyResult) => {
       setOpen(false);
       setQuery("");
+      setSearchScope(null);
 
       if (result.kind === "channel") {
         router.push(`/channel/${result.id}`);
       } else if (result.kind === "person") {
         if (result.dm_channel_id) {
-          router.push(`/channel/${result.dm_channel_id}`);
+          router.push(`/dm/${result.dm_channel_id}`);
         } else {
           // No existing DM — you can open a new DM compose flow
-          router.push(`/dashboard/dm/new?userId=${result.id}`);
+          try {
+            const { data } = await axiosInstance.post(`/dm/with/${result.id}`);
+            const createdDmId = normalizeId(data?.dm_id ?? data?.channel_id);
+            if (createdDmId) {
+              router.push(`/dm/${createdDmId}`);
+            }
+          } catch (error) {
+            console.error("Failed to open DM from search:", error);
+          }
         }
       } else if (result.kind === "message") {
         // Navigate to channel/dm, highlight the message via hash, open thread if applicable
@@ -464,10 +634,10 @@ export default function AppNavbar() {
                   spellCheck={false}
                 />
 
-                {query && (
+                {(query || searchScope) && (
                   <button
                     className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition"
-                    onClick={() => { setQuery(""); setData({ channels: [], people: [], messages: [] }); setOpen(false); inputRef.current?.focus(); }}
+                    onClick={clearSearch}
                     tabIndex={-1}
                   >
                     <X size={13} />
@@ -476,11 +646,9 @@ export default function AppNavbar() {
               </div>
 
               {/* Mode pill */}
-              {/* {query && mode !== "all" && (
-                <span className={`absolute -top-5 left-3 text-[10px] font-semibold px-2 py-0.5 rounded-full ${
-                  mode === "channel" ? "bg-blue-500/15 text-blue-400" : "bg-green-500/15 text-green-400"
-                }`}>
-                  {mode === "channel" ? "# Channels only" : "@ People only"}
+              {/* {modePill && (
+                <span className={`w-[max-content] absolute top-[50%] left-full text-[10px] font-semibold px-2 py-0.5 rounded-full ${modePill.className}`}>
+                  {modePill.label}
                 </span>
               )} */}
 
@@ -493,8 +661,18 @@ export default function AppNavbar() {
                   {/* No results */}
                   {!loading && !hasResults && (
                     <div className="px-4 py-6 text-center text-sm text-muted-foreground">
-                      <p className="text-base font-medium text-foreground mb-1">No results</p>
-                      <p>Try a different search term or prefix with <code className="text-xs px-1 py-0.5 rounded">#</code> for channels or <code className="text-xs px-1 py-0.5 rounded">@</code> for people</p>
+                      <p className="text-base font-medium text-foreground mb-1">
+                        {searchScope ? `No results in ${searchScope.label}` : "No results"}
+                      </p>
+                      <p>
+                        {searchScope ? (
+                          "Try a different message term."
+                        ) : (
+                          <>
+                            Try a different search term or prefix with <code className="text-xs px-1 py-0.5 rounded">#</code> for channels or <code className="text-xs px-1 py-0.5 rounded">@</code> for people
+                          </>
+                        )}
+                      </p>
                     </div>
                   )}
 

@@ -8,6 +8,7 @@ export type StoredHuddleCallEntry = {
   channelId: string | null;
   title: string;
   startedByUserId: string | null;
+  startedByUsername: string | null;
   firstJoinedAt: string;
   lastJoinedAt: string;
   lastLeftAt: string | null;
@@ -18,6 +19,7 @@ type UpsertStoredHuddleCallInput = {
   channelId?: string | null;
   title?: string | null;
   startedByUserId?: string | number | null;
+  startedByUsername?: string | null;
   joinedAt?: string;
 };
 
@@ -77,6 +79,10 @@ export const readStoredHuddleCalls = (): StoredHuddleCallEntry[] => {
               String(entry.startedByUserId).trim()
                 ? String(entry.startedByUserId).trim()
                 : null,
+            startedByUsername:
+              typeof entry.startedByUsername === "string" && entry.startedByUsername.trim()
+                ? entry.startedByUsername.trim()
+                : null,
             firstJoinedAt:
               typeof entry.firstJoinedAt === "string" && entry.firstJoinedAt
                 ? entry.firstJoinedAt
@@ -103,6 +109,7 @@ export const upsertStoredHuddleCall = ({
   channelId = null,
   title,
   startedByUserId = null,
+  startedByUsername = null,
   joinedAt,
 }: UpsertStoredHuddleCallInput) => {
   if (!canUseStorage() || !roomId) return;
@@ -113,6 +120,10 @@ export const upsertStoredHuddleCall = ({
   const normalizedChannelId = channelId != null ? String(channelId).trim() : null;
   const normalizedStartedByUserId =
     startedByUserId != null ? String(startedByUserId).trim() : null;
+  const normalizedStartedByUsername =
+    typeof startedByUsername === "string" && startedByUsername.trim()
+      ? startedByUsername.trim()
+      : null;
   const nextJoinedAt = joinedAt ?? new Date().toISOString();
 
   const current = readStoredHuddleCalls();
@@ -129,6 +140,8 @@ export const upsertStoredHuddleCall = ({
         title && title.trim() && title !== "Room" ? title.trim() : existing.title,
       startedByUserId:
         normalizedStartedByUserId || existing.startedByUserId,
+      startedByUsername:
+        normalizedStartedByUsername || existing.startedByUsername,
       lastJoinedAt: nextJoinedAt,
       lastLeftAt: null,
     };
@@ -141,6 +154,7 @@ export const upsertStoredHuddleCall = ({
     channelId: normalizedChannelId,
     title: title && title.trim() ? title.trim() : "Huddle",
     startedByUserId: normalizedStartedByUserId,
+    startedByUsername: normalizedStartedByUsername,
     firstJoinedAt: nextJoinedAt,
     lastJoinedAt: nextJoinedAt,
     lastLeftAt: null,

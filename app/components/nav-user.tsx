@@ -19,42 +19,65 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from "@/app/components/ui/sidebar";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/app/components/ui/tooltip";
 
 export function NavUser({ user }: { user: UserType }) {
   const { isMobile } = useSidebar();
   const { logout } = useAuth();
   const router = useRouter();
+  const statusTooltip = user.status?.trim();
 
   function handleLogout() {
     logout();
     router.push("/login");
   }
 
+  const trigger = (
+    <DropdownMenuTrigger asChild>
+      <SidebarMenuButton
+        size="lg"
+        className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
+      >
+        <UserAvatar
+          name={user.name}
+          avatarUrl={user.avatar_url}
+          size="sm"
+          rounded="full"
+          className="shrink-0"
+        />
+        <div className="grid flex-1 text-left text-sm leading-tight min-w-0">
+          <span className="truncate font-semibold">{user.username}</span>
+          <span className="truncate text-xs text-muted-foreground">
+            {user.email}
+          </span>
+        </div>
+        <ChevronsUpDown className="ml-auto size-4 shrink-0 opacity-50" />
+      </SidebarMenuButton>
+    </DropdownMenuTrigger>
+  );
+
   return (
     <SidebarMenu>
       <SidebarMenuItem>
         <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <SidebarMenuButton
-              size="lg"
-              className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
-            >
-              <UserAvatar
-                name={user.name}
-                avatarUrl={user.avatar_url}
-                size="sm"
-                rounded="full"
-                className="shrink-0"
-              />
-              <div className="grid flex-1 text-left text-sm leading-tight min-w-0">
-                <span className="truncate font-semibold">{user.username}</span>
-                <span className="truncate text-xs text-muted-foreground">
-                  {user.email}
-                </span>
-              </div>
-              <ChevronsUpDown className="ml-auto size-4 shrink-0 opacity-50" />
-            </SidebarMenuButton>
-          </DropdownMenuTrigger>
+          {statusTooltip ? (
+            <Tooltip>
+              <TooltipTrigger asChild>{trigger}</TooltipTrigger>
+              <TooltipContent
+                side={isMobile ? "bottom" : "right"}
+                align="center"
+                sideOffset={8}
+              >
+                {statusTooltip}
+              </TooltipContent>
+            </Tooltip>
+          ) : (
+            trigger
+          )}
 
           <DropdownMenuContent
             className="w-56 rounded-lg"
@@ -76,6 +99,11 @@ export function NavUser({ user }: { user: UserType }) {
                 <span className="text-xs truncate">
                   {user.email}
                 </span>
+                {statusTooltip && (
+                  <span className="text-xs text-muted-foreground truncate">
+                    {statusTooltip}
+                  </span>
+                )}
               </div>
             </div>
 

@@ -33,6 +33,7 @@ import {
 const uuidv4 = () => crypto.randomUUID();
 import { useDebounce } from "@/hooks/useDebounce";
 import { UserAvatar } from "@/app/components/MessageMeta";
+import { UserProfileTrigger } from "@/app/components/user-profile-dialog";
 import { usePresence } from "@/app/components/context/PresenceContext";
 import { formatRelativeTime } from "@/lib/utils";
 
@@ -65,6 +66,7 @@ interface Member {
   username: string;
   email: string;
   avatar_url?: string | null;
+  status?: string | null;
   is_online?: boolean;  // Added for presence
   last_seen?: string | null; // Added for presence
 }
@@ -351,7 +353,17 @@ function MembersPanel({
                 key={member.id}
                 className="flex items-center justify-between px-2 py-2 rounded-md hover:bg-muted/50 transition-colors group"
               >
-                <div className="flex items-center gap-2.5 min-w-0">
+                <UserProfileTrigger
+                  userId={member.id}
+                  preview={{
+                    id: member.id,
+                    name: member.name,
+                    email: member.email,
+                    avatar_url: member.avatar_url ?? null,
+                    status: member.status ?? null,
+                  }}
+                  className="flex min-w-0 items-center gap-2.5 text-left"
+                >
                   <div className="relative shrink-0">
                     <UserAvatar
                       name={member.name}
@@ -372,7 +384,7 @@ function MembersPanel({
                   </div>
                   <div className="min-w-0">
                     <div className="flex items-center gap-1.5">
-                      <span className="text-sm font-medium truncate">
+                      <span className="text-sm font-medium truncate hover:underline">
                         {member.name}
                       </span>
                       {isSelf && (
@@ -396,7 +408,7 @@ function MembersPanel({
                       )}
                     </p>
                   </div>
-                </div>
+                </UserProfileTrigger>
 
                 {isCreator && !isSelf && (
                   <button
@@ -545,13 +557,14 @@ export default function MainHeader({
 
   const handleSearchClick = () => {
     let prefill = "";
+    let scopeLabel = "";
     if (type === "channel" && channel?.name)
-      prefill = `#${channel.name} `;
+      scopeLabel = prefill = `#${channel.name} `;
     else if (type === "dm" && (localDmUser?.username || dmUser?.name))
-      prefill = `@${localDmUser?.username || dmUser?.name} `;
+      scopeLabel = prefill = `@${localDmUser?.username || dmUser?.name} `;
     window.dispatchEvent(
       new CustomEvent("focusNavSearch", {
-        detail: { prefill, channelId: id, type },
+        detail: { prefill, channelId: id, type, scopeLabel: scopeLabel.trim() },
       })
     );
   };
@@ -660,7 +673,15 @@ export default function MainHeader({
         <div>
           <div className="flex gap-2">
             {type === "dm" && localDmUser && (
-              <div className="flex items-center gap-3">
+              <UserProfileTrigger
+                userId={localDmUser.id}
+                preview={{
+                  id: localDmUser.id,
+                  name: localDmUser.name,
+                  avatar_url: localDmUser.avatar_url ?? null,
+                }}
+                className="flex items-center gap-3 text-left"
+              >
                 <div className="relative">
                   <UserAvatar
                     name={localDmUser.name}
@@ -692,7 +713,7 @@ export default function MainHeader({
                     {dmPresenceSubtitle}
                   </span>
                 </div>
-              </div>
+              </UserProfileTrigger>
             )}
             <h2 className="mb-1 text-2xl font-semibold">
               {loading

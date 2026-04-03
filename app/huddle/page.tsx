@@ -17,6 +17,7 @@ import {
 import {
   BsCameraVideoFill,
   BsCameraVideoOffFill,
+  BsChatDotsFill,
   BsChevronUp,
   BsDisplay,
   BsLink45Deg,
@@ -60,12 +61,14 @@ type HuddleChatMessage = {
   createdAt: string;
 };
 
+type HuddleSidebarView = "people" | "messages";
+
 const MainPage: React.FC = () => {
   const searchParams = useSearchParams();
   const meetingId = searchParams.get("meeting_id");
   const channelId = searchParams.get("channel_id");
 
-  const { socket: authSocket, user } = useAuth();
+  const { socket: authSocket, user, authReady, hasToken } = useAuth();
   const [guestSocket, setGuestSocket] = useState<Socket | null>(null);
   const socket = authSocket ?? guestSocket;
   const currentUserId = user?.id != null ? String(user.id) : null;
@@ -73,7 +76,7 @@ const MainPage: React.FC = () => {
   const [pendingAdmissions, setPendingAdmissions] = useState<RoomMember[]>([]);
   const [chatMessages, setChatMessages] = useState<HuddleChatMessage[]>([]);
   const [chatDraft, setChatDraft] = useState("");
-  const [sidebarTab, setSidebarTab] = useState<"people" | "chat">("people");
+  const [openSidebarView, setOpenSidebarView] = useState<HuddleSidebarView | null>(null);
   const chatScrollRef = useRef<HTMLDivElement | null>(null);
   const scrollHuddleChatToBottom = React.useCallback(
     (behavior: "auto" | "smooth" = "auto") => {
@@ -91,14 +94,15 @@ const MainPage: React.FC = () => {
   );
 
   useEffect(() => {
-    if (sidebarTab === "chat") {
+    if (openSidebarView === "messages") {
       scrollHuddleChatToBottom("auto");
     }
-  }, [chatMessages, sidebarTab, scrollHuddleChatToBottom]);
+  }, [chatMessages, openSidebarView, scrollHuddleChatToBottom]);
   const [unreadChatCount, setUnreadChatCount] = useState(0);
   const [isMeetingActive, setIsMeetingActive] = useState(false);
   const [isScreenShareActive, setIsScreenShareActive] = useState(false);
   const [huddleAdminUserId, setHuddleAdminUserId] = useState<string | null>(null);
+  const [huddleAdminUsername, setHuddleAdminUsername] = useState<string | null>(null);
   const [isChannelMember, setIsChannelMember] = useState(false);
   const [channelAccessReady, setChannelAccessReady] = useState(!channelId || !currentUserId);
   const [lobbyState, setLobbyState] = useState<LobbyState>({
@@ -118,9 +122,10 @@ const MainPage: React.FC = () => {
   const resolvedChannelNameRef = useRef<string | null>(null);
   const isDmChannelRef = useRef(false);
   const huddleAdminUserIdRef = useRef<string | null>(null);
+  const huddleAdminUsernameRef = useRef<string | null>(null);
   const canJoinWithoutAdmissionRef = useRef(false);
   const isHuddleAdminRef = useRef(false);
-  const sidebarTabRef = useRef<"people" | "chat">("people");
+  const openSidebarViewRef = useRef<HuddleSidebarView | null>(null);
   const chatDraftRef = useRef("");
   const inspectRoomRef = useRef<(() => Promise<void>) | null>(null);
   const applyUsernameAndStartRef = useRef<((name: string) => Promise<void>) | null>(null);
@@ -136,10 +141,18 @@ const MainPage: React.FC = () => {
     setLobbyState(next);
   };
 
+  const toggleSidebarView = (view: HuddleSidebarView) => {
+    setOpenSidebarView((currentView) => (currentView === view ? null : view));
+  };
+
   const isHuddleAdmin =
     currentUserId != null && huddleAdminUserId === currentUserId;
   const canJoinWithoutAdmission =
     !!channelId && !!currentUserId && isChannelMember;
+  const shouldShowAuthLoader = !authReady || hasToken;
+  const isPeopleSidebarOpen = openSidebarView === "people";
+  const isMessagesSidebarOpen = openSidebarView === "messages";
+  const unreadChatBadgeLabel = unreadChatCount > 99 ? "99+" : unreadChatCount;
 
   const updateHuddleAdminUserId = (userId: string | number | null | undefined) => {
     const normalizedUserId = userId != null ? String(userId) : null;
@@ -148,9 +161,17 @@ const MainPage: React.FC = () => {
     return normalizedUserId;
   };
 
+  const updateHuddleAdminUsername = (username: string | null | undefined) => {
+    const normalizedUsername =
+      typeof username === "string" && username.trim() ? username.trim() : null;
+    huddleAdminUsernameRef.current = normalizedUsername;
+    setHuddleAdminUsername(normalizedUsername);
+    return normalizedUsername;
+  };
+
   const resolveHuddleDisplayName = (
     fallbackTitle?: string | null,
-    startedByUserId?: string | null
+    startedByUsername?: string | null
   ) => {
     const normalizedFallback =
       typeof fallbackTitle === "string" && fallbackTitle.trim()
@@ -159,7 +180,7 @@ const MainPage: React.FC = () => {
 
     if (channelId) {
       if (isDmChannelRef.current) {
-        if (startedByUserId) return `Started by ${startedByUserId}`;
+        if (startedByUsername) return `Started by ${startedByUsername}`;
         if (normalizedFallback && normalizedFallback !== `Channel ${channelId}`) {
           return normalizedFallback;
         }
@@ -182,6 +203,10 @@ const MainPage: React.FC = () => {
   const applyResolvedHuddleSession = (payload: any) => {
     const roomId = payload?.room_id ?? payload?.session?.meeting_id ?? null;
     const adminUserId = payload?.session?.started_by ?? payload?.started_by ?? null;
+    const adminUsername =
+      payload?.session?.started_by_username ??
+      payload?.started_by_username ??
+      null;
 
     if (roomId) {
       setResolvedRoomId(roomId);
@@ -189,6 +214,7 @@ const MainPage: React.FC = () => {
     }
 
     updateHuddleAdminUserId(adminUserId);
+    updateHuddleAdminUsername(adminUsername);
   };
 
   useEffect(() => {
@@ -201,7 +227,8 @@ const MainPage: React.FC = () => {
     }
 
     if (typeof window === "undefined") return;
-    if (localStorage.getItem("access_token")) return;
+    if (!authReady) return;
+    if (hasToken) return;
     if (guestSocket) return;
 
     const serverUrl = process.env.NEXT_PUBLIC_SERVER_URL;
@@ -221,7 +248,7 @@ const MainPage: React.FC = () => {
     return () => {
       guest.disconnect();
     };
-  }, [authSocket]);
+  }, [authReady, authSocket, hasToken]);
 
   // Clock for bottom bar
   const [meetingTime, setMeetingTime] = useState("");
@@ -251,8 +278,9 @@ const MainPage: React.FC = () => {
 
   useEffect(() => {
     huddleAdminUserIdRef.current = huddleAdminUserId;
+    huddleAdminUsernameRef.current = huddleAdminUsername;
     isHuddleAdminRef.current = isHuddleAdmin;
-  }, [huddleAdminUserId, isHuddleAdmin]);
+  }, [huddleAdminUserId, huddleAdminUsername, isHuddleAdmin]);
 
   useEffect(() => {
     channelAccessReadyRef.current = channelAccessReady;
@@ -260,11 +288,11 @@ const MainPage: React.FC = () => {
   }, [isChannelMember, channelAccessReady, canJoinWithoutAdmission]);
 
   useEffect(() => {
-    sidebarTabRef.current = sidebarTab;
-    if (sidebarTab === "chat") {
+    openSidebarViewRef.current = openSidebarView;
+    if (openSidebarView === "messages") {
       setUnreadChatCount(0);
     }
-  }, [sidebarTab]);
+  }, [openSidebarView]);
 
   useEffect(() => {
     chatDraftRef.current = chatDraft;
@@ -379,32 +407,31 @@ const MainPage: React.FC = () => {
 
   // ─── FIX 5 (part A): DOM event wiring runs exactly once ──────────────────
   useEffect(() => {
-    const sidebar = document.getElementById("sidebar");
-    const openSidebar = document.getElementById("openSidebar");
-    const closeSidebar = document.getElementById("closeSidebar");
-    if (!sidebar || !openSidebar || !closeSidebar) return;
+    const handlePointerDown = (event: MouseEvent | TouchEvent) => {
+      if (!openSidebarViewRef.current) return;
 
-    const openHandler = () => sidebar.classList.add("open");
-    const closeHandler = () => sidebar.classList.remove("open");
-    const docClickHandler = (e: MouseEvent) => {
-      if (window.innerWidth < 768) {
-        if (
-          !sidebar.contains(e.target as Node) &&
-          !openSidebar.contains(e.target as Node)
-        ) {
-          sidebar.classList.remove("open");
-        }
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      if (target.closest("[data-huddle-sidebar-trigger]")) return;
+      if (target.closest("[data-huddle-sidebar-drawer]")) return;
+
+      setOpenSidebarView(null);
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setOpenSidebarView(null);
       }
     };
 
-    openSidebar.addEventListener("click", openHandler);
-    closeSidebar.addEventListener("click", closeHandler);
-    document.addEventListener("click", docClickHandler);
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("touchstart", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
 
     return () => {
-      openSidebar.removeEventListener("click", openHandler);
-      closeSidebar.removeEventListener("click", closeHandler);
-      document.removeEventListener("click", docClickHandler);
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("touchstart", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
     };
   }, []);
 
@@ -447,8 +474,8 @@ const MainPage: React.FC = () => {
     // ---------- DOM ELEMENTS ----------
     const usernameScreen = document.getElementById("usernameScreen")!;
     const mainApp = document.getElementById("mainApp")!;
-    const usernameInput = document.getElementById("usernameInput") as HTMLInputElement;
-    const continueBtn = document.getElementById("continueBtn") as HTMLButtonElement;
+    const usernameInput = document.getElementById("usernameInput") as HTMLInputElement | null;
+    const continueBtn = document.getElementById("continueBtn") as HTMLButtonElement | null;
     const userInitial = document.getElementById("userInitial")!;
     const displayUsername = document.getElementById("displayUsername")!;
     const preview = document.getElementById("preview") as HTMLVideoElement;
@@ -496,7 +523,7 @@ const MainPage: React.FC = () => {
     // ─── FIX 3: Use name/username — NOT email ────────────────────────────────
     if (user?.name || user?.username) {
       applyUsernameAndStart(user.name || user.username);
-    } else {
+    } else if (!hasToken && usernameInput && continueBtn) {
       usernameInput.addEventListener("input", () => {
         continueBtn.disabled = usernameInput.value.trim().length === 0;
       });
@@ -562,6 +589,9 @@ const MainPage: React.FC = () => {
         const pending = normalizeMembers(snapshot?.pending);
         if (snapshot?.adminUserId != null) {
           updateHuddleAdminUserId(snapshot.adminUserId);
+        }
+        if (snapshot?.adminUsername != null) {
+          updateHuddleAdminUsername(snapshot.adminUsername);
         }
         setRoomParticipants(participants);
         setPendingAdmissions(pending);
@@ -904,7 +934,7 @@ const MainPage: React.FC = () => {
         type === "error" ? "bg-red-600" :
         type === "success" ? "bg-green-600" :
         type === "warning" ? "bg-yellow-600" :
-        "bg-accent"
+        "bg-sidebar border border-white"
       }`;
       toast.textContent = message;
       toastContainer.appendChild(toast);
@@ -1129,7 +1159,7 @@ const MainPage: React.FC = () => {
         isInCall = true;
         isInCallRef.current = true;
         setIsMeetingActive(true);
-        setSidebarTab("people");
+        setOpenSidebarView(null);
         setUnreadChatCount(0);
         prejoin.classList.add("hidden");
         meeting.classList.remove("hidden");
@@ -1137,7 +1167,11 @@ const MainPage: React.FC = () => {
           response?.adminUserId != null
             ? updateHuddleAdminUserId(response.adminUserId)
             : huddleAdminUserIdRef.current;
-        const resolvedDisplayName = resolveHuddleDisplayName(displayName, adminUserId);
+        const adminUsername =
+          response?.adminUsername != null
+            ? updateHuddleAdminUsername(response.adminUsername)
+            : huddleAdminUsernameRef.current;
+        const resolvedDisplayName = resolveHuddleDisplayName(displayName, adminUsername);
 
         roomNameEls.forEach((element) => {
           element.textContent = resolvedDisplayName;
@@ -1147,6 +1181,7 @@ const MainPage: React.FC = () => {
           channelId,
           title: resolvedDisplayName,
           startedByUserId: adminUserId,
+          startedByUsername: adminUsername,
         });
         setRoomParticipants(normalizeMembers(response?.participants));
         setPendingAdmissions(normalizeMembers(response?.pending));
@@ -1201,7 +1236,7 @@ const MainPage: React.FC = () => {
       const [normalized] = normalizeChatMessages([message]);
       if (!normalized) return;
       setChatMessages((prev) => [...prev, normalized]);
-      if (normalized.socketId !== socket?.id && sidebarTabRef.current !== "chat") {
+      if (normalized.socketId !== socket?.id && openSidebarViewRef.current !== "messages") {
         setUnreadChatCount((prev) => prev + 1);
       }
     };
@@ -1746,7 +1781,7 @@ const MainPage: React.FC = () => {
       setPendingAdmissions([]);
       setChatMessages([]);
       setChatDraft("");
-      setSidebarTab("people");
+      setOpenSidebarView(null);
       setUnreadChatCount(0);
       prejoin.classList.remove("hidden");
       meeting.classList.add("hidden");
@@ -1755,6 +1790,7 @@ const MainPage: React.FC = () => {
     }
 
     function leaveMeeting() {
+      setOpenSidebarView(null);
       socket?.emit("leave-room", currentRoom);
       socket?.emit("update-call-status", false);
       resetMeetingUi("You left the call", "info");
@@ -1997,24 +2033,38 @@ const MainPage: React.FC = () => {
           </div>
 
           <div className="bg-sidebar border border-[var(--border-color)] rounded-2xl shadow-2xl p-6 sm:p-8 w-full max-w-sm">
-            <h1 className="text-xl font-semibold mb-1.5 text-center">What's your name?</h1>
-            <p className="text-muted-foreground text-sm mb-6 text-center leading-snug">You'll join the huddle right after</p>
-            <div className="space-y-3">
-              <input
-                id="usernameInput"
-                type="text"
-                placeholder="Your name"
-                className="w-full px-4 py-3 bg-transparent border border-[var(--border-color)] rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/40 text-sidebar-foreground placeholder:text-muted-foreground text-sm transition"
-                maxLength={20}
-              />
-              <button
-                id="continueBtn"
-                disabled
-                className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-3 rounded-xl transition text-sm disabled:opacity-40 disabled:cursor-not-allowed shadow-md shadow-indigo-900/30"
-              >
-                Continue
-              </button>
-            </div>
+            {shouldShowAuthLoader ? (
+              <div className="flex flex-col items-center justify-center py-6 text-center">
+                <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-full border border-indigo-500/30 bg-indigo-500/10">
+                  <span className="h-5 w-5 rounded-full border-2 border-indigo-400/30 border-t-indigo-400 animate-spin" />
+                </div>
+                <h1 className="text-xl font-semibold mb-1.5">Preparing your huddle</h1>
+                <p className="text-muted-foreground text-sm leading-snug">
+                  Checking your account and opening the lobby.
+                </p>
+              </div>
+            ) : (
+              <>
+                <h1 className="text-xl font-semibold mb-1.5 text-center">What's your name?</h1>
+                <p className="text-muted-foreground text-sm mb-6 text-center leading-snug">You'll join the huddle right after</p>
+                <div className="space-y-3">
+                  <input
+                    id="usernameInput"
+                    type="text"
+                    placeholder="Your name"
+                    className="w-full px-4 py-3 bg-transparent border border-[var(--border-color)] rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/40 text-sidebar-foreground placeholder:text-muted-foreground text-sm transition"
+                    maxLength={20}
+                  />
+                  <button
+                    id="continueBtn"
+                    disabled
+                    className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-3 rounded-xl transition text-sm disabled:opacity-40 disabled:cursor-not-allowed shadow-md shadow-indigo-900/30"
+                  >
+                    Continue
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
 
@@ -2023,14 +2073,20 @@ const MainPage: React.FC = () => {
 
           {/* ── People Sidebar (slides from RIGHT) ───────────────────────── */}
           <div
-            id="sidebar"
-            className="sidebar fixed top-0 right-0 h-full w-full max-w-[22rem] sm:max-w-none sm:w-72 bg-sidebar border-l border-[var(--border-color)] flex flex-col z-50 shadow-2xl"
+            data-huddle-sidebar-drawer="people"
+            className={`huddle-sidebar-drawer fixed top-0 right-0 h-full w-full max-w-[22rem] sm:max-w-none sm:w-72 bg-sidebar border-l border-[var(--border-color)] flex flex-col z-50 shadow-2xl ${
+              isPeopleSidebarOpen ? "open" : ""
+            }`}
           >
-            {/* Sidebar header */}
             <div className="flex items-center justify-between px-4 py-3.5 border-b border-[var(--border-color)]">
-              <h3 className="font-semibold text-sm tracking-tight">Huddle</h3>
+              <div>
+                <h3 className="font-semibold text-sm tracking-tight">People</h3>
+                <p className="text-[11px] text-muted-foreground">Who is in this huddle</p>
+              </div>
               <button
-                id="closeSidebar"
+                type="button"
+                aria-label="Close people sidebar"
+                onClick={() => setOpenSidebarView(null)}
                 className="w-7 h-7 rounded-lg hover:bg-accent text-muted-foreground hover:text-sidebar-foreground transition-colors flex items-center justify-center"
               >
                 <BsXLg className="w-4 h-4" />
@@ -2052,31 +2108,7 @@ const MainPage: React.FC = () => {
                 </div>
               </div>
             </div>
-            <div className="px-4 py-3 border-b border-[var(--border-color)] flex gap-2">
-              <button
-                className={`flex-1 rounded-lg px-3 py-2 text-xs font-medium transition ${
-                  sidebarTab === "people"
-                    ? "bg-accent text-sidebar-foreground"
-                    : "text-muted-foreground hover:bg-accent/60"
-                }`}
-                onClick={() => setSidebarTab("people")}
-              >
-                People
-              </button>
-              <button
-                className={`flex-1 rounded-lg px-3 py-2 text-xs font-medium transition ${
-                  sidebarTab === "chat"
-                    ? "bg-accent text-sidebar-foreground"
-                    : "text-muted-foreground hover:bg-accent/60"
-                }`}
-                onClick={() => setSidebarTab("chat")}
-              >
-                Chat {unreadChatCount > 0 ? `(${unreadChatCount})` : ""}
-              </button>
-            </div>
-
-            {sidebarTab === "people" ? (
-              <>
+            <>
                 <div className="px-4 py-3 border-b border-[var(--border-color)]">
                   <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-2.5">
                     Waiting to Join
@@ -2194,73 +2226,124 @@ const MainPage: React.FC = () => {
                     </div>
                   )}
                 </div>
-              </>
-            ) : (
-              <div className="flex-1 min-h-0 flex flex-col">
-                <div ref={chatScrollRef} className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
-                  {chatMessages.length > 0 ? (
-                    chatMessages.map((message) => (
-                      <div key={message.id} className="rounded-xl border border-[var(--border-color)] bg-black/10 p-3">
-                        <div className="flex items-center justify-between gap-3 mb-1">
-                          <span className="text-sm font-medium">
-                            {message.username}
-                            {message.socketId === socket?.id ? " (You)" : ""}
-                          </span>
-                          <span className="text-[11px] text-muted-foreground">
-                            {new Date(message.createdAt).toLocaleTimeString([], {
-                              hour: "2-digit",
-                              minute: "2-digit",
-                            })}
-                          </span>
-                        </div>
-                        <p className="text-sm text-sidebar-foreground whitespace-pre-wrap break-words">
-                          {message.text}
-                        </p>
-                      </div>
-                    ))
-                  ) : (
-                    <div className="text-muted-foreground text-xs text-center py-8">
-                      {isMeetingActive ? "No chat messages yet" : "Join the huddle to use in-call chat"}
-                    </div>
-                  )}
-                </div>
-                <div className="border-t border-[var(--border-color)] p-4 space-y-2">
-                  <textarea
-                    rows={3}
-                    value={chatDraft}
-                    disabled={!isMeetingActive}
-                    onChange={(event) => setChatDraft(event.target.value)}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter" && !event.shiftKey) {
-                        event.preventDefault();
-                        sendChatMessageRef.current?.();
-                      }
-                    }}
-                    placeholder={isMeetingActive ? "Send a message to everyone in this huddle" : "Join the huddle to chat"}
-                    className="w-full resize-none rounded-xl border border-[var(--border-color)] bg-transparent px-3 py-2 text-sm text-sidebar-foreground focus:outline-none focus:ring-2 focus:ring-indigo-500/30 disabled:opacity-50"
-                  />
-                  <button
-                    className="w-full rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium py-2.5 transition"
-                    disabled={!isMeetingActive || !chatDraft.trim()}
-                    onClick={() => sendChatMessageRef.current?.()}
-                  >
-                    Send
-                  </button>
-                </div>
-              </div>
-            )}
+            </>
           </div>
 
           {/* ── People Toggle (always in DOM, floats top-right) ──────────── */}
-          <button
-            id="openSidebar"
-            className="fixed top-3 right-3 sm:right-4 z-40 flex items-center justify-center gap-1.5 h-10 w-10 sm:h-9 sm:w-auto sm:px-3.5 rounded-xl bg-sidebar/95 backdrop-blur-md border border-[var(--border-color)] text-sidebar-foreground text-xs font-medium transition-all shadow-md"
-          >
-            <BsPeopleFill className="w-4 h-4" />
-            <span className="hidden sm:inline">People</span>
-          </button>
 
           {/* ── Content Area ─────────────────────────────────────────────── */}
+          <div
+            data-huddle-sidebar-drawer="messages"
+            className={`huddle-sidebar-drawer fixed top-0 right-0 h-full w-full max-w-[24rem] sm:max-w-none sm:w-80 bg-sidebar border-l border-[var(--border-color)] flex flex-col z-50 shadow-2xl ${
+              isMessagesSidebarOpen ? "open" : ""
+            }`}
+          >
+            <div className="flex items-center justify-between px-4 py-3.5 border-b border-[var(--border-color)]">
+              <div>
+                <h3 className="font-semibold text-sm tracking-tight">Huddle Messages</h3>
+                <p className="text-[11px] text-muted-foreground">Only in-call messages live here</p>
+              </div>
+              <button
+                type="button"
+                aria-label="Close message sidebar"
+                onClick={() => setOpenSidebarView(null)}
+                className="w-7 h-7 rounded-lg hover:bg-accent text-muted-foreground hover:text-sidebar-foreground transition-colors flex items-center justify-center"
+              >
+                <BsXLg className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div ref={chatScrollRef} className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
+              {chatMessages.length > 0 ? (
+                chatMessages.map((message) => (
+                  <div key={message.id} className="rounded-xl border border-[var(--border-color)] bg-black/10 p-3">
+                    <div className="flex items-center justify-between gap-3 mb-1">
+                      <span className="text-sm font-medium">
+                        {message.username}
+                        {message.socketId === socket?.id ? " (You)" : ""}
+                      </span>
+                      <span className="text-[11px] text-muted-foreground">
+                        {new Date(message.createdAt).toLocaleTimeString([], {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
+                      </span>
+                    </div>
+                    <p className="text-sm text-sidebar-foreground whitespace-pre-wrap break-words">
+                      {message.text}
+                    </p>
+                  </div>
+                ))
+              ) : (
+                <div className="text-muted-foreground text-xs text-center py-8">
+                  {isMeetingActive ? "No chat messages yet" : "Join the huddle to use in-call chat"}
+                </div>
+              )}
+            </div>
+
+            <div className="border-t border-[var(--border-color)] p-4 space-y-2">
+              <textarea
+                rows={3}
+                value={chatDraft}
+                disabled={!isMeetingActive}
+                onChange={(event) => setChatDraft(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && !event.shiftKey) {
+                    event.preventDefault();
+                    sendChatMessageRef.current?.();
+                  }
+                }}
+                placeholder={isMeetingActive ? "Send a message to everyone in this huddle" : "Join the huddle to chat"}
+                className="w-full resize-none rounded-xl border border-[var(--border-color)] bg-transparent px-3 py-2 text-sm text-sidebar-foreground focus:outline-none focus:ring-2 focus:ring-indigo-500/30 disabled:opacity-50"
+              />
+              <button
+                className="w-full rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium py-2.5 transition"
+                disabled={!isMeetingActive || !chatDraft.trim()}
+                onClick={() => sendChatMessageRef.current?.()}
+              >
+                Send
+              </button>
+            </div>
+          </div>
+
+          <div className="fixed top-3 right-3 z-40 flex items-center gap-2 sm:hidden">
+            <button
+              type="button"
+              data-huddle-sidebar-trigger="messages"
+              aria-label="Open huddle messages"
+              aria-pressed={isMessagesSidebarOpen}
+              title="Huddle messages"
+              onClick={() => toggleSidebarView("messages")}
+              className={`relative flex h-10 w-10 items-center justify-center rounded-xl border text-sidebar-foreground shadow-md transition-all ${
+                isMessagesSidebarOpen
+                  ? "bg-accent border-[var(--border-color)]"
+                  : "bg-sidebar/95 backdrop-blur-md border-[var(--border-color)]"
+              }`}
+            >
+              <BsChatDotsFill className="w-4 h-4" />
+              {unreadChatCount > 0 && (
+                <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] rounded-full bg-indigo-600 px-1 text-[10px] font-semibold text-white flex items-center justify-center">
+                  {unreadChatBadgeLabel}
+                </span>
+              )}
+            </button>
+            <button
+              type="button"
+              data-huddle-sidebar-trigger="people"
+              aria-label="Open people sidebar"
+              aria-pressed={isPeopleSidebarOpen}
+              title="People"
+              onClick={() => toggleSidebarView("people")}
+              className={`flex h-10 w-10 items-center justify-center rounded-xl border text-sidebar-foreground shadow-md transition-all ${
+                isPeopleSidebarOpen
+                  ? "bg-accent border-[var(--border-color)]"
+                  : "bg-sidebar/95 backdrop-blur-md border-[var(--border-color)]"
+              }`}
+            >
+              <BsPeopleFill className="w-4 h-4" />
+            </button>
+          </div>
+
           <div className="h-screen flex flex-col">
 
             {/* ── Pre-join Screen (Google Meet style) ──────────────────── */}
@@ -2546,12 +2629,40 @@ const MainPage: React.FC = () => {
                   </button>
                 </div>
 
-                {/* Right: People toggle shortcut */}
-                <div className="hidden sm:flex items-center justify-end min-w-[120px]">
+                {/* Right: huddle sidebars */}
+                <div className="hidden sm:flex items-center justify-end gap-2 min-w-[120px]">
                   <button
-                    onClick={() => (document.getElementById("openSidebar") as HTMLElement)?.click()}
+                    type="button"
+                    data-huddle-sidebar-trigger="messages"
+                    aria-label="Open huddle messages"
+                    aria-pressed={isMessagesSidebarOpen}
+                    onClick={() => toggleSidebarView("messages")}
+                    title="Huddle messages"
+                    className={`relative w-10 h-10 rounded-full border transition-all duration-150 flex items-center justify-center ${
+                      isMessagesSidebarOpen
+                        ? "bg-accent border-[var(--border-color)] text-sidebar-foreground"
+                        : "bg-transparent hover:bg-accent border-[var(--border-color)] text-muted-foreground hover:text-sidebar-foreground"
+                    }`}
+                  >
+                    <BsChatDotsFill className="w-4 h-4" />
+                    {unreadChatCount > 0 && (
+                      <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] rounded-full bg-indigo-600 px-1 text-[10px] font-semibold text-white flex items-center justify-center">
+                        {unreadChatBadgeLabel}
+                      </span>
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    data-huddle-sidebar-trigger="people"
+                    aria-label="Open people sidebar"
+                    aria-pressed={isPeopleSidebarOpen}
+                    onClick={() => toggleSidebarView("people")}
                     title="People"
-                    className="w-10 h-10 rounded-full bg-transparent hover:bg-accent border border-[var(--border-color)] text-muted-foreground hover:text-sidebar-foreground transition-all duration-150 flex items-center justify-center"
+                    className={`w-10 h-10 rounded-full border transition-all duration-150 flex items-center justify-center ${
+                      isPeopleSidebarOpen
+                        ? "bg-accent border-[var(--border-color)] text-sidebar-foreground"
+                        : "bg-transparent hover:bg-accent border-[var(--border-color)] text-muted-foreground hover:text-sidebar-foreground"
+                    }`}
                   >
                     <BsPeopleFill className="w-4 h-4" />
                   </button>
@@ -2597,12 +2708,12 @@ const MainPage: React.FC = () => {
         video { object-fit: contain; background: #000; }
 
         /* Sidebar slides from the RIGHT on all viewports */
-        .sidebar {
+        .huddle-sidebar-drawer {
           right: 0;
           transform: translateX(100%);
           transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
         }
-        .sidebar.open { transform: translateX(0) !important; }
+        .huddle-sidebar-drawer.open { transform: translateX(0) !important; }
 
         /* Video tiles */
         .video-container {
@@ -2744,7 +2855,7 @@ const MainPage: React.FC = () => {
         }
 
         @media (max-width: 640px) {
-          .sidebar {
+          .huddle-sidebar-drawer {
             max-width: min(22rem, 100vw);
           }
           #videos {

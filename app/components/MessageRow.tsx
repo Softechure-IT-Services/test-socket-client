@@ -8,6 +8,7 @@ import { TbPinFilled } from "react-icons/tb";
 
 import ChatHover, { type Reaction as ChatHoverReaction } from "@/app/components/chat-hover";
 import { UserAvatar, MessageTimestamp, ReplyCountPill, EditedBadge } from "@/app/components/MessageMeta";
+import { UserProfileTrigger } from "@/app/components/user-profile-dialog";
 
 import { FileAttachmentList, type AttachmentFile } from "@/app/components/FileAttachment";
 
@@ -330,11 +331,37 @@ export const MessageRow = memo(function MessageRow({
         <div className="py-1 w-full min-w-0">
           <div className="grid grid-cols-[max-content_minmax(0,1fr)] gap-x-2 min-w-0">
             {/* Avatar — spans both name row and content row */}
-            <UserAvatar name={msg.sender_name ?? ""} avatarUrl={msg.avatar_url} size="md" className="row-span-2 mt-0.5" />
+            <UserProfileTrigger
+              userId={msg.sender_id}
+              preview={{
+                id: msg.sender_id,
+                name: msg.sender_name ?? "User",
+                avatar_url: msg.avatar_url ?? null,
+              }}
+              className="row-span-2 mt-0.5 w-fit"
+              disabled={!msg.sender_id}
+            >
+              <UserAvatar name={msg.sender_name ?? ""} avatarUrl={msg.avatar_url} size="md" className="row-span-2 mt-0.5" />
+            </UserProfileTrigger>
 
             {/* Name + timestamp */}
             <div className="flex items-baseline gap-2 flex-wrap h-fit">
-              {msg.sender_name && <span className="text-sm font-bold leading-none text-gray-900 dark:text-gray-100">{msg.sender_name}</span>}
+              {msg.sender_name && (
+                <UserProfileTrigger
+                  userId={msg.sender_id}
+                  preview={{
+                    id: msg.sender_id,
+                    name: msg.sender_name,
+                    avatar_url: msg.avatar_url ?? null,
+                  }}
+                  className="w-fit text-left"
+                  disabled={!msg.sender_id}
+                >
+                  <span className="text-sm font-bold leading-none text-gray-900 hover:underline dark:text-gray-100">
+                    {msg.sender_name}
+                  </span>
+                </UserProfileTrigger>
+              )}
               <MessageTimestamp dateStr={msg.created_at} edited={isEdited} alwaysShow />
             </div>
 

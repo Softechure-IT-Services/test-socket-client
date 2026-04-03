@@ -45,6 +45,32 @@ type Thread = {
   replies: Reply[];
 };
 
+function getThreadParticipants(
+  thread: Thread,
+  currentUser: { id: string | number; name: string; avatar_url?: string | null } | null
+) {
+  const seen = new Set<string>();
+  const names: string[] = [];
+
+  const addParticipant = (id: string | number | undefined, name: string | undefined) => {
+    const trimmedName = name?.trim();
+    if (!trimmedName) return;
+
+    const key = id !== undefined ? `id:${String(id)}` : `name:${trimmedName.toLowerCase()}`;
+    if (seen.has(key)) return;
+
+    seen.add(key);
+    names.push(currentUser && id !== undefined && String(id) === String(currentUser.id) ? "You" : trimmedName);
+  };
+
+  addParticipant(thread.parent_message?.sender_id, thread.parent_message?.sender_name);
+  for (const reply of thread.replies ?? []) {
+    addParticipant(reply.sender_id, reply.sender_name);
+  }
+
+  return names;
+}
+
 // ─── ThreadCard ────────────────────────────────────────────────────────────────
 
 function ThreadCard({
@@ -60,8 +86,9 @@ function ThreadCard({
   const [expanded, setExpanded] = useState(false);
   const [replying, setReplying] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
-const [editMessageId, setEditMessageId] = useState<string | null>(null);
-const [editContent, setEditContent] = useState<string>("");
+  const [editMessageId, setEditMessageId] = useState<string | null>(null);
+  const [editContent, setEditContent] = useState<string>("");
+  const participantNames = getThreadParticipants(thread, currentUser);
   // ── Hover / lock state ──────────────────────────────────────────────────────
   const [hoveredId, setHoveredId] = useState<string | number | null>(null);
   const [lockedId, setLockedId] = useState<string | number | null>(null);
@@ -84,32 +111,35 @@ const [editContent, setEditContent] = useState<string>("");
   //   setDragging(true);
   // };
   const handleDragEnter = (e: React.DragEvent<HTMLDivElement>) => {
-  if (!isFileDrag(e)) return;
-  e.preventDefault();
-  e.stopPropagation();
-  dragCounter.current += 1;
-  setDragging(true);
-};
+    if (!isFileDrag(e)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounter.current += 1;
+    setDragging(true);
+  };
   const handleDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
     if (!isFileDrag(e)) return;
     e.preventDefault();
-      e.stopPropagation();
+    e.stopPropagation();
     dragCounter.current -= 1;
     if (dragCounter.current === 0) setDragging(false);
   };
   const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
     if (!isFileDrag(e)) return;
     e.preventDefault();
-      e.stopPropagation();
+    e.stopPropagation();
   };
   const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
     if (!isFileDrag(e)) return;
     e.preventDefault();
-      e.stopPropagation();
+    e.stopPropagation();
     dragCounter.current = 0;
     setDragging(false);
     const files = Array.from(e.dataTransfer.files);
-    if (files.length){setDroppedFiles(files); setReplying(true);}
+    if (files.length) {
+      setDroppedFiles(files);
+      setReplying(true);
+    }
   };
 
   // ── Refresh replies ─────────────────────────────────────────────────────────
@@ -308,12 +338,12 @@ const [editContent, setEditContent] = useState<string>("");
   );
 
   useEffect(() => {
-  if (replying) {
-    setTimeout(() => {
-      bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-    }, 50);
-  }
-}, [replying]);
+    if (replying) {
+      setTimeout(() => {
+        bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      }, 50);
+    }
+  }, [replying]);
 
   // ── Chat actions ────────────────────────────────────────────────────────────
   const handleChatAction = useCallback(
@@ -325,14 +355,14 @@ const [editContent, setEditContent] = useState<string>("");
 
       switch (action) {
         case "edit": {
-  const reply = replies.find((r) => String(r.id) === messageId);
-  if (!reply) return;
+          const reply = replies.find((r) => String(r.id) === messageId);
+          if (!reply) return;
 
-  setEditMessageId(String(messageId));
-  setEditContent(reply.content);
-  setReplying(true); 
-  break;
-}
+          setEditMessageId(String(messageId));
+          setEditContent(reply.content);
+          setReplying(true);
+          break;
+        }
         case "delete": {
           const confirmed = await sweetConfirm({
             title: "Delete reply",
@@ -397,40 +427,37 @@ const [editContent, setEditContent] = useState<string>("");
   );
 
   function handleCancelEdit() {
-  setEditMessageId(null);
-  setEditContent("");
-}
-
-async function handleSaveEdit(messageId: string, newContent: string) {
-  // Optimistic update locally
-  setReplies((prev) =>
-    prev.map((r) =>
-      String(r.id) === String(messageId)
-        ? { ...r, content: newContent, updated_at: new Date().toISOString() }
-        : r
-    )
-  );
-
-  if (socket) {
-    // Emit via socket so ALL users (thread panel + threads page) get the update
-    socket.emit("editMessage", {
-      messageId: Number(messageId),
-      content: newContent,
-      channel_id: Number(thread.channel_id),
-    });
-  } else {
-    try {
-      await api.put(`/messages/${messageId}`, { content: newContent });
-    } catch (err) {
-      console.error("Failed to edit reply:", err);
-      // revert on failure
-      fetchReplies();
-    }
+    setEditMessageId(null);
+    setEditContent("");
   }
 
-  setEditMessageId(null);
-  setEditContent("");
-}
+  async function handleSaveEdit(messageId: string, newContent: string) {
+    setReplies((prev) =>
+      prev.map((r) =>
+        String(r.id) === String(messageId)
+          ? { ...r, content: newContent, updated_at: new Date().toISOString() }
+          : r
+      )
+    );
+
+    if (socket) {
+      socket.emit("editMessage", {
+        messageId: Number(messageId),
+        content: newContent,
+        channel_id: Number(thread.channel_id),
+      });
+    } else {
+      try {
+        await api.put(`/messages/${messageId}`, { content: newContent });
+      } catch (err) {
+        console.error("Failed to edit reply:", err);
+        fetchReplies();
+      }
+    }
+
+    setEditMessageId(null);
+    setEditContent("");
+  }
 
   // ── Toggle reaction (pill click) ────────────────────────────────────────────
   const handleToggleReaction = useCallback(
@@ -505,6 +532,9 @@ async function handleSaveEdit(messageId: string, newContent: string) {
         <span className="ml-auto text-gray-300 dark:text-zinc-600 text-xs">
           {(replies || []).length} {(replies || []).length === 1 ? "reply" : "replies"}
         </span>
+      </div>
+      <div className="px-4 pb-2 text-xs text-gray-500 dark:text-zinc-400">
+        People in this thread: {participantNames.length > 0 ? participantNames.join(", ") : "Unknown"}
       </div>
 
       <div className="pb-3">

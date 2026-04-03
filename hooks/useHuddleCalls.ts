@@ -18,6 +18,7 @@ export type HuddleCallListItem = {
   isOngoing: boolean;
   isDm: boolean;
   startedByUserId: string | null;
+  startedByUsername: string | null;
   firstJoinedAt: string | null;
   lastJoinedAt: string | null;
   lastLeftAt: string | null;
@@ -30,8 +31,8 @@ type ChannelSummary = {
   isDm: boolean;
 };
 
-const formatDmStarterTitle = (startedByUserId: string | null) =>
-  startedByUserId ? `Started by ${startedByUserId}` : "Direct message";
+const formatDmStarterTitle = (startedByUsername: string | null) =>
+  startedByUsername ? `Started by ${startedByUsername}` : "Direct message";
 
 const isGenericStoredTitle = (title: string | null | undefined, channelId: string | null) => {
   if (!title || !title.trim()) return true;
@@ -50,13 +51,16 @@ const resolveHuddleTitle = ({
   channel,
   fallbackTitle,
   startedByUserId,
+  startedByUsername,
 }: {
   channelId: string | null;
   channel?: ChannelSummary | null;
   fallbackTitle?: string | null;
   startedByUserId?: string | null;
+  startedByUsername?: string | null;
 }) => {
   if (channel?.isDm) {
+    if (startedByUsername) return formatDmStarterTitle(startedByUsername);
     if (startedByUserId) return formatDmStarterTitle(startedByUserId);
     if (fallbackTitle && !isGenericStoredTitle(fallbackTitle, channelId)) {
       return fallbackTitle.trim();
@@ -123,6 +127,14 @@ export function useHuddleCalls() {
                 : data?.started_by != null
                 ? String(data.started_by)
                 : null;
+            const startedByUsername =
+              typeof data?.session?.started_by_username === "string" &&
+              data.session.started_by_username.trim()
+                ? data.session.started_by_username.trim()
+                : typeof data?.started_by_username === "string" &&
+                  data.started_by_username.trim()
+                ? data.started_by_username.trim()
+                : null;
 
             return {
               roomId,
@@ -131,6 +143,7 @@ export function useHuddleCalls() {
                 channelId: channel.id,
                 channel,
                 startedByUserId,
+                startedByUsername,
               }),
               href: buildHuddleJoinUrl({
                 channelId: channel.id,
@@ -140,6 +153,7 @@ export function useHuddleCalls() {
               isOngoing: true,
               isDm: channel.isDm,
               startedByUserId,
+              startedByUsername,
               firstJoinedAt: null,
               lastJoinedAt: null,
               lastLeftAt: null,
@@ -164,6 +178,7 @@ export function useHuddleCalls() {
         .map((entry) => {
           const channel = entry.channelId ? channelMap.get(entry.channelId) : null;
           const startedByUserId = entry.startedByUserId ?? null;
+          const startedByUsername = entry.startedByUsername ?? null;
 
           return {
             roomId: entry.roomId,
@@ -173,6 +188,7 @@ export function useHuddleCalls() {
               channel,
               fallbackTitle: entry.title,
               startedByUserId,
+              startedByUsername,
             }),
             href: buildHuddleJoinUrl({
               channelId: entry.channelId,
@@ -182,6 +198,7 @@ export function useHuddleCalls() {
             isOngoing: false,
             isDm: channel?.isDm ?? false,
             startedByUserId,
+            startedByUsername,
             firstJoinedAt: entry.firstJoinedAt,
             lastJoinedAt: entry.lastJoinedAt,
             lastLeftAt: entry.lastLeftAt,
@@ -207,6 +224,7 @@ export function useHuddleCalls() {
         isOngoing: false,
         isDm: false,
         startedByUserId: entry.startedByUserId ?? null,
+        startedByUsername: entry.startedByUsername ?? null,
         firstJoinedAt: entry.firstJoinedAt,
         lastJoinedAt: entry.lastJoinedAt,
         lastLeftAt: entry.lastLeftAt,

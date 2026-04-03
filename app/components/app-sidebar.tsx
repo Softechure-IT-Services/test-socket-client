@@ -284,6 +284,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
           url: `/dm/${d.id}`,
           avatar_url: d.avatar_url ?? null,
           target_user_id: d.other_user_id ?? null,
+          status: d.status ?? null,
           is_online: d.is_online ?? false,
           last_seen: d.last_seen ?? null,
         }));
@@ -350,6 +351,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
             url: `/dm/${data.channel_id}`,
             avatar_url: otherMember.avatar_url ?? null,
             target_user_id: otherMember.id ?? null,
+            status: otherMember.status ?? null,
             is_online: otherMember.is_online ?? false,
             last_seen: otherMember.last_seen ?? null,
           };
@@ -369,6 +371,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         url: `/dm/${d.id}`,
         avatar_url: d.avatar_url ?? null,
         target_user_id: d.other_user_id ?? null,
+        status: d.status ?? null,
         is_online: d.is_online ?? false,
         last_seen: d.last_seen ?? null,
       }));
@@ -402,6 +405,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
           url: `/dm/${d.id}`,
           avatar_url: d.avatar_url ?? null,
           target_user_id: d.other_user_id ?? null,
+          status: d.status ?? null,
           is_online: d.is_online ?? false,
           last_seen: d.last_seen ?? null,
         }));
@@ -582,17 +586,20 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   return (
     <Sidebar collapsible="icon" {...props}>
       <SidebarContent>
-        <NavProjects projects={projects} />
         <SidebarGroup>
           <SidebarMenu>
             <SidebarMenuItem>
-               <SidebarMenuButton onClick={handleInstantHuddle}>
+               <SidebarMenuButton
+                 onClick={handleInstantHuddle}
+                 className="cursor-pointer border border-slate-200 bg-white font-medium text-slate-900 shadow-sm dark:border-slate-200 dark:bg-white dark:text-slate-900"
+               >
                  <PhoneCall className="h-4 w-4 shrink-0" />
                  <span>Instant Huddle</span>
                </SidebarMenuButton>
             </SidebarMenuItem>
           </SidebarMenu>
         </SidebarGroup>
+        <NavProjects projects={projects} />
         <NavMain items={navMain} />
       </SidebarContent>
       <SidebarFooter>

@@ -78,7 +78,7 @@ type ChannelChatProps = {
 // ─── New message divider ───────────────────────────────────────────────────────
 function NewMessageDivider() {
   return (
-    <div className="flex items-center justify-end gap-2 px-6 py-2 select-none absolute left-0 top-0 transform -translate-y-1/2 w-full">
+    <div className="flex items-center justify-end gap-2 px-6 py-2 select-none absolute left-0 top-0 transform -translate-y-1/2 w-full z-1">
       <div className="flex-1 h-px bg-red-400/60" />
       <span className="text-[10px] font-bold tracking-widest text-red-500 uppercase px-2 py-0.5 rounded-full bg-red-50 dark:bg-red-950/30 border border-red-300 dark:border-red-700 shrink-0">
         New
@@ -1634,6 +1634,33 @@ sweetToast({
     ? `Last seen ${formatRelativeTime(dmPresenceLastSeen) ?? ""}`
     : "Last seen unknown";
 
+  const handleThreadPanelClose = useCallback(() => {
+    closingRef.current = true;
+    setThreadMessage(null);
+    setTimeout(() => {
+      closingRef.current = false;
+    }, 100);
+  }, []);
+
+  const handleThreadReplyCountChange = useCallback(
+    (msgId: string | number, count: number) => {
+      setMessages((prev) => {
+        let changed = false;
+
+        const next = prev.map((m) => {
+          if (String(m.id) !== String(msgId)) return m;
+          if ((m.thread_count ?? 0) === count) return m;
+
+          changed = true;
+          return { ...m, thread_count: count };
+        });
+
+        return changed ? next : prev;
+      });
+    },
+    []
+  );
+
   return (
     <div
       className="flex min-h-[100%] dark:bg-black relative"
@@ -1644,23 +1671,8 @@ sweetToast({
           <ThreadPanel
             parentMessage={threadMessage}
             channelId={channelId}
-            // onClose={() => setThreadMessage(null)}
-            onClose={() => {
-  console.log('[ThreadClose] Closing thread, current URL:', window.location.href, 'searchParams:', searchParams?.toString());
-  closingRef.current = true;
-  setThreadMessage(null);
-  // Reset closing flag after a short delay
-  setTimeout(() => {
-    closingRef.current = false;
-  }, 100);
-}}
-            onReplyCountChange={(msgId, count) => {
-              setMessages((prev) =>
-                prev.map((m) =>
-                  String(m.id) === String(msgId) ? { ...m, thread_count: count } : m
-                )
-              );
-            }}
+            onClose={handleThreadPanelClose}
+            onReplyCountChange={handleThreadReplyCountChange}
           />
         </div>
       )}

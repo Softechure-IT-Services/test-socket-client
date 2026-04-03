@@ -422,27 +422,35 @@ function SidebarTrigger({
   )
 }
 function SidebarRail({ className, ...props }: React.ComponentProps<"button">) {
-  const { toggleSidebar } = useSidebar()
+  const { state, toggleSidebar } = useSidebar()
 
   return (
     <button
+      type="button"
       data-sidebar="rail"
       data-slot="sidebar-rail"
       aria-label="Toggle Sidebar"
-      tabIndex={-1}
+      aria-pressed={state === "expanded"}
       onClick={toggleSidebar}
       title="Toggle Sidebar"
       className={cn(
-        "hover:after:bg-sidebar-border absolute inset-y-0 z-20 hidden w-4 -translate-x-1/2 transition-all ease-linear group-data-[side=left]:-right-4 group-data-[side=right]:left-0 after:absolute after:inset-y-0 after:left-1/2 after:w-[2px] sm:flex",
-        "in-data-[side=left]:cursor-w-resize in-data-[side=right]:cursor-e-resize",
-        "[[data-side=left][data-state=collapsed]_&]:cursor-e-resize [[data-side=right][data-state=collapsed]_&]:cursor-w-resize",
-        "hover:group-data-[collapsible=offcanvas]:bg-sidebar group-data-[collapsible=offcanvas]:translate-x-0 group-data-[collapsible=offcanvas]:after:left-full",
-        "[[data-side=left][data-collapsible=offcanvas]_&]:-right-2",
-        "[[data-side=right][data-collapsible=offcanvas]_&]:-left-2",
+        "absolute cursor-pointer top-5 z-30 hidden h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-900 shadow-md transition-all hover:bg-slate-100 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 sm:flex",
+        "group-data-[side=left]:-right-4 group-data-[side=right]:-left-4",
+        "[[data-side=left][data-collapsible=offcanvas]_&]:-right-4",
+        "[[data-side=right][data-collapsible=offcanvas]_&]:-left-4",
         className
       )}
       {...props}
-    />
+    >
+      <PanelLeftIcon
+        className={cn(
+          "h-4 w-4 transition-transform",
+          "group-data-[side=right]:rotate-180",
+          state === "collapsed" && "rotate-180 group-data-[side=right]:rotate-0"
+        )}
+      />
+      <span className="sr-only">Toggle Sidebar</span>
+    </button>
   )
 }
 

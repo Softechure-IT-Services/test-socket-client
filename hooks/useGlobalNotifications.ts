@@ -111,6 +111,9 @@ export function useGlobalNotifications({
     const handleNotification = (msg: any) => {
   const cid = String(msg.channel_id);
   const isActive = String(activeChannelId) === cid;
+  const isOwnMessage = String(msg.sender_id) === String(userId);
+
+  if (isOwnMessage) return;
 
   if (isActive) {
     clearStoredUnread(cid);
@@ -190,10 +193,19 @@ const handleReceive = (msg: any) => {
 
     socket.on("newMessageNotification", handleNotification);
     socket.on("receiveMessage", handleReceive);
-    const handleHuddleStarted = (payload: { channelId: number | string; roomId?: string }) => {
+    const handleHuddleStarted = (payload: {
+      channelId?: number | string;
+      channel_id?: number | string;
+      roomId?: string;
+      startedBy?: number | string;
+      started_by?: number | string;
+    }) => {
       // Try to auto-open the channel huddle in a new tab/window.
       // Note: some browsers may block popups not triggered by direct user interaction.
-      const cid = payload?.channelId;
+      const starterId = payload?.startedBy ?? payload?.started_by;
+      if (starterId != null && String(starterId) === String(userId)) return;
+
+      const cid = payload?.channelId ?? payload?.channel_id;
       if (cid === null || cid === undefined) return;
       const url = `/huddle?channel_id=${cid}`;
       const w = window.open(url, "_blank");

@@ -441,6 +441,7 @@ const MainPage: React.FC = () => {
 
     // ---------- STATE / REFS ----------
     const peers: Record<string, any> = {};
+    const remoteMediaStreams: Record<string, MediaStream> = {};
     let localStream: MediaStream | null = null;
     let screenStream: MediaStream | null = null;
     let isScreenSharing = false;
@@ -469,6 +470,13 @@ const MainPage: React.FC = () => {
         };
         pc.addEventListener("signalingstatechange", handler);
       });
+    }
+
+    function getRemoteMediaStream(peerId: string) {
+      if (!remoteMediaStreams[peerId]) {
+        remoteMediaStreams[peerId] = new MediaStream();
+      }
+      return remoteMediaStreams[peerId];
     }
 
     // ---------- DOM ELEMENTS ----------
@@ -1419,6 +1427,7 @@ const MainPage: React.FC = () => {
 
     const handleUserLeft = (id: string) => {
       if (peers[id]) { peers[id].pc.close(); delete peers[id]; }
+      delete remoteMediaStreams[id];
       document.getElementById(`video-${id}`)?.remove();
       document.getElementById(`video-screen-${id}`)?.remove();
       unregisterScreenShareOwner(id);
@@ -1483,15 +1492,26 @@ const MainPage: React.FC = () => {
       }
 
       pc.ontrack = (e) => {
-        const stream = e.streams[0];
-        const isScreen = e.track.label.toLowerCase().includes("screen");
-        addVideoStream(
-          isScreen ? `screen-${id}` : id,
-          stream,
-          false,
-          isScreen ? `${peerUsername} (Screen)` : peerUsername,
-          isScreen
-        );
+        const stream = getRemoteMediaStream(id);
+        stream
+          .getTracks()
+          .filter((track) => track.kind === e.track.kind && track.id !== e.track.id)
+          .forEach((track) => stream.removeTrack(track));
+
+        if (!stream.getTracks().some((track) => track.id === e.track.id)) {
+          stream.addTrack(e.track);
+        }
+
+        const handleTrackEnded = () => {
+          stream
+            .getTracks()
+            .filter((track) => track.id === e.track.id)
+            .forEach((track) => stream.removeTrack(track));
+          syncRemotePeerStream(id, peerUsername);
+        };
+
+        e.track.addEventListener("ended", handleTrackEnded, { once: true });
+        syncRemotePeerStream(id, peerUsername);
       };
 
       pc.onconnectionstatechange = () => { console.log(`Peer ${id} connection state:`, pc.connectionState); };
@@ -1578,6 +1598,24 @@ const MainPage: React.FC = () => {
         "User";
 
       updateVideoTileMode(container, ownerId, displayName, sharing);
+    }
+
+    function syncRemotePeerStream(ownerId: string, displayName: string) {
+      const stream = remoteMediaStreams[ownerId];
+      if (!stream || stream.getVideoTracks().length === 0) {
+        document.getElementById(`video-${ownerId}`)?.remove();
+        document.getElementById(`video-screen-${ownerId}`)?.remove();
+        reorganizeVideoLayout();
+        return;
+      }
+
+      addVideoStream(
+        ownerId,
+        stream,
+        false,
+        displayName,
+        activeScreenShareOwners.includes(ownerId)
+      );
     }
 
     function appendVisibleTiles(parent: HTMLElement, tiles: HTMLDivElement[], limit: number) {

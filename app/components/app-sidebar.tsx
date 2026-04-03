@@ -37,6 +37,14 @@ import {
   incrementStoredUnread,
   clearStoredUnread,
 } from "@/hooks/useLastRead";
+import {
+  DEFAULT_NOTIFICATION_PREFERENCES,
+  getUserPreferencesUpdateEventName,
+  isTargetMuted,
+  readStoredUserPreferences,
+  syncUserPreferencesFromApi,
+  type NotificationPreferences,
+} from "@/lib/user-preferences";
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
@@ -82,6 +90,9 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const { unreadCounts, seedFromStorage, incrementUnread, clearUnread } = useUnread();
   const { requestPermission, showNotification } = usePushNotifications();
   const { seedUsers } = usePresence();
+  const [notificationPreferences, setNotificationPreferences] = React.useState<NotificationPreferences>(
+    () => readStoredUserPreferences().notificationPreferences
+  );
 
   // ─── Mention counts (channelId → count) ─────────────────────────────────
   const [mentionCounts, setMentionCounts] = React.useState<Record<string, number>>({});
@@ -146,16 +157,92 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
     }
   }, [pathname]);
 
+  React.useEffect(() => {
+    setNotificationPreferences(readStoredUserPreferences().notificationPreferences);
+  }, [user?.id]);
+
+  React.useEffect(() => {
+    if (!user) return;
+
+    let cancelled = false;
+
+    api
+      .get("/users/me")
+      .then((res) => {
+        if (cancelled) return;
+        const syncedPreferences = syncUserPreferencesFromApi(res.data);
+        setNotificationPreferences(syncedPreferences.notificationPreferences);
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          console.error("Failed to load user preferences:", err);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.id]);
+
+  React.useEffect(() => {
+    const handlePreferencesUpdated = (event: Event) => {
+      const detail = (event as CustomEvent<{ notificationPreferences?: NotificationPreferences }>).detail;
+      setNotificationPreferences(
+        detail?.notificationPreferences
+          ? {
+              ...DEFAULT_NOTIFICATION_PREFERENCES,
+              ...detail.notificationPreferences,
+            }
+          : readStoredUserPreferences().notificationPreferences
+      );
+    };
+
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key && event.key !== "userPreferences") return;
+      setNotificationPreferences(readStoredUserPreferences().notificationPreferences);
+    };
+
+    window.addEventListener(getUserPreferencesUpdateEventName(), handlePreferencesUpdated as EventListener);
+    window.addEventListener("storage", handleStorage);
+
+    return () => {
+      window.removeEventListener(getUserPreferencesUpdateEventName(), handlePreferencesUpdated as EventListener);
+      window.removeEventListener("storage", handleStorage);
+    };
+  }, []);
+
+  const shouldShowNotificationForTarget = React.useCallback(
+    ({
+      channelId,
+      isDm = false,
+      type = "message",
+    }: {
+      channelId?: string | number | null;
+      isDm?: boolean;
+      type?: "message" | "mention" | "thread" | "huddle";
+    }) => {
+      if (!notificationPreferences.desktop) return false;
+      if (isTargetMuted(notificationPreferences, { channelId, isDm })) return false;
+      if (isDm && !notificationPreferences.directMessages) return false;
+      if (type === "mention" && !notificationPreferences.mentions) return false;
+      if (type === "thread" && !notificationPreferences.threadReplies) return false;
+      if (type === "huddle" && !notificationPreferences.huddles) return false;
+      return true;
+    },
+    [notificationPreferences]
+  );
+
   // ─── Request notification permission once after login ───────────────────
   React.useEffect(() => {
     if (!user) return;
+    if (!notificationPreferences.desktop) return;
     if (typeof window !== "undefined" && "Notification" in window) {
       if (Notification.permission === "default") {
         const t = setTimeout(() => requestPermission(), 3000);
         return () => clearTimeout(t);
       }
     }
-  }, [user, requestPermission]);
+  }, [user, requestPermission, notificationPreferences.desktop]);
 
   // ─── Socket: regular message + thread notifications ──────────────────────
   React.useEffect(() => {
@@ -172,6 +259,8 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       is_dm: boolean;
       created_at: string;
     }) => {
+      if (String(notification.sender_id) === String(user.id)) return;
+
       const channelId = String(notification.channel_id);
       if (currentChannelIdRef.current === channelId) return;
 
@@ -181,13 +270,22 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         ? notification.sender_name
         : `#${notification.channel_name ?? channelId}`;
 
-      showNotification({
-        title: channelLabel,
-        body: `${notification.is_dm ? "" : `${notification.sender_name}: `}${notification.preview || "New message"}`,
-        icon: notification.avatar_url,
-        channelId,
-        force: true,
-      });
+      if (
+        shouldShowNotificationForTarget({
+          channelId,
+          isDm: notification.is_dm,
+          type: "message",
+        })
+      ) {
+        showNotification({
+          title: channelLabel,
+          body: `${notification.is_dm ? "" : `${notification.sender_name}: `}${notification.preview || "New message"}`,
+          icon: notification.avatar_url,
+          channelId,
+          force: true,
+          playSound: notificationPreferences.sound,
+        });
+      }
     };
 
     const handleThreadNotification = (notification: {
@@ -201,6 +299,8 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       preview: string;
       created_at: string;
     }) => {
+      if (String(notification.sender_id) === String(user.id)) return;
+
       const channelId = String(notification.channel_id);
 
       // ── 1. Increment the channel's own unread badge (user isn't viewing it) ──
@@ -218,13 +318,22 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         ? notification.sender_name
         : `#${notification.channel_name ?? channelId}`;
 
-      showNotification({
-        title: `${notification.sender_name} replied in ${channelLabel}'s thread`,
-        body: notification.preview || "New thread reply",
-        icon: notification.avatar_url,
-        channelId,
-        force: true,
-      });
+      if (
+        shouldShowNotificationForTarget({
+          channelId,
+          isDm: notification.is_dm,
+          type: "thread",
+        })
+      ) {
+        showNotification({
+          title: `${notification.sender_name} replied in ${channelLabel}'s thread`,
+          body: notification.preview || "New thread reply",
+          icon: notification.avatar_url,
+          channelId,
+          force: true,
+          playSound: notificationPreferences.sound,
+        });
+      }
     };
 
     socket.on("newMessageNotification", handleNotification);
@@ -233,7 +342,14 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       socket.off("newMessageNotification", handleNotification);
       socket.off("newThreadNotification", handleThreadNotification);
     };
-  }, [socket, user, incrementUnread, showNotification]);
+  }, [
+    socket,
+    user,
+    incrementUnread,
+    showNotification,
+    shouldShowNotificationForTarget,
+    notificationPreferences.sound,
+  ]);
 
   // ─── Socket: @mention notifications ──────────────────────────────────────
   React.useEffect(() => {
@@ -250,18 +366,35 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         ? notification.sender_name
         : `#${notification.channel_name ?? channelId}`;
 
-      showNotification({
-        title: `${notification.sender_name} mentioned you in ${channelLabel}`,
-        body: notification.preview || "You were mentioned",
-        icon: notification.avatar_url,
-        channelId,
-        force: true,
-      });
+      if (
+        shouldShowNotificationForTarget({
+          channelId,
+          isDm: notification.is_dm,
+          type: "mention",
+        })
+      ) {
+        showNotification({
+          title: `${notification.sender_name} mentioned you in ${channelLabel}`,
+          body: notification.preview || "You were mentioned",
+          icon: notification.avatar_url,
+          channelId,
+          force: true,
+          playSound: notificationPreferences.sound,
+        });
+      }
     };
 
     socket.on("newMentionNotification", handleMention);
     return () => { socket.off("newMentionNotification", handleMention); };
-  }, [socket, user, incrementMention, incrementUnread, showNotification]);
+  }, [
+    socket,
+    user,
+    incrementMention,
+    incrementUnread,
+    showNotification,
+    shouldShowNotificationForTarget,
+    notificationPreferences.sound,
+  ]);
 
   // ─── Initial data fetch ──────────────────────────────────────────────────
   React.useEffect(() => {
@@ -287,6 +420,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
           status: d.status ?? null,
           is_online: d.is_online ?? false,
           last_seen: d.last_seen ?? null,
+          presence_hidden: d.presence_hidden ?? false,
         }));
         setUsers(userList);
         seedUsers(
@@ -295,6 +429,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
               id: d.other_user_id ?? null,
               is_online: d.is_online,
               last_seen: d.last_seen,
+              presence_hidden: d.presence_hidden ?? false,
             }))
             .filter((entry: any) => entry.id !== null)
         );
@@ -354,6 +489,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
             status: otherMember.status ?? null,
             is_online: otherMember.is_online ?? false,
             last_seen: otherMember.last_seen ?? null,
+            presence_hidden: otherMember.presence_hidden ?? false,
           };
           setUsers((prev) => {
             if (prev.some((u) => String(u.id) === String(data.channel_id))) return prev;
@@ -374,6 +510,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         status: d.status ?? null,
         is_online: d.is_online ?? false,
         last_seen: d.last_seen ?? null,
+        presence_hidden: d.presence_hidden ?? false,
       }));
       setUsers(userList);
       seedUsers(
@@ -382,6 +519,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
             id: d.other_user_id ?? null,
             is_online: d.is_online,
             last_seen: d.last_seen,
+            presence_hidden: d.presence_hidden ?? false,
           }))
           .filter((entry: any) => entry.id !== null)
       );
@@ -408,6 +546,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
           status: d.status ?? null,
           is_online: d.is_online ?? false,
           last_seen: d.last_seen ?? null,
+          presence_hidden: d.presence_hidden ?? false,
         }));
         setUsers(userList);
         seedUsers(
@@ -416,6 +555,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
               id: d.other_user_id ?? null,
               is_online: d.is_online,
               last_seen: d.last_seen,
+              presence_hidden: d.presence_hidden ?? false,
             }))
             .filter((entry: any) => entry.id !== null)
         );
@@ -489,10 +629,14 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
     if (!socket) return;
 
     const handleHuddleStarted = (data: any) => {
-      const chId = String(data.channel_id);
+      const rawChannelId = data.channel_id ?? data.channelId;
+      if (rawChannelId == null) return;
+
+      const chId = String(rawChannelId);
+      const starterId = data.started_by ?? data.startedBy ?? null;
 
       // Don't show invite to the person who started the huddle
-      if (user && String(data.started_by) === String(user.id)) return;
+      if (user && starterId != null && String(starterId) === String(user.id)) return;
 
       // Skip if this user is already on the huddle page
       if (typeof window !== "undefined" && window.location.pathname === "/huddle") return;
@@ -501,6 +645,15 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       // (the backend already emits to channel_<id> room so server-side filtering is done)
       const isDm = channels.find((ch) => String(ch.id) === chId)?.is_dm ??
         users.find((u) => String(u.id) === chId) != null;
+      if (
+        !shouldShowNotificationForTarget({
+          channelId: chId,
+          isDm: !!isDm,
+          type: "huddle",
+        })
+      ) {
+        return;
+      }
 
       setHuddleInvites((prev) => {
         // Avoid duplicate invites for same channel
@@ -511,8 +664,8 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
             id: `${chId}-${Date.now()}`,
             channel_id: Number(chId),
             channel_name: data.channel_name ?? null,
-            meeting_id: data.meeting_id,
-            started_by: data.started_by,
+            meeting_id: data.meeting_id ?? data.roomId,
+            started_by: starterId != null ? Number(starterId) : 0,
             isDm: !!isDm,
           },
         ];
@@ -531,7 +684,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       socket.off("huddleStarted", handleHuddleStarted);
       socket.off("huddleEnded", handleHuddleEnded);
     };
-  }, [socket, channels, users]);
+  }, [socket, channels, users, user, shouldShowNotificationForTarget]);
 
   const handleAddChannel = () => { setModalType("channel"); setModalOpen(true); };
   const handleAddDM = () => { setModalType("dm"); setModalOpen(true); };

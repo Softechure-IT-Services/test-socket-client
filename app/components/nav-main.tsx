@@ -36,6 +36,7 @@ type SubItem = {
   status?: string | null
   last_seen?: string | null
   is_online?: boolean
+  presence_hidden?: boolean
   unread?: number
   /** Number of times the current user was @mentioned in this channel */
   mentions?: number
@@ -54,7 +55,7 @@ type NavItem = {
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
-function DMAvatar({ sub, online }: { sub: SubItem; online: boolean }) {
+function DMAvatar({ sub, online, hidden = false }: { sub: SubItem; online: boolean; hidden?: boolean }) {
   const avatarUrl = sub.avatar_url ?? (sub as any)?.avatar ?? null
   return (
     <div className="relative">
@@ -65,12 +66,14 @@ function DMAvatar({ sub, online }: { sub: SubItem; online: boolean }) {
         rounded="full"
         className="shrink-0"
       />
-      <span
-        aria-label={online ? "Online" : "Offline"}
-        className={`absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border border-background ${
-          online ? "bg-emerald-500" : "bg-gray-500"
-        }`}
-      />
+      {!hidden && (
+        <span
+          aria-label={online ? "Online" : "Offline"}
+          className={`absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border border-background ${
+            online ? "bg-emerald-500" : "bg-gray-500"
+          }`}
+        />
+      )}
     </div>
   )
 }
@@ -247,6 +250,9 @@ export function NavMain({ items }: { items: NavItem[] }) {
                           (sub as any)?.other_user_id ??
                           (sub as any)?.user_id ??
                           null
+                        const presenceHidden = targetId
+                          ? presence.isHidden(targetId)
+                          : sub.presence_hidden ?? false
                         const online = targetId
                           ? presence.isOnline(targetId)
                           : sub.is_online ?? false
@@ -267,7 +273,9 @@ export function NavMain({ items }: { items: NavItem[] }) {
                         //   ? `Last seen ${relativeLastSeen}`
                         //   : "Offline"
 
-                          const statusLabel = online
+                          const statusLabel = presenceHidden
+                          ? "Status hidden"
+                          : online
                           ? ""
                           : relativeLastSeen
                           ? `Last seen ${relativeLastSeen}`
@@ -309,7 +317,7 @@ export function NavMain({ items }: { items: NavItem[] }) {
                                 }`}
                               >
                                 {item.type === "dm" ? (
-                                  <DMAvatar sub={sub} online={online} />
+                                  <DMAvatar sub={sub} online={online} hidden={presenceHidden} />
                                 ) : (
                                   sub.is_dm === false && <ChannelIcon sub={sub} />
                                 )}
@@ -367,6 +375,9 @@ export function NavMain({ items }: { items: NavItem[] }) {
                   (sub as any)?.other_user_id ??
                   (sub as any)?.user_id ??
                   null
+                const presenceHidden = targetId
+                  ? presence.isHidden(targetId)
+                  : sub.presence_hidden ?? false
                 const online = targetId
                   ? presence.isOnline(targetId)
                   : sub.is_online ?? false
@@ -376,7 +387,7 @@ export function NavMain({ items }: { items: NavItem[] }) {
                     <SidebarMenuButton asChild tooltip={sub.title} isActive={isActive}>
                       <Link href={sub.url} className="flex items-center justify-center">
                         {item.type === "dm" ? (
-                          <DMAvatar sub={sub} online={online} />
+                          <DMAvatar sub={sub} online={online} hidden={presenceHidden} />
                         ) : sub.is_private ? (
                           <Lock className="h-4 w-4" />
                         ) : (

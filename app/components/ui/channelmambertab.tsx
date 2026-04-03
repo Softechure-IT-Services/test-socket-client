@@ -17,6 +17,7 @@ type Member = {
   name: string;
   email: string;
   avatar_url?: string;
+  presence_hidden?: boolean | null;
 };
 type ChannelInfo = {
   id: number;
@@ -39,7 +40,7 @@ export default function Channelmambers({
   const [members, setMembers] = useState<Member[]>([]);
   const [channel_info, setChannelInfo] = useState<ChannelInfo | null>(null);
   const [loading, setLoading] = useState(true);
-  const { seedUsers, isOnline } = usePresence();
+  const { seedUsers, isOnline, isHidden } = usePresence();
 
   useEffect(() => {
     if (!isOpen || !channelId) return;
@@ -87,7 +88,8 @@ export default function Channelmambers({
           ) : (
             <ul className="space-y-2 max-h-64 overflow-y-auto">
               {members.map((member) => {
-                const memberOnline = isOnline(member.id);
+                const memberPresenceHidden = isHidden(member.id) || !!member.presence_hidden;
+                const memberOnline = memberPresenceHidden ? false : isOnline(member.id);
                 return (
                   <li
                     key={member.id}
@@ -101,18 +103,22 @@ export default function Channelmambers({
                         height={36}
                         className="rounded-full object-cover shrink-0"
                       />
-                      <span
-                        className={`absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full border-2 border-background ${
-                          memberOnline ? "bg-emerald-500" : "bg-muted-foreground/30"
-                        }`}
-                      />
+                      {!memberPresenceHidden && (
+                        <span
+                          className={`absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full border-2 border-background ${
+                            memberOnline ? "bg-emerald-500" : "bg-muted-foreground/30"
+                          }`}
+                        />
+                      )}
                     </div>
 
                     <div className="flex flex-col">
                       <span className="capitalize font-medium">
                         {member.name}
                       </span>
-                      {memberOnline && (
+                      {memberPresenceHidden ? (
+                        <span className="text-[10px] text-muted-foreground font-medium">Status hidden</span>
+                      ) : memberOnline && (
                         <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">Online</span>
                       )}
                     </div>

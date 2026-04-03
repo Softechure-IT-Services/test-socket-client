@@ -22,6 +22,7 @@ export type PushNotificationPayload = {
   icon?: string;
   channelId?: string | number;
   url?: string;
+  playSound?: boolean;
   /**
    * If true, show the notification even when the tab is visible.
    * Used by the sidebar for messages arriving in a channel the user
@@ -64,12 +65,12 @@ export function usePushNotifications() {
    * - Skips when the tab is visible UNLESS force=true (cross-channel message).
    */
   const showNotification = useCallback(
-    ({ title, body, icon, channelId, url, force = false }: PushNotificationPayload) => {
+    ({ title, body, icon, channelId, url, force = false, playSound = true }: PushNotificationPayload) => {
       if (typeof window === "undefined") return;
       if (!("Notification" in window)) return;
 
       // Always play the sound if permission is granted, even if we don't show the visual popup
-      if (Notification.permission === "granted") {
+      if (playSound && Notification.permission === "granted") {
         const audio = new Audio("/slack_notification.mp3");
         audio.play().catch(() => { /* ignore play errors (e.g. user hasn't interacted) */ });
       }

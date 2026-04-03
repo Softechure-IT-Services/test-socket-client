@@ -48,6 +48,7 @@ interface MainHeaderProps {
     avatar_url?: string;
     is_online?: boolean | null;
     last_seen?: string | null;
+    presence_hidden?: boolean | null;
   } | null;
   isPrivate?: boolean;
 }
@@ -69,6 +70,7 @@ interface Member {
   status?: string | null;
   is_online?: boolean;  // Added for presence
   last_seen?: string | null; // Added for presence
+  presence_hidden?: boolean | null;
 }
 
 interface SearchUser {
@@ -131,7 +133,7 @@ function MembersPanel({
   const [addingId, setAddingId] = useState<string | null>(null);
   const [removingId, setRemovingId] = useState<number | null>(null);
   const debouncedSearch = useDebounce(searchQuery, 300);
-  const { seedUsers, isOnline, getLastSeen } = usePresence(); // Use presence context
+  const { seedUsers, isOnline, getLastSeen, isHidden } = usePresence(); // Use presence context
 
   const fetchMembers = useCallback(async () => {
     setLoadingMembers(true);
@@ -345,8 +347,9 @@ function MembersPanel({
             const isOwner = isSelf && isCreator;
 
             // Get real-time presence data
-            const memberOnline = isOnline(member.id);
-            const memberLastSeen = getLastSeen(member.id) ?? member.last_seen;
+            const memberPresenceHidden = isHidden(member.id) || !!member.presence_hidden;
+            const memberOnline = memberPresenceHidden ? false : isOnline(member.id);
+            const memberLastSeen = memberPresenceHidden ? null : getLastSeen(member.id) ?? member.last_seen;
 
             return (
               <div
@@ -370,11 +373,13 @@ function MembersPanel({
                       avatarUrl={member.avatar_url}
                       size="md"
                     />
-                    <span
-                      className={`absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-background ${
-                        memberOnline ? "bg-emerald-500" : "bg-muted-foreground/30"
-                      }`}
-                    />
+                    {!memberPresenceHidden && (
+                      <span
+                        className={`absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-background ${
+                          memberOnline ? "bg-emerald-500" : "bg-muted-foreground/30"
+                        }`}
+                      />
+                    )}
                     {isOwner && (
                       <Crown
                         size={10}
@@ -399,7 +404,9 @@ function MembersPanel({
                       )}
                     </div>
                     <p className="text-[11px] truncate text-[var(--accent-foreground)]">
-                      {memberOnline ? (
+                      {memberPresenceHidden ? (
+                        "Online status hidden"
+                      ) : memberOnline ? (
                         <span className="text-emerald-600 dark:text-emerald-400 font-medium">Active now</span>
                       ) : memberLastSeen ? (
                         `Last seen ${formatRelativeTime(memberLastSeen)}`
@@ -450,14 +457,23 @@ export default function MainHeader({
   // null = loading (API hasn't responded yet), true/false = known
   const [isMember, setIsMember] = useState<boolean | null>(null);
   const headerRef = useRef<HTMLDivElement | null>(null);
-  const { seedUsers, isOnline: presenceIsOnline, getLastSeen } = usePresence();
+  const { seedUsers, isOnline: presenceIsOnline, getLastSeen, isHidden } = usePresence();
   const dmUserId = localDmUser?.id ?? null;
-  const dmPresenceOnline = dmUserId
+  const dmPresenceHidden = dmUserId
+    ? isHidden(dmUserId)
+    : !!localDmUser?.presence_hidden;
+  const dmPresenceOnline = dmPresenceHidden
+    ? false
+    : dmUserId
     ? presenceIsOnline(dmUserId)
     : localDmUser?.is_online ?? false;
   const dmPresenceLastSeen =
-    (dmUserId ? getLastSeen(dmUserId) : null) ?? localDmUser?.last_seen ?? null;
-  const dmPresenceSubtitle = dmPresenceOnline
+    dmPresenceHidden
+      ? null
+      : (dmUserId ? getLastSeen(dmUserId) : null) ?? localDmUser?.last_seen ?? null;
+  const dmPresenceSubtitle = dmPresenceHidden
+    ? "Online status hidden"
+    : dmPresenceOnline
     ? ""
     : dmPresenceLastSeen
     ? `Last seen ${formatRelativeTime(dmPresenceLastSeen) ?? ""}`
@@ -690,11 +706,13 @@ export default function MainHeader({
                     rounded="sm"
                     className="shrink-0"
                   />
-                  <span
-                    className={`absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border border-[var(--sidebar)] ${
-                      dmPresenceOnline ? "bg-emerald-500" : "bg-muted-foreground/50"
-                    }`}
-                  />
+                  {!dmPresenceHidden && (
+                    <span
+                      className={`absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border border-[var(--sidebar)] ${
+                        dmPresenceOnline ? "bg-emerald-500" : "bg-muted-foreground/50"
+                      }`}
+                    />
+                  )}
                 </div>
                 <div className="flex flex-col min-w-0">
                   <div className="flex items-center gap-2">
@@ -703,10 +721,14 @@ export default function MainHeader({
                     </span>
                     <span
                       className={`text-[10px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-full ${
-                        dmPresenceOnline ? "bg-emerald-100 text-emerald-700" : "bg-muted text-black"
+                        dmPresenceHidden
+                          ? "bg-muted text-muted-foreground"
+                          : dmPresenceOnline
+                          ? "bg-emerald-100 text-emerald-700"
+                          : "bg-muted text-black"
                       }`}
                     >
-                      {dmPresenceOnline ? "Online" : "Offline"}
+                      {dmPresenceHidden ? "Hidden" : dmPresenceOnline ? "Online" : "Offline"}
                     </span>
                   </div>
                   <span className="text-xs text-muted-foreground truncate">

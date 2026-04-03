@@ -6,6 +6,7 @@ import { useAuth } from "@/app/components/context/userId_and_connection/provider
 type PresenceEntry = {
   isOnline: boolean;
   lastSeen: string | null;
+  isHidden: boolean;
 };
 
 type PartialPresenceUser = {
@@ -18,11 +19,14 @@ type PartialPresenceUser = {
   status?: "online" | "offline";
   last_seen?: string | null;
   lastSeen?: string | null;
+  presence_hidden?: boolean | null;
+  presenceHidden?: boolean | null;
 };
 
 type PresenceContextValue = {
   isOnline: (id?: string | number | null) => boolean;
   getLastSeen: (id?: string | number | null) => string | null;
+  isHidden: (id?: string | number | null) => boolean;
   seedUsers: (users: PartialPresenceUser[]) => void;
 };
 
@@ -40,18 +44,35 @@ function normalizeUserId(raw: string | number | null | undefined) {
 export function PresenceProvider({ children }: { children: React.ReactNode }) {
   const { socket, user } = useAuth();
   const [presenceMap, setPresenceMap] = React.useState<Record<string, PresenceEntry>>({});
+  const currentUserId = normalizeUserId(user?.id ?? null);
 
   const applyPresenceUpdate = React.useCallback(
-    (idValue: string | number | null | undefined, isOnline?: boolean | null, lastSeen?: string | null) => {
+    (
+      idValue: string | number | null | undefined,
+      isOnline?: boolean | null,
+      lastSeen?: string | null,
+      isHidden?: boolean | null
+    ) => {
       const key = normalizeUserId(idValue);
       if (!key) return;
       setPresenceMap((prev) => {
         const prevEntry = prev[key];
+        const nextHidden = typeof isHidden === "boolean" ? isHidden : prevEntry?.isHidden ?? false;
         const nextEntry: PresenceEntry = {
-          isOnline: typeof isOnline === "boolean" ? isOnline : prevEntry?.isOnline ?? false,
-          lastSeen: lastSeen ?? prevEntry?.lastSeen ?? null,
+          isOnline: nextHidden
+            ? false
+            : typeof isOnline === "boolean"
+            ? isOnline
+            : prevEntry?.isOnline ?? false,
+          lastSeen: nextHidden ? null : lastSeen ?? prevEntry?.lastSeen ?? null,
+          isHidden: nextHidden,
         };
-        if (!prevEntry || prevEntry.isOnline !== nextEntry.isOnline || prevEntry.lastSeen !== nextEntry.lastSeen) {
+        if (
+          !prevEntry ||
+          prevEntry.isOnline !== nextEntry.isOnline ||
+          prevEntry.lastSeen !== nextEntry.lastSeen ||
+          prevEntry.isHidden !== nextEntry.isHidden
+        ) {
           return { ...prev, [key]: nextEntry };
         }
         return prev;
@@ -70,15 +91,28 @@ export function PresenceProvider({ children }: { children: React.ReactNode }) {
           const key = normalizeUserId(user.id ?? user.user_id ?? user.userId);
           if (!key) continue;
           const normalizedLastSeen = user.last_seen ?? user.lastSeen ?? null;
+          const incomingHidden = user.presence_hidden ?? user.presenceHidden ?? undefined;
           const incomingOnline =
             user.is_online ?? user.isOnline ?? (typeof user.online === "boolean" ? user.online : undefined) ??
             (user.status ? user.status === "online" : undefined);
           const prevEntry = next[key];
+          const nextHidden =
+            typeof incomingHidden === "boolean" ? incomingHidden : prevEntry?.isHidden ?? false;
           const entry: PresenceEntry = {
-            isOnline: typeof incomingOnline === "boolean" ? incomingOnline : prevEntry?.isOnline ?? false,
-            lastSeen: normalizedLastSeen ?? prevEntry?.lastSeen ?? null,
+            isOnline: nextHidden
+              ? false
+              : typeof incomingOnline === "boolean"
+              ? incomingOnline
+              : prevEntry?.isOnline ?? false,
+            lastSeen: nextHidden ? null : normalizedLastSeen ?? prevEntry?.lastSeen ?? null,
+            isHidden: nextHidden,
           };
-          if (!prevEntry || prevEntry.isOnline !== entry.isOnline || prevEntry.lastSeen !== entry.lastSeen) {
+          if (
+            !prevEntry ||
+            prevEntry.isOnline !== entry.isOnline ||
+            prevEntry.lastSeen !== entry.lastSeen ||
+            prevEntry.isHidden !== entry.isHidden
+          ) {
             next[key] = entry;
             changed = true;
           }
@@ -94,13 +128,15 @@ export function PresenceProvider({ children }: { children: React.ReactNode }) {
 
     const handlePresence = (payload: PartialPresenceUser & { userId?: string | number; is_online?: boolean; last_seen?: string }) => {
       const key = payload.userId ?? payload.user_id ?? payload.id;
+      if (currentUserId && normalizeUserId(key) === currentUserId) return;
       const isOnline =
         payload.is_online ??
         payload.isOnline ??
         (typeof payload.online === "boolean" ? payload.online : undefined) ??
         (payload.status ? payload.status === "online" : undefined);
       const lastSeen = payload.last_seen ?? payload.lastSeen ?? null;
-      applyPresenceUpdate(key, isOnline ?? null, lastSeen);
+      const isHidden = payload.presence_hidden ?? payload.presenceHidden ?? null;
+      applyPresenceUpdate(key, isOnline ?? null, lastSeen, isHidden);
     };
 
     socket.on(PRESENCE_EVENT, handlePresence);
@@ -111,11 +147,11 @@ export function PresenceProvider({ children }: { children: React.ReactNode }) {
     return () => {
       socket.off(PRESENCE_EVENT, handlePresence);
     };
-  }, [socket, applyPresenceUpdate]);
+  }, [socket, applyPresenceUpdate, currentUserId]);
 
   React.useEffect(() => {
     if (!user?.id) return;
-    applyPresenceUpdate(user.id, true, null);
+    applyPresenceUpdate(user.id, true, null, false);
   }, [user?.id, applyPresenceUpdate]);
 
   const value = React.useMemo<PresenceContextValue>(
@@ -129,6 +165,11 @@ export function PresenceProvider({ children }: { children: React.ReactNode }) {
         const key = normalizeUserId(id);
         if (!key) return null;
         return presenceMap[key]?.lastSeen ?? null;
+      },
+      isHidden: (id) => {
+        const key = normalizeUserId(id);
+        if (!key) return false;
+        return presenceMap[key]?.isHidden ?? false;
       },
       seedUsers,
     }),

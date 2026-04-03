@@ -6,6 +6,13 @@ import { useAuth } from "@/app/components/context/userId_and_connection/provider
 import api from "@/lib/axios";
 import { suggestUsernameFromName } from "@/lib/username";
 import {
+  DEFAULT_NOTIFICATION_PREFERENCES,
+  DEFAULT_PRIVACY_PREFERENCES,
+  syncUserPreferencesFromApi,
+  type NotificationPreferences,
+  type PrivacyPreferences,
+} from "@/lib/user-preferences";
+import {
   Camera,
   Check,
   CheckCircle2,
@@ -23,6 +30,13 @@ import {
 } from "lucide-react";
 
 type Section = "profile" | "notifications" | "privacy";
+
+type NotificationTarget = {
+  id: string;
+  name: string;
+  subtitle: string;
+  avatar_url?: string | null;
+};
 
 function UserAvatar({ src, name, size = 20, className = "" }: { src?: string | null; name: string; size?: number; className?: string }) {
   const initials = name?.split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase() || "??";
@@ -133,8 +147,9 @@ function SavedBadge({ show }: { show: boolean }) {
 }
 
 export default function ProfilePage() {
-  const { user, logout, updateUser } = useAuth() as any;
+  const { user, logout, updateUser, socket } = useAuth() as any;
   const router = useRouter();
+  const updateUserRef = useRef(updateUser);
 
   const [section, setSection] = useState<Section>("profile");
 
@@ -166,16 +181,28 @@ export default function ProfilePage() {
   const [pwSaved, setPwSaved] = useState(false);
   const [pwError, setPwError] = useState("");
 
-  const [notifDesktop, setNotifDesktop] = useState(true);
-  const [notifSound, setNotifSound] = useState(true);
-  const [notifMentions, setNotifMentions] = useState(true);
-  const [notifDMs, setNotifDMs] = useState(true);
-
-  const [showOnlineStatus, setShowOnlineStatus] = useState(true);
-  const [showReadReceipts, setShowReadReceipts] = useState(true);
+  const [notificationPreferences, setNotificationPreferences] = useState<NotificationPreferences>(
+    DEFAULT_NOTIFICATION_PREFERENCES
+  );
+  const [privacyPreferences, setPrivacyPreferences] = useState<PrivacyPreferences>(
+    DEFAULT_PRIVACY_PREFERENCES
+  );
+  const [notificationChannels, setNotificationChannels] = useState<NotificationTarget[]>([]);
+  const [notificationDMs, setNotificationDMs] = useState<NotificationTarget[]>([]);
+  const [notificationSaving, setNotificationSaving] = useState(false);
+  const [notificationSaved, setNotificationSaved] = useState(false);
+  const [notificationError, setNotificationError] = useState("");
+  const [privacySaving, setPrivacySaving] = useState(false);
+  const [privacySaved, setPrivacySaved] = useState(false);
+  const [privacyError, setPrivacyError] = useState("");
+  const [preferenceTargetsLoading, setPreferenceTargetsLoading] = useState(false);
 
   const [deletingAccount, setDeletingAccount] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+
+  useEffect(() => {
+    updateUserRef.current = updateUser;
+  }, [updateUser]);
 
   const fetchProfile = useCallback(async () => {
     try {
@@ -190,8 +217,11 @@ export default function ProfilePage() {
       setSavedUsername(data.username ?? "");
       setUsernameStatus("idle");
       setUsernameMessage("");
-      if (typeof updateUser === "function") {
-        updateUser({
+      const syncedPreferences = syncUserPreferencesFromApi(data);
+      setNotificationPreferences(syncedPreferences.notificationPreferences);
+      setPrivacyPreferences(syncedPreferences.privacyPreferences);
+      if (typeof updateUserRef.current === "function") {
+        updateUserRef.current({
           name: data.name,
           avatar_url: data.avatar_url,
           email: data.email,
@@ -204,9 +234,41 @@ export default function ProfilePage() {
     }
   }, []);
 
-  useEffect(() => {
-    fetchProfile();
+  const fetchNotificationTargets = useCallback(async () => {
+    setPreferenceTargetsLoading(true);
+    try {
+      const [channelResponse, dmResponse] = await Promise.all([
+        api.get("/channels?get_dms=false"),
+        api.get("/dm"),
+      ]);
+
+      setNotificationChannels(
+        (channelResponse.data ?? []).map((channel: any) => ({
+          id: String(channel.id),
+          name: channel.name || `Channel ${channel.id}`,
+          subtitle: channel.is_private ? "Private channel" : "Channel",
+        }))
+      );
+
+      setNotificationDMs(
+        (dmResponse.data ?? []).map((dm: any) => ({
+          id: String(dm.id),
+          name: dm.name || dm.username || "Direct message",
+          subtitle: dm.username ? `@${dm.username}` : "Direct message",
+          avatar_url: dm.avatar_url ?? null,
+        }))
+      );
+    } catch (err) {
+      console.error("Failed to load notification targets:", err);
+    } finally {
+      setPreferenceTargetsLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    void fetchProfile();
+    void fetchNotificationTargets();
+  }, [fetchProfile, fetchNotificationTargets]);
   
   useEffect(() => {
     if (user && !name) {
@@ -355,6 +417,7 @@ export default function ProfilePage() {
       if (typeof updateUser === "function") {
         updateUser({ name: updatedName, username: updatedUsername, status });
       }
+      socket?.emit?.("refreshUserProfile");
       setProfileSaved(true);
       setTimeout(() => setProfileSaved(false), 2500);
     } catch (err: any) {
@@ -389,6 +452,70 @@ export default function ProfilePage() {
       setPwError(err?.response?.data?.message ?? err?.response?.data?.error ?? "Failed to update password.");
     } finally {
       setPwSaving(false);
+    }
+  }
+
+  const toggleTargetNotifications = useCallback(
+    (kind: "channel" | "dm", targetId: string, enabled: boolean) => {
+      setNotificationPreferences((prev) => {
+        const key = kind === "dm" ? "mutedDmIds" : "mutedChannelIds";
+        const currentIds = prev[key];
+        const nextIds = enabled
+          ? currentIds.filter((id) => id !== targetId)
+          : Array.from(new Set([...currentIds, targetId]));
+
+        return {
+          ...prev,
+          [key]: nextIds,
+        };
+      });
+    },
+    []
+  );
+
+  async function handleSaveNotificationPreferences() {
+    setNotificationError("");
+    setNotificationSaving(true);
+
+    try {
+      const res = await api.patch("/users/me/preferences", {
+        notification_preferences: notificationPreferences,
+      });
+
+      const syncedPreferences = syncUserPreferencesFromApi(res.data);
+      setNotificationPreferences(syncedPreferences.notificationPreferences);
+      setPrivacyPreferences(syncedPreferences.privacyPreferences);
+      setNotificationSaved(true);
+      setTimeout(() => setNotificationSaved(false), 2500);
+    } catch (err: any) {
+      setNotificationError(
+        err?.response?.data?.error ?? "Failed to save notification preferences."
+      );
+    } finally {
+      setNotificationSaving(false);
+    }
+  }
+
+  async function handleSavePrivacyPreferences() {
+    setPrivacyError("");
+    setPrivacySaving(true);
+
+    try {
+      const res = await api.patch("/users/me/preferences", {
+        privacy_preferences: privacyPreferences,
+      });
+
+      const syncedPreferences = syncUserPreferencesFromApi(res.data);
+      setNotificationPreferences(syncedPreferences.notificationPreferences);
+      setPrivacyPreferences(syncedPreferences.privacyPreferences);
+      setPrivacySaved(true);
+      setTimeout(() => setPrivacySaved(false), 2500);
+    } catch (err: any) {
+      setPrivacyError(
+        err?.response?.data?.error ?? "Failed to save privacy preferences."
+      );
+    } finally {
+      setPrivacySaving(false);
     }
   }
 
@@ -690,21 +817,46 @@ export default function ProfilePage() {
                 <div className="p-6 rounded-2xl border border-border bg-card shadow-sm">
                    <div className="mb-5">
                     <h2 className="text-lg font-semibold text-foreground">Privacy Controls</h2>
-                    <p className="text-sm text-neutral-500 dark:text-neutral-400 mt-1">Manage what activities are visible to your contacts in the network.</p>
+                    <p className="text-sm text-neutral-500 dark:text-neutral-400 mt-1">Manage what activity other people can see from your account.</p>
                   </div>
                   <div className="space-y-4">
-                     {[
-                        { label: "Show Online Status", hint: "Let others see a green dot when you're active.", value: showOnlineStatus, set: setShowOnlineStatus },
-                        { label: "Share Read Receipts", hint: "Let people know when you've viewed their direct messages.", value: showReadReceipts, set: setShowReadReceipts },
-                     ].map((item) => (
-                      <div key={item.label} className="flex items-center justify-between p-4 rounded-xl border border-border bg-background transition-colors">
-                        <div>
-                          <p className="text-sm font-medium text-foreground">{item.label}</p>
-                          <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-0.5">{item.hint}</p>
-                        </div>
-                        <Toggle enabled={item.value} onChange={item.set} />
+                    <div className="flex items-center justify-between p-4 rounded-xl border border-border bg-background transition-colors">
+                      <div>
+                        <p className="text-sm font-medium text-foreground">Show Online Status</p>
+                        <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-0.5">
+                          Let other users see your live online indicator and last seen timestamp.
+                        </p>
                       </div>
-                    ))}
+                      <Toggle
+                        enabled={privacyPreferences.showOnlineStatus}
+                        onChange={(value) =>
+                          setPrivacyPreferences((prev) => ({
+                            ...prev,
+                            showOnlineStatus: value,
+                          }))
+                        }
+                      />
+                    </div>
+                  </div>
+
+                  {privacyError && (
+                    <div className="mt-4 p-3 bg-destructive/10 border border-destructive/20 rounded-lg flex items-center gap-2 text-destructive text-sm font-medium">
+                      <X className="w-4 h-4" /> {privacyError}
+                    </div>
+                  )}
+
+                  <div className="flex items-center justify-between pt-4 mt-5 border-t border-border">
+                    <div className="h-6">
+                      <SavedBadge show={privacySaved} />
+                    </div>
+                    <button
+                      onClick={handleSavePrivacyPreferences}
+                      disabled={privacySaving}
+                      className="flex items-center justify-center gap-2 h-10 px-6 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground text-sm font-medium transition-colors disabled:opacity-60"
+                    >
+                      {privacySaving ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                      Save Privacy
+                    </button>
                   </div>
                 </div>
 
@@ -740,15 +892,17 @@ export default function ProfilePage() {
                  <div className="p-6 rounded-2xl border border-border bg-card shadow-sm relative overflow-hidden">
                   <div className="mb-5 relative z-10">
                     <h2 className="text-lg font-semibold text-foreground">Alert Preferences</h2>
-                    <p className="text-sm text-neutral-500 dark:text-neutral-400 mt-1">Choose how and when you want to be notified about activity.</p>
+                    <p className="text-sm text-neutral-500 dark:text-neutral-400 mt-1">Choose which kinds of alerts can interrupt you across the app.</p>
                   </div>
                   
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 relative z-10">
                     {[
-                      { id: "desktop", label: "Desktop Notifications", hint: "Show native OS alerts", value: notifDesktop, set: setNotifDesktop, icon: "💻" },
-                      { id: "sound", label: "Play Sounds", hint: "Chime on new messages", value: notifSound, set: setNotifSound, icon: "🎵" },
-                      { id: "mentions", label: "Mentions", hint: "When somebody tags you", value: notifMentions, set: setNotifMentions, icon: "@" },
-                      { id: "dms", label: "Direct Messages", hint: "1-on-1 private messages", value: notifDMs, set: setNotifDMs, icon: "✉️" },
+                      { id: "desktop", label: "Desktop Notifications", hint: "Show native browser alerts", value: notificationPreferences.desktop, key: "desktop", icon: "💻" },
+                      { id: "sound", label: "Play Sounds", hint: "Play a sound when an alert is shown", value: notificationPreferences.sound, key: "sound", icon: "🎵" },
+                      { id: "mentions", label: "Mentions", hint: "Alert when somebody tags you", value: notificationPreferences.mentions, key: "mentions", icon: "@" },
+                      { id: "dms", label: "Direct Messages", hint: "Allow alerts from direct message conversations", value: notificationPreferences.directMessages, key: "directMessages", icon: "✉️" },
+                      { id: "threads", label: "Thread Replies", hint: "Alert when somebody replies in a thread", value: notificationPreferences.threadReplies, key: "threadReplies", icon: "🧵" },
+                      { id: "huddles", label: "Huddle Invites", hint: "Show huddle start invites and prompts", value: notificationPreferences.huddles, key: "huddles", icon: "🎧" },
                     ].map((item) => (
                       <div key={item.id} className="p-4 rounded-xl border border-border bg-background transition-colors flex items-center justify-between gap-4">
                         <div className="flex items-center gap-4">
@@ -760,10 +914,109 @@ export default function ProfilePage() {
                             <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-0.5">{item.hint}</p>
                           </div>
                         </div>
-                        <Toggle enabled={item.value} onChange={item.set} />
+                        <Toggle
+                          enabled={item.value}
+                          onChange={(value) =>
+                            setNotificationPreferences((prev) => ({
+                              ...prev,
+                              [item.key]: value,
+                            }))
+                          }
+                        />
                       </div>
                     ))}
                   </div>
+
+                  {notificationError && (
+                    <div className="mt-5 p-3 bg-destructive/10 border border-destructive/20 rounded-lg flex items-center gap-2 text-destructive text-sm font-medium">
+                      <X className="w-4 h-4" /> {notificationError}
+                    </div>
+                  )}
+
+                  <div className="flex items-center justify-between pt-4 mt-5 border-t border-border">
+                    <div className="h-6">
+                      <SavedBadge show={notificationSaved} />
+                    </div>
+                    <button
+                      onClick={handleSaveNotificationPreferences}
+                      disabled={notificationSaving}
+                      className="flex items-center justify-center gap-2 h-10 px-6 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground text-sm font-medium transition-colors disabled:opacity-60"
+                    >
+                      {notificationSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                      Save Notifications
+                    </button>
+                  </div>
+                 </div>
+
+                 <div className="p-6 rounded-2xl border border-border bg-card shadow-sm">
+                  <div className="mb-5">
+                    <h2 className="text-lg font-semibold text-foreground">Channel Overrides</h2>
+                    <p className="text-sm text-neutral-500 dark:text-neutral-400 mt-1">Turn alerts on or off for specific channels without leaving them.</p>
+                  </div>
+
+                  {preferenceTargetsLoading ? (
+                    <div className="flex items-center gap-2 text-sm text-neutral-500 dark:text-neutral-400">
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Loading channels...
+                    </div>
+                  ) : notificationChannels.length === 0 ? (
+                    <p className="text-sm text-neutral-500 dark:text-neutral-400">No channels available yet.</p>
+                  ) : (
+                    <div className="space-y-3">
+                      {notificationChannels.map((target) => {
+                        const enabled = !notificationPreferences.mutedChannelIds.includes(target.id);
+                        return (
+                          <div key={target.id} className="flex items-center justify-between p-4 rounded-xl border border-border bg-background gap-4">
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium text-foreground truncate"># {target.name}</p>
+                              <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-0.5">{target.subtitle}</p>
+                            </div>
+                            <Toggle
+                              enabled={enabled}
+                              onChange={(value) => toggleTargetNotifications("channel", target.id, value)}
+                            />
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                 </div>
+
+                 <div className="p-6 rounded-2xl border border-border bg-card shadow-sm">
+                  <div className="mb-5">
+                    <h2 className="text-lg font-semibold text-foreground">Direct Message Overrides</h2>
+                    <p className="text-sm text-neutral-500 dark:text-neutral-400 mt-1">Mute individual DM threads while keeping the conversation itself available.</p>
+                  </div>
+
+                  {preferenceTargetsLoading ? (
+                    <div className="flex items-center gap-2 text-sm text-neutral-500 dark:text-neutral-400">
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Loading direct messages...
+                    </div>
+                  ) : notificationDMs.length === 0 ? (
+                    <p className="text-sm text-neutral-500 dark:text-neutral-400">No direct messages available yet.</p>
+                  ) : (
+                    <div className="space-y-3">
+                      {notificationDMs.map((target) => {
+                        const enabled = !notificationPreferences.mutedDmIds.includes(target.id);
+                        return (
+                          <div key={target.id} className="flex items-center justify-between p-4 rounded-xl border border-border bg-background gap-4">
+                            <div className="flex items-center gap-3 min-w-0">
+                              <UserAvatar src={target.avatar_url ?? null} name={target.name} size={40} />
+                              <div className="min-w-0">
+                                <p className="text-sm font-medium text-foreground truncate">{target.name}</p>
+                                <p className="text-xs text-neutral-500 dark:text-neutral-400 mt-0.5 truncate">{target.subtitle}</p>
+                              </div>
+                            </div>
+                            <Toggle
+                              enabled={enabled}
+                              onChange={(value) => toggleTargetNotifications("dm", target.id, value)}
+                            />
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                  </div>
               </div>
             )}

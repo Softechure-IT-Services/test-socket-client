@@ -213,6 +213,7 @@ const canSendMessages = isMember;
     avatar_url?: string | null;
     created_at?: string | null;
   } | null>(null);
+  const openThreadMessageIdRef = useRef<string | null>(null);
   const [highlightedIds, setHighlightedIds] = useState<Set<string>>(
     new Set()
   );
@@ -399,6 +400,11 @@ sweetToast({
   // Effect: responds to URL changes. Always fetches the parent via API so the
   // thread opens reliably regardless of whether messages are loaded.
   const closingRef = useRef(false);
+  useEffect(() => {
+    openThreadMessageIdRef.current =
+      threadMessage?.id != null ? String(threadMessage.id) : null;
+  }, [threadMessage?.id]);
+
   useEffect(() => {
     const threadId = threadIdParam;
     console.log('[ThreadEffect] threadIdParam changed:', threadId, 'threadMessage:', threadMessage?.id, 'closing:', closingRef.current);
@@ -677,11 +683,31 @@ sweetToast({
 
     const handleThreadReply = (data: any) => {
       // Update thread_count on the parent message in the chat
+      const parentMessageId =
+        data?.parent_message_id != null ? String(data.parent_message_id) : null;
+      const isOpenThread =
+        parentMessageId != null &&
+        openThreadMessageIdRef.current === parentMessageId;
+
       setMessages((prev) =>
         prev.map((m) =>
-          String(m.id) === String(data.parent_message_id)
-            ? { ...m, thread_count: data.reply_count }
-            : m
+          String(m.id) !== parentMessageId
+            ? m
+            : (() => {
+                const nextCount =
+                  typeof data.reply_count === "number"
+                    ? data.reply_count
+                    : isOpenThread
+                    ? m.thread_count ?? 0
+                    : Math.max(1, (m.thread_count ?? 0) + 1);
+
+                if ((m.thread_count ?? 0) === nextCount) return m;
+
+                return {
+                  ...m,
+                  thread_count: nextCount,
+                };
+              })()
         )
       );
     };

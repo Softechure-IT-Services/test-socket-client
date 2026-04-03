@@ -279,10 +279,12 @@ export default function ThreadPanel({
     }
   }, [parentMessage?.id, userId]);
 
-  // Sycn reply count with parent component whenever replies change
+  // Sync reply count with the parent message badge.
+  // Use the full reply list length so optimistic temp replies update the
+  // badge immediately, including the very first reply in a thread.
   useEffect(() => {
     if (!parentMessage?.id || !onReplyCountChange) return;
-    const count = replies.filter((r) => !String(r.id).startsWith("temp-")).length;
+    const count = replies.length;
     if (lastReportedReplyCountRef.current === count) return;
     lastReportedReplyCountRef.current = count;
     onReplyCountChange(parentMessage.id, count);

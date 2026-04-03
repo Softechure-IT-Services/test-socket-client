@@ -93,6 +93,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const [notificationPreferences, setNotificationPreferences] = React.useState<NotificationPreferences>(
     () => readStoredUserPreferences().notificationPreferences
   );
+  const joinedPublicChannelIdsRef = React.useRef<Set<string>>(new Set());
 
   // ─── Mention counts (channelId → count) ─────────────────────────────────
   const [mentionCounts, setMentionCounts] = React.useState<Record<string, number>>({});
@@ -161,6 +162,36 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
     setNotificationPreferences(readStoredUserPreferences().notificationPreferences);
   }, [user?.id]);
 
+  const publicChannelIds = React.useMemo(
+    () =>
+      channels
+        .filter((channel) => !channel.is_private && !channel.is_dm)
+        .map((channel) => String(channel.id)),
+    [channels]
+  );
+
+  const publicChannelIdSet = React.useMemo(
+    () => new Set(publicChannelIds),
+    [publicChannelIds]
+  );
+
+  const publicChannelNameById = React.useMemo(
+    () =>
+      Object.fromEntries(
+        channels
+          .filter((channel) => !channel.is_private && !channel.is_dm)
+          .map((channel) => [String(channel.id), channel.title ?? `Channel ${channel.id}`])
+      ) as Record<string, string>,
+    [channels]
+  );
+
+  const markSocketEventSeen = React.useCallback((key: string) => {
+    if (typeof window === "undefined") return false;
+    if (window.sessionStorage.getItem(key)) return true;
+    window.sessionStorage.setItem(key, "1");
+    return false;
+  }, []);
+
   React.useEffect(() => {
     if (!user) return;
 
@@ -183,6 +214,33 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       cancelled = true;
     };
   }, [user?.id]);
+
+  React.useEffect(() => {
+    if (!socket) return;
+
+    const syncPublicChannelRooms = () => {
+      const nextIds = new Set(publicChannelIds);
+
+      joinedPublicChannelIdsRef.current.forEach((channelId) => {
+        if (!nextIds.has(channelId)) {
+          socket.emit("leaveChannel", { channel_id: Number(channelId) });
+        }
+      });
+
+      nextIds.forEach((channelId) => {
+        socket.emit("joinChannel", { channel_id: Number(channelId) });
+      });
+
+      joinedPublicChannelIdsRef.current = nextIds;
+    };
+
+    syncPublicChannelRooms();
+    socket.on("connect", syncPublicChannelRooms);
+
+    return () => {
+      socket.off("connect", syncPublicChannelRooms);
+    };
+  }, [socket, publicChannelIds]);
 
   React.useEffect(() => {
     const handlePreferencesUpdated = (event: Event) => {
@@ -263,6 +321,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
 
       const channelId = String(notification.channel_id);
       if (currentChannelIdRef.current === channelId) return;
+      if (markSocketEventSeen(`message-notif:${notification.message_id}`)) return;
 
       incrementUnread(channelId);
 
@@ -281,6 +340,46 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
           title: channelLabel,
           body: `${notification.is_dm ? "" : `${notification.sender_name}: `}${notification.preview || "New message"}`,
           icon: notification.avatar_url,
+          channelId,
+          force: true,
+          playSound: notificationPreferences.sound,
+        });
+      }
+    };
+
+    const handlePublicChannelReceive = (message: {
+      id: string | number;
+      channel_id: string | number;
+      sender_id: string | number;
+      sender_name?: string;
+      avatar_url?: string;
+      content?: string;
+    }) => {
+      const channelId = String(message.channel_id);
+
+      if (!publicChannelIdSet.has(channelId)) return;
+      if (String(message.sender_id) === String(user.id)) return;
+      if (currentChannelIdRef.current === channelId) return;
+      if (markSocketEventSeen(`message-notif:${message.id}`)) return;
+
+      incrementUnread(channelId);
+
+      if (
+        shouldShowNotificationForTarget({
+          channelId,
+          isDm: false,
+          type: "message",
+        })
+      ) {
+        showNotification({
+          title: `#${publicChannelNameById[channelId] ?? channelId}`,
+          body: `${message.sender_name ?? "Someone"}: ${(message.content ?? "")
+            .replace(/<[^>]+>/g, " ")
+            .replace(/&nbsp;/g, " ")
+            .replace(/\s+/g, " ")
+            .trim()
+            .slice(0, 100) || "New message"}`,
+          icon: message.avatar_url,
           channelId,
           force: true,
           playSound: notificationPreferences.sound,
@@ -337,15 +436,20 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
     };
 
     socket.on("newMessageNotification", handleNotification);
+    socket.on("receiveMessage", handlePublicChannelReceive);
     socket.on("newThreadNotification", handleThreadNotification);
     return () => {
       socket.off("newMessageNotification", handleNotification);
+      socket.off("receiveMessage", handlePublicChannelReceive);
       socket.off("newThreadNotification", handleThreadNotification);
     };
   }, [
     socket,
     user,
     incrementUnread,
+    publicChannelIdSet,
+    publicChannelNameById,
+    markSocketEventSeen,
     showNotification,
     shouldShowNotificationForTarget,
     notificationPreferences.sound,

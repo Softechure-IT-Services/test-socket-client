@@ -1618,6 +1618,37 @@ const MainPage: React.FC = () => {
       );
     }
 
+    async function refreshPeerVideoTrack(
+      track: MediaStreamTrack | null,
+      sourceStream: MediaStream | null
+    ) {
+      if (!track || !sourceStream) return;
+
+      for (const [peerId, peerData] of Object.entries(peers)) {
+        const { pc } = peerData as any;
+
+        try {
+          await waitForStableState(pc);
+
+          const videoSender = pc
+            .getSenders()
+            .find((sender: RTCRtpSender) => sender.track?.kind === "video");
+
+          if (videoSender) {
+            await videoSender.replaceTrack(track);
+          } else {
+            pc.addTrack(track, sourceStream);
+          }
+
+          const offer = await pc.createOffer();
+          await pc.setLocalDescription(offer);
+          socket?.emit("renegotiate", { to: peerId, offer });
+        } catch (err) {
+          console.log(`Error refreshing video track for peer ${peerId}:`, err);
+        }
+      }
+    }
+
     function appendVisibleTiles(parent: HTMLElement, tiles: HTMLDivElement[], limit: number) {
       const visibleTiles = tiles.slice(0, limit);
       visibleTiles.forEach((tile) => parent.appendChild(tile));
@@ -1744,10 +1775,7 @@ const MainPage: React.FC = () => {
           if (currentVideoTrack && (currentVideoTrack as any).label !== "canvas") {
             originalVideoTrack = currentVideoTrack;
           }
-          Object.values(peers).forEach(({ pc }: any) => {
-            const sender = pc.getSenders().find((s: RTCRtpSender) => s.track?.kind === "video");
-            if (sender) sender.replaceTrack(screenTrack).catch((err: any) => { console.log("Error replacing track:", err); });
-          });
+          await refreshPeerVideoTrack(screenTrack, screenStream);
           const oldLocal = document.getElementById("video-local");
           if (oldLocal) oldLocal.remove();
           addVideoStream("local", screenStream, true, username, true);
@@ -1780,10 +1808,7 @@ const MainPage: React.FC = () => {
         const dummyStream = canvas.captureStream(1);
         trackToRestore = dummyStream.getVideoTracks()[0];
       }
-      Object.values(peers).forEach(({ pc }: any) => {
-        const sender = pc.getSenders().find((s: RTCRtpSender) => s.track?.kind === "video");
-        if (sender && trackToRestore) sender.replaceTrack(trackToRestore).catch((err: any) => { console.log("Error restoring track:", err); });
-      });
+      void refreshPeerVideoTrack(trackToRestore, localStream);
       const oldLocal = document.getElementById("video-local");
       if (oldLocal) oldLocal.remove();
       unregisterScreenShareOwner("local");

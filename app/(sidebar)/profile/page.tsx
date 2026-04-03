@@ -895,12 +895,12 @@ export default function ProfilePage() {
                     <p className="text-sm text-neutral-500 dark:text-neutral-400 mt-1">Choose which kinds of alerts can interrupt you across the app.</p>
                   </div>
                   
+                    {/* { id: "mentions", label: "Mentions", hint: "Alert when somebody tags you", value: notificationPreferences.mentions, key: "mentions", icon: "@" },
+                    { id: "dms", label: "Direct Messages", hint: "Allow alerts from direct message conversations", value: notificationPreferences.directMessages, key: "directMessages", icon: "✉️" }, */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 relative z-10">
                     {[
                       { id: "desktop", label: "Desktop Notifications", hint: "Show native browser alerts", value: notificationPreferences.desktop, key: "desktop", icon: "💻" },
                       { id: "sound", label: "Play Sounds", hint: "Play a sound when an alert is shown", value: notificationPreferences.sound, key: "sound", icon: "🎵" },
-                      { id: "mentions", label: "Mentions", hint: "Alert when somebody tags you", value: notificationPreferences.mentions, key: "mentions", icon: "@" },
-                      { id: "dms", label: "Direct Messages", hint: "Allow alerts from direct message conversations", value: notificationPreferences.directMessages, key: "directMessages", icon: "✉️" },
                       { id: "threads", label: "Thread Replies", hint: "Alert when somebody replies in a thread", value: notificationPreferences.threadReplies, key: "threadReplies", icon: "🧵" },
                       { id: "huddles", label: "Huddle Invites", hint: "Show huddle start invites and prompts", value: notificationPreferences.huddles, key: "huddles", icon: "🎧" },
                     ].map((item) => (
@@ -948,7 +948,7 @@ export default function ProfilePage() {
                   </div>
                  </div>
 
-                 <div className="p-6 rounded-2xl border border-border bg-card shadow-sm">
+                 {/* <div className="p-6 rounded-2xl border border-border bg-card shadow-sm">
                   <div className="mb-5">
                     <h2 className="text-lg font-semibold text-foreground">Channel Overrides</h2>
                     <p className="text-sm text-neutral-500 dark:text-neutral-400 mt-1">Turn alerts on or off for specific channels without leaving them.</p>
@@ -1017,7 +1017,7 @@ export default function ProfilePage() {
                       })}
                     </div>
                   )}
-                 </div>
+                 </div> */}
               </div>
             )}
           </main>

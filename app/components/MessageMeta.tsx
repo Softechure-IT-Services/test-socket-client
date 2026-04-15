@@ -9,6 +9,9 @@
  *
  * Save at: @/app/components/MessageMeta.tsx
  */
+import { usePresence } from "./context/PresenceContext";
+import { FaHeadphones } from "react-icons/fa6";
+import React, { useEffect, useState } from "react";
 
 // ─── Avatar colour palette ────────────────────────────────────────────────────
 const AVATAR_COLOURS = [
@@ -47,33 +50,61 @@ export function UserAvatar({
   size = "md",
   rounded = "sm",
   className = "",
+  userId,
 }: {
   name: string;
   avatarUrl?: string | null;
   size?: AvatarSize;
   rounded?: "sm" | "full";
   className?: string;
+  userId?: string | number | null;
 }) {
+  const { isHuddling } = usePresence();
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  const showHuddle = mounted && userId ? isHuddling(userId) : false;
+
   const dim = AVATAR_DIM[size];
   const shape = rounded === "full" ? "rounded-full" : "rounded-sm";
   const initial = (name ?? "?")[0]?.toUpperCase() ?? "?";
 
-  if (avatarUrl) {
-    const src = avatarUrl.startsWith("http") ? avatarUrl : `/avatar/${avatarUrl}`;
+  // Overlay positioning based on size
+  const overlayDim = size === "xs" ? "h-2 w-2" : "h-3 w-3";
+  const overlayIconDim = size === "xs" ? "h-1.5 w-1.5" : "h-2.5 w-2.5";
+
+  const renderContent = () => {
+    if (avatarUrl) {
+      const src = avatarUrl.startsWith("http") ? avatarUrl : `/avatar/${avatarUrl}`;
+      return (
+        <img
+          src={src}
+          alt={name}
+          className={`${dim} ${shape} object-cover shrink-0 aspect-square ${className}`}
+        />
+      );
+    }
+
     return (
-      <img
-        src={src}
-        alt={name}
-        className={`${dim} ${shape} object-cover shrink-0 aspect-square ${className}`}
-      />
+      <div
+        className={`${dim} ${shape} ${avatarColour(name)} text-white flex items-center justify-center font-semibold shrink-0 select-none ${className}`}
+      >
+        {initial}
+      </div>
     );
-  }
+  };
 
   return (
-    <div
-      className={`${dim} ${shape} ${avatarColour(name)} text-white flex items-center justify-center font-semibold shrink-0 select-none ${className}`}
-    >
-      {initial}
+    <div className="relative shrink-0">
+      {renderContent()}
+      {showHuddle && (
+        <span className={`absolute -bottom-0.5 -right-0.5 ${overlayDim} flex items-center justify-center rounded-full bg-indigo-500 text-white ring-1 ring-background animate-pulse z-10 shadow-sm`}>
+          <FaHeadphones className={overlayIconDim} />
+        </span>
+      )}
     </div>
   );
 }

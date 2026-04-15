@@ -168,7 +168,7 @@ function ForwardedCard({
           </span>
           {channelLabel && (
             <span className="text-[10px] text-blue-400/80 dark:text-blue-500/80 leading-none">
-              {forwarded_from?.channel_is_dm ? "in a DM" : `in ${channelLabel}`}
+              {forwarded_from?.channel_is_dm ? `in a ${forwarded_from.channel_name}` : `in ${channelLabel}`}
             </span>
           )}
         </div>

@@ -166,7 +166,7 @@ export default function CreateModal({ open, onClose, type, forwardMessageId }: P
         const res = await api.post(`/dm/with/${selectedUsers[0].id}`);
         if (!res.data.dm_id) throw new Error("Failed to create DM");
 
-        router.push(`/channel/${res.data.dm_id}`);
+        router.push(`/dm/${res.data.dm_id}`);
         resetAndClose();
       }
     } catch (err) {
@@ -374,21 +374,37 @@ export default function CreateModal({ open, onClose, type, forwardMessageId }: P
                 if (!forwardMessageId || selectedForward.length === 0) return;
                 setForwarding(true);
                 try {
-                  await Promise.all(
+                  const results = await Promise.all(
                     selectedForward.map(async (item) => {
                       let targetId = item.id;
-                      if (item.kind === "user") {
-                        const dmRes = await api.post(`/dm/with/${item.userId}`);
+                      if (item.kind === "user" || item.kind === "dm") {
+                        const dmRes = await api.post(`/dm/with/${item.userId || item.id}`);
                         targetId = dmRes.data.dm_id;
                       }
-                      return api.post(
+                      const res = await api.post(
                         `/channels/messages/${forwardMessageId}/forward/${targetId}`
                       );
+                      return { item, targetId, res: res.data };
                     })
                   );
-                  const last = selectedForward[selectedForward.length - 1];
+
+                  const lastResult = results[results.length - 1];
+                  const { item: lastItem, targetId: lastTargetId, res: lastRes } = lastResult;
+
+                  // Use the ID from the forward API response as the final authority
+                  const finalId = lastRes?.message?.channel_id || lastTargetId;
+                  
+                  // Determine if the destination is a DM
+                  const isDm = lastRes?.message?.channel?.is_dm ?? 
+                               (lastItem.kind === "user" || lastItem.kind === "dm" || !!lastItem.is_dm);
+
+                  if (isDm) {
+                    router.push(`/dm/${finalId}`);
+                  } else {
+                    router.push(`/channel/${finalId}`);
+                  }
+                  
                   resetAndClose();
-                  if (last.kind !== "user") router.push(`/channel/${last.id}`);
                 } catch (err) {
                   console.error("Forward failed", err);
                 } finally {

@@ -1761,7 +1761,7 @@ sweetToast({
           </div>
         )}
         <div
-          className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden pt-[60px] pb-[10px] bg-[var(--chat_bg)] px-0"
+          className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden pt-[60px] pb-[10px] bg-[var(--chat_bg)] !pe-0 !pr-0"
           style={{ scrollbarGutter: "stable" }}
           onScroll={handleScroll}
           ref={containerRef}

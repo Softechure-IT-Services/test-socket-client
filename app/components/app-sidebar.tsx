@@ -28,6 +28,7 @@ import { UserType } from "@/app/components/context/userId_and_connection/provide
 import { useUnread } from "@/app/components/context/UnreadContext";
 import { usePushNotifications } from "@/hooks/usePushNotifications";
 import { usePresence } from "@/app/components/context/PresenceContext";
+import { useHuddleCalls } from "@/hooks/useHuddleCalls";
 import {
   incrementStoredMentionCount,
   clearStoredMentionCount,
@@ -89,7 +90,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
 
   const { unreadCounts, seedFromStorage, incrementUnread, clearUnread } = useUnread();
   const { requestPermission, showNotification } = usePushNotifications();
-  const { seedUsers } = usePresence();
+  const { seedUsers, seedChannelHuddles } = usePresence();
   const [notificationPreferences, setNotificationPreferences] = React.useState<NotificationPreferences>(
     () => readStoredUserPreferences().notificationPreferences
   );
@@ -97,6 +98,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
 
   // ─── Mention counts (channelId → count) ─────────────────────────────────
   const [mentionCounts, setMentionCounts] = React.useState<Record<string, number>>({});
+  const { ongoingCalls } = useHuddleCalls();
 
   const incrementMention = React.useCallback((channelId: string) => {
     const next = incrementStoredMentionCount(channelId);
@@ -513,6 +515,11 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
           is_dm: c.is_dm,
         }));
         setChannels(channelList);
+        seedChannelHuddles(
+          ch.data
+            .filter((c: any) => c.has_active_huddle)
+            .map((c: any) => c.id)
+        );
 
         const dm = await api.get(`/dm`);
         const userList = dm.data.map((d: any) => ({
@@ -523,6 +530,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
           target_user_id: d.other_user_id ?? null,
           status: d.status ?? null,
           is_online: d.is_online ?? false,
+          is_huddling: d.is_huddling ?? false,
           last_seen: d.last_seen ?? null,
           presence_hidden: d.presence_hidden ?? false,
         }));
@@ -532,6 +540,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
             .map((d: any) => ({
               id: d.other_user_id ?? null,
               is_online: d.is_online,
+              is_huddling: d.is_huddling,
               last_seen: d.last_seen,
               presence_hidden: d.presence_hidden ?? false,
             }))
@@ -771,6 +780,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
             meeting_id: data.meeting_id ?? data.roomId,
             started_by: starterId != null ? Number(starterId) : 0,
             isDm: !!isDm,
+            started_by_username: data.started_by_username ?? null,
           },
         ];
       });
@@ -805,6 +815,8 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
     }
   };
 
+  const { isHuddling } = usePresence();
+
   const navMain = [
     {
       title: "Channels",
@@ -812,12 +824,15 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       type: "channel",
       icon: HiHashtag,
       isActive: true,
-      items: channels.map((ch) => ({
-        ...ch,
-        unread: unreadCounts[String(ch.id)] ?? 0,
-        mentions: mentionCounts[String(ch.id)] ?? 0,
-        hasActiveHuddle: String(ch.id) === activeHuddleChannelId,
-      })),
+      items: channels.map((ch) => {
+        const channelHuddle = ongoingCalls.find((call) => String(call.channelId) === String(ch.id));
+        return {
+          ...ch,
+          unread: unreadCounts[String(ch.id)] ?? 0,
+          mentions: mentionCounts[String(ch.id)] ?? 0,
+          hasActiveHuddle: !!channelHuddle,
+        };
+      }),
       onAdd: handleAddChannel,
     },
     {
@@ -826,12 +841,17 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       type: "dm",
       icon: IoChatbubblesOutline,
       isActive: true,
-      items: users.map((u) => ({
-        ...u,
-        unread: unreadCounts[String(u.id)] ?? 0,
-        mentions: mentionCounts[String(u.id)] ?? 0,
-        hasActiveHuddle: String(u.id) === activeHuddleChannelId,
-      })),
+      items: users.map((u) => {
+        const otherUserId = u.target_user_id ? String(u.target_user_id) : null;
+        // Show headphone icon if the user is in ANY huddle across the workspace (via presence)
+        const userInAnyHuddle = isHuddling(otherUserId);
+        return {
+          ...u,
+          unread: unreadCounts[String(u.id)] ?? 0,
+          mentions: mentionCounts[String(u.id)] ?? 0,
+          hasActiveHuddle: userInAnyHuddle,
+        };
+      }),
       onAdd: handleAddDM,
     },
   ];

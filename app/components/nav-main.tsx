@@ -2,6 +2,7 @@
 
 import React from "react"
 import { ChevronRight, Plus, Hash, Lock, Headphones } from "lucide-react"
+import { FaHeadphones } from "react-icons/fa6"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 
@@ -42,6 +43,7 @@ type SubItem = {
   mentions?: number
   /** Whether there is an active huddle in this channel/DM */
   hasActiveHuddle?: boolean
+  id?: string | number
 }
 
 type NavItem = {
@@ -65,6 +67,7 @@ function DMAvatar({ sub, online, hidden = false }: { sub: SubItem; online: boole
         size="xs"
         rounded="full"
         className="shrink-0"
+        userId={sub.target_user_id ?? (sub as any).other_user_id}
       />
       {!hidden && (
         <span
@@ -281,6 +284,8 @@ export function NavMain({ items }: { items: NavItem[] }) {
                           ? `Last seen ${relativeLastSeen}`
                           : "Offline"
 
+                        const userIsHuddling = targetId ? presence.isHuddling(targetId) : false;
+
                         return (
                           <SidebarMenuSubItem key={sub.url} className="relative">
                             {/*
@@ -329,8 +334,8 @@ export function NavMain({ items }: { items: NavItem[] }) {
                                   >
                                     {sub.title}
                                   </span>
-                                  {sub.hasActiveHuddle && (
-                                    <Headphones className="h-3 w-3 shrink-0 text-indigo-400 animate-pulse" aria-label="Active huddle" />
+                                  {(userIsHuddling || (sub.id && presence.isChannelHuddling(sub.id))) && (
+                                    <FaHeadphones className="size-3 text-indigo-400 animate-pulse shrink-0 ml-1" />
                                   )}
                                   {item.type === "dm" && (
                                     <span className="text-[11px] ps-1 truncate">
@@ -381,13 +386,21 @@ export function NavMain({ items }: { items: NavItem[] }) {
                 const online = targetId
                   ? presence.isOnline(targetId)
                   : sub.is_online ?? false
+                const userIsHuddling = targetId ? presence.isHuddling(targetId) : false;
 
                 return (
                   <SidebarMenuItem key={sub.url} className="relative">
                     <SidebarMenuButton asChild tooltip={sub.title} isActive={isActive}>
                       <Link href={sub.url} className="flex items-center justify-center">
                         {item.type === "dm" ? (
-                          <DMAvatar sub={sub} online={online} hidden={presenceHidden} />
+                          <div className="relative">
+                            <DMAvatar sub={sub} online={online} hidden={presenceHidden} />
+                            {userIsHuddling && (
+                              <div className="absolute -top-1 -right-1 z-10 flex h-3 w-3 items-center justify-center rounded-full bg-indigo-500 text-white ring-2 ring-sidebar animate-pulse shadow-sm">
+                                <FaHeadphones className="h-2 w-2" />
+                              </div>
+                            )}
+                          </div>
                         ) : sub.is_private ? (
                           <Lock className="h-4 w-4" />
                         ) : (

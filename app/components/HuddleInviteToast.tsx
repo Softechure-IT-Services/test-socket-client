@@ -11,6 +11,7 @@ type HuddleInvite = {
   meeting_id: string;
   started_by: number;
   isDm?: boolean;
+  started_by_username?: string | null;
 };
 
 type Props = {
@@ -33,10 +34,10 @@ function HuddleToastCard({
     setTimeout(onDecline, 300);
   }, [onDecline]);
 
-  useEffect(() => {
-    const timer = setTimeout(dismiss, 30000); // auto-dismiss after 30s
-    return () => clearTimeout(timer);
-  }, [dismiss]);
+  // useEffect(() => {
+  //   const timer = setTimeout(dismiss, 30000); // auto-dismiss after 30s
+  //   return () => clearTimeout(timer);
+  // }, [dismiss]);
 
   const handleJoin = () => {
     router.push(
@@ -46,9 +47,11 @@ function HuddleToastCard({
   };
 
   const label = invite.isDm
-    ? "DM Huddle"
+    ? invite.started_by_username 
+    ? `${invite.started_by_username} started a Huddle`
+    : "a DM"
     : invite.channel_name
-    ? `#${invite.channel_name}`
+    ? `${invite.started_by_username} started a Huddle in channel ${invite.channel_name}`
     : "a channel";
 
   return (
@@ -67,7 +70,7 @@ function HuddleToastCard({
         <p className="text-sm font-semibold text-sidebar-foreground leading-tight">
           Huddle started
         </p>
-        <p className="text-xs text-muted-foreground mt-0.5 truncate">
+        <p className="text-xs text-muted-foreground mt-0.5 truncate text-wrap">
           {label}
         </p>
 

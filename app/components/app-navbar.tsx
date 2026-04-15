@@ -566,7 +566,7 @@ export default function AppNavbar() {
               {/* Menu */}
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <button className="p-2 rounded-md hover:bg-accent flex items-center gap-1">
+                  <button id="mobile-menu-btn" className="p-2 rounded-md hover:bg-accent flex items-center gap-1">
                     <FiMenu size={20} />
                   </button>
                 </DropdownMenuTrigger>

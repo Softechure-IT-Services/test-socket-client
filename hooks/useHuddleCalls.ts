@@ -23,6 +23,7 @@ export type HuddleCallListItem = {
   lastJoinedAt: string | null;
   lastLeftAt: string | null;
   startedAt: string | null;
+  participantUserIds: string[];
 };
 
 type ChannelSummary = {
@@ -136,6 +137,12 @@ export function useHuddleCalls() {
                 ? data.started_by_username.trim()
                 : null;
 
+            const participants = data?.participants ?? data?.session?.participants ?? [];
+            const participantUserIds = participants
+              .map((p: any) => p.userId ?? p.user_id ?? p.id)
+              .filter(Boolean)
+              .map(String);
+
             return {
               roomId,
               channelId: channel.id,
@@ -162,6 +169,7 @@ export function useHuddleCalls() {
                 data?.session?.created_at ??
                 data?.started_at ??
                 null,
+              participantUserIds,
             } satisfies HuddleCallListItem;
           } catch {
             return null;
@@ -203,6 +211,7 @@ export function useHuddleCalls() {
             lastJoinedAt: entry.lastJoinedAt,
             lastLeftAt: entry.lastLeftAt,
             startedAt: null,
+            participantUserIds: [],
           } satisfies HuddleCallListItem;
         })
         .filter((entry) => !activeRoomIds.has(entry.roomId));
@@ -229,6 +238,7 @@ export function useHuddleCalls() {
         lastJoinedAt: entry.lastJoinedAt,
         lastLeftAt: entry.lastLeftAt,
         startedAt: null,
+        participantUserIds: [],
       })));
     } finally {
       setLoading(false);
@@ -273,12 +283,18 @@ export function useHuddleCalls() {
       void refresh();
     };
 
+    const handleParticipantsUpdate = () => {
+      void refresh();
+    };
+
     socket.on("huddleStarted", handleLiveUpdate);
     socket.on("huddleEnded", handleLiveUpdate);
+    socket.on("room-participants-updated", handleParticipantsUpdate);
 
     return () => {
       socket.off("huddleStarted", handleLiveUpdate);
       socket.off("huddleEnded", handleLiveUpdate);
+      socket.off("room-participants-updated", handleParticipantsUpdate);
     };
   }, [socket, refresh]);
 

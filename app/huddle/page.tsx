@@ -1139,6 +1139,9 @@ const MainPage: React.FC = () => {
     socket?.on("call-rejected", handleCallRejected);
 
     function joinRoom(roomId: string, displayName = "Room") {
+      // ✅ Update DB status when joining
+      api.post("/huddle/join").catch(err => console.error("Failed to update huddle join status:", err));
+
       socket?.emit("join-room", { roomId }, (response: any) => {
         if (!response?.ok) {
           if (response?.reason === "admission-required") {
@@ -1203,6 +1206,7 @@ const MainPage: React.FC = () => {
         showToast("Joined the room. Monitoring for new devices...", "success");
       });
     }
+
     const handleRoomParticipantsUpdated = ({ roomId, participants }: any) => {
       setRoomParticipants(normalizeMembers(participants));
       if (!isInCallRef.current && roomId && resolvedRoomIdRef.current === roomId) {
@@ -1837,6 +1841,9 @@ const MainPage: React.FC = () => {
       activeRoomRef.current = null;
       isInCall = false;
       isInCallRef.current = false;
+
+      // ✅ Update DB status when leaving (reset huddle presence)
+      api.post("/huddle/leave").catch(err => console.error("Failed to update huddle leave status:", err));
       pinnedScreenShareUserId = null;
       activeScreenShareOwners = [];
       setIsMeetingActive(false);
@@ -1852,8 +1859,21 @@ const MainPage: React.FC = () => {
       void inspectResolvedRoom();
     }
 
-    function leaveMeeting() {
+    async function leaveMeeting() {
       setOpenSidebarView(null);
+
+      // If we are the last participant, end the huddle on the backend so indicators clear for everyone
+      if (roomParticipants.length <= 1 && channelId) {
+        try {
+          await api.post(`/huddle/channel/${channelId}/stop`);
+        } catch (err: any) {
+          // Ignore 404s since it means the active huddle is already ended
+          if (err?.response?.status !== 404) {
+            console.error("Failed to end huddle:", err);
+          }
+        }
+      }
+
       socket?.emit("leave-room", currentRoom);
       socket?.emit("update-call-status", false);
       resetMeetingUi("You left the call", "info");
@@ -2016,8 +2036,18 @@ const MainPage: React.FC = () => {
 
     refreshDeviceList(false);
 
+    // Modern lifecycle listener for tab closure/navigation
+    const handlePageHide = () => {
+      // Direct call to socket emit and API to be as fast as possible on exit
+      const roomId = currentRoom || activeRoomRef.current;
+      if (roomId) socket?.emit("leave-room", { roomId });
+      void api.post("/huddle/leave");
+    };
+    window.addEventListener("pagehide", handlePageHide);
+
     // ---------- CLEANUP ----------
     return () => {
+      window.removeEventListener("pagehide", handlePageHide);
       socket?.off("incoming-call", handleIncomingCall);
       socket?.off("call-accepted", handleCallAccepted);
       socket?.off("call-rejected", handleCallRejected);
@@ -2610,7 +2640,7 @@ const MainPage: React.FC = () => {
                 <div className="hidden sm:flex items-center gap-2 text-xs text-muted-foreground min-w-[120px]">
                   <span className="font-medium text-sidebar-foreground tabular-nums">{meetingTime}</span>
                   <span className="text-[var(--border-color)]">|</span>
-                  <span id="roomName" className="truncate max-w-[100px]" />
+                  <span id="roomName" className="truncate max-w-[300px]" />
                 </div>
 
                 {/* Center: control buttons */}

@@ -14,13 +14,31 @@ type Props = {
   items: ButtonItem[];
 };
 
+function getTabKey(path: string) {
+  if (path.endsWith("/files")) return "files";
+  if (path.endsWith("/pins")) return "pins";
+  return "message";
+}
+
+function normalizeConversationPath(path: string) {
+  return path
+    .replace(/\/(?:files|pins)$/, "")
+    .replace(/^\/(?:channel|dm)\//, "/conversation/");
+}
+
 export default function ButtonGroup({ items }: Props) {
   const pathname = usePathname();
+  const currentTab = getTabKey(pathname);
+  const currentConversationPath = normalizeConversationPath(pathname);
 
   return (
     <div className="inline-flex" role="group">
       {items.map((item, index) => {
-        const isActive = pathname === item.href;
+        const itemTab = getTabKey(item.href);
+        const itemConversationPath = normalizeConversationPath(item.href);
+        const isActive =
+          currentConversationPath === itemConversationPath &&
+          currentTab === itemTab;
 
         return (
           <Link key={index} href={item.href}>

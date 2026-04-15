@@ -36,6 +36,7 @@ import { UserAvatar } from "@/app/components/MessageMeta";
 import { UserProfileTrigger } from "@/app/components/user-profile-dialog";
 import { usePresence } from "@/app/components/context/PresenceContext";
 import { formatRelativeTime } from "@/lib/utils";
+import { useHuddleCalls } from "@/hooks/useHuddleCalls";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 interface MainHeaderProps {
@@ -500,49 +501,8 @@ export default function MainHeader({
     channel?.created_by != null &&
     String(channel.created_by) === String(user?.id);
 
-  const [huddleActive, setHuddleActive] = useState(false);
-
-  // Keep "huddle active" indicator in sync (API + realtime)
-  useEffect(() => {
-    if (!id || type !== "channel") {
-      setHuddleActive(false);
-      return;
-    }
-
-    let cancelled = false;
-    api
-      .get(`/huddle/channel/${id}/active`)
-      .then((res) => {
-        if (cancelled) return;
-        setHuddleActive(!!res.data?.active);
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setHuddleActive(false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [id, type]);
-
-  useEffect(() => {
-    if (!socket || !id) return;
-    const onStarted = (p: any) => {
-      if (String(p?.channel_id ?? p?.channelId) !== String(id)) return;
-      setHuddleActive(true);
-    };
-    const onEnded = (p: any) => {
-      if (String(p?.channel_id ?? p?.channelId) !== String(id)) return;
-      setHuddleActive(false);
-    };
-    socket.on("huddleStarted", onStarted);
-    socket.on("huddleEnded", onEnded);
-    return () => {
-      socket.off("huddleStarted", onStarted);
-      socket.off("huddleEnded", onEnded);
-    };
-  }, [socket, id]);
+  const { ongoingCalls } = useHuddleCalls();
+  const huddleActive = id ? ongoingCalls.some((call) => String(call.channelId) === String(id)) : false;
 
   const handleHuddleClick = async () => {
     if (!id) return;

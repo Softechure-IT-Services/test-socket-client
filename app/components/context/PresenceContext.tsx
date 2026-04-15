@@ -7,6 +7,7 @@ type PresenceEntry = {
   isOnline: boolean;
   lastSeen: string | null;
   isHidden: boolean;
+  isHuddling?: boolean;
 };
 
 type PartialPresenceUser = {
@@ -21,13 +22,18 @@ type PartialPresenceUser = {
   lastSeen?: string | null;
   presence_hidden?: boolean | null;
   presenceHidden?: boolean | null;
+  is_huddling?: boolean | null;
+  isHuddling?: boolean | null;
 };
 
 type PresenceContextValue = {
   isOnline: (id?: string | number | null) => boolean;
+  isHuddling: (id?: string | number | null) => boolean;
   getLastSeen: (id?: string | number | null) => string | null;
   isHidden: (id?: string | number | null) => boolean;
+  isChannelHuddling: (channelId?: string | number | null) => boolean;
   seedUsers: (users: PartialPresenceUser[]) => void;
+  seedChannelHuddles: (channelIds: (string | number)[]) => void;
 };
 
 const PresenceContext = React.createContext<PresenceContextValue | null>(null);
@@ -44,6 +50,7 @@ function normalizeUserId(raw: string | number | null | undefined) {
 export function PresenceProvider({ children }: { children: React.ReactNode }) {
   const { socket, user } = useAuth();
   const [presenceMap, setPresenceMap] = React.useState<Record<string, PresenceEntry>>({});
+  const [activeHuddleChannels, setActiveHuddleChannels] = React.useState<Record<string, boolean>>({});
   const currentUserId = normalizeUserId(user?.id ?? null);
 
   const applyPresenceUpdate = React.useCallback(
@@ -51,7 +58,8 @@ export function PresenceProvider({ children }: { children: React.ReactNode }) {
       idValue: string | number | null | undefined,
       isOnline?: boolean | null,
       lastSeen?: string | null,
-      isHidden?: boolean | null
+      isHidden?: boolean | null,
+      isHuddling?: boolean | null
     ) => {
       const key = normalizeUserId(idValue);
       if (!key) return;
@@ -66,12 +74,14 @@ export function PresenceProvider({ children }: { children: React.ReactNode }) {
             : prevEntry?.isOnline ?? false,
           lastSeen: nextHidden ? null : lastSeen ?? prevEntry?.lastSeen ?? null,
           isHidden: nextHidden,
+          isHuddling: typeof isHuddling === "boolean" ? isHuddling : prevEntry?.isHuddling ?? false,
         };
         if (
           !prevEntry ||
           prevEntry.isOnline !== nextEntry.isOnline ||
           prevEntry.lastSeen !== nextEntry.lastSeen ||
-          prevEntry.isHidden !== nextEntry.isHidden
+          prevEntry.isHidden !== nextEntry.isHidden ||
+          prevEntry.isHuddling !== nextEntry.isHuddling
         ) {
           return { ...prev, [key]: nextEntry };
         }
@@ -92,6 +102,7 @@ export function PresenceProvider({ children }: { children: React.ReactNode }) {
           if (!key) continue;
           const normalizedLastSeen = user.last_seen ?? user.lastSeen ?? null;
           const incomingHidden = user.presence_hidden ?? user.presenceHidden ?? undefined;
+          const incomingIsHuddling = user.is_huddling ?? user.isHuddling ?? undefined;
           const incomingOnline =
             user.is_online ?? user.isOnline ?? (typeof user.online === "boolean" ? user.online : undefined) ??
             (user.status ? user.status === "online" : undefined);
@@ -106,12 +117,14 @@ export function PresenceProvider({ children }: { children: React.ReactNode }) {
               : prevEntry?.isOnline ?? false,
             lastSeen: nextHidden ? null : normalizedLastSeen ?? prevEntry?.lastSeen ?? null,
             isHidden: nextHidden,
+            isHuddling: typeof incomingIsHuddling === "boolean" ? incomingIsHuddling : prevEntry?.isHuddling ?? false,
           };
           if (
             !prevEntry ||
             prevEntry.isOnline !== entry.isOnline ||
             prevEntry.lastSeen !== entry.lastSeen ||
-            prevEntry.isHidden !== entry.isHidden
+            prevEntry.isHidden !== entry.isHidden ||
+            prevEntry.isHuddling !== entry.isHuddling
           ) {
             next[key] = entry;
             changed = true;
@@ -119,6 +132,19 @@ export function PresenceProvider({ children }: { children: React.ReactNode }) {
         }
         return changed ? next : prev;
       });
+    },
+    []
+  );
+  
+  const seedChannelHuddles = React.useCallback(
+    (channelIds: (string | number)[]) => {
+      if (!Array.isArray(channelIds)) return;
+      const next: Record<string, boolean> = {};
+      for (const id of channelIds) {
+        const key = normalizeUserId(id);
+        if (key) next[key] = true;
+      }
+      setActiveHuddleChannels((prev) => ({ ...prev, ...next }));
     },
     []
   );
@@ -136,16 +162,34 @@ export function PresenceProvider({ children }: { children: React.ReactNode }) {
         (payload.status ? payload.status === "online" : undefined);
       const lastSeen = payload.last_seen ?? payload.lastSeen ?? null;
       const isHidden = payload.presence_hidden ?? payload.presenceHidden ?? null;
-      applyPresenceUpdate(key, isOnline ?? null, lastSeen, isHidden);
+      const isHuddling = payload.is_huddling ?? payload.isHuddling ?? null;
+      applyPresenceUpdate(key, isOnline ?? null, lastSeen, isHidden, isHuddling);
+    };
+
+    const handleHuddleStarted = (payload: { channel_id: string | number }) => {
+      const channelId = normalizeUserId(payload.channel_id);
+      if (!channelId) return;
+      setActiveHuddleChannels((prev) => ({ ...prev, [channelId]: true }));
+    };
+
+    const handleHuddleEnded = (payload: { channel_id: string | number }) => {
+      const channelId = normalizeUserId(payload.channel_id);
+      if (!channelId) return;
+      setActiveHuddleChannels((prev) => ({ ...prev, [channelId]: false }));
     };
 
     socket.on(PRESENCE_EVENT, handlePresence);
+    socket.on("huddleStarted", handleHuddleStarted);
+    socket.on("huddleEnded", handleHuddleEnded);
+
     if (typeof socket.emit === "function") {
       socket.emit("presence:subscribe");
     }
 
     return () => {
       socket.off(PRESENCE_EVENT, handlePresence);
+      socket.off("huddleStarted", handleHuddleStarted);
+      socket.off("huddleEnded", handleHuddleEnded);
     };
   }, [socket, applyPresenceUpdate, currentUserId]);
 
@@ -161,6 +205,11 @@ export function PresenceProvider({ children }: { children: React.ReactNode }) {
         if (!key) return false;
         return presenceMap[key]?.isOnline ?? false;
       },
+      isHuddling: (id) => {
+        const key = normalizeUserId(id);
+        if (!key) return false;
+        return presenceMap[key]?.isHuddling ?? false;
+      },
       getLastSeen: (id) => {
         const key = normalizeUserId(id);
         if (!key) return null;
@@ -171,9 +220,15 @@ export function PresenceProvider({ children }: { children: React.ReactNode }) {
         if (!key) return false;
         return presenceMap[key]?.isHidden ?? false;
       },
+      isChannelHuddling: (id) => {
+        const key = normalizeUserId(id);
+        if (!key) return false;
+        return activeHuddleChannels[key] ?? false;
+      },
       seedUsers,
+      seedChannelHuddles,
     }),
-    [presenceMap, seedUsers]
+    [presenceMap, activeHuddleChannels, seedUsers, seedChannelHuddles]
   );
 
   return <PresenceContext.Provider value={value}>{children}</PresenceContext.Provider>;

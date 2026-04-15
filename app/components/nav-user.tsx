@@ -1,9 +1,12 @@
 "use client";
 
+import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { LogOut, Settings, ChevronsUpDown } from "lucide-react";
 import { useAuth } from "@/app/components/context/userId_and_connection/provider";
+import { usePresence } from "@/app/components/context/PresenceContext";
+import { FaHeadphones } from "react-icons/fa6";
 import { UserType } from "@/app/components/context/userId_and_connection/provider";
 import { UserAvatar } from "@/app/components/MessageMeta";
 import {
@@ -26,9 +29,17 @@ import {
 } from "@/app/components/ui/tooltip";
 
 export function NavUser({ user }: { user: UserType }) {
-  const { isMobile } = useSidebar();
+  const { isMobile, open: isSidebarOpen } = useSidebar();
   const { logout } = useAuth();
   const router = useRouter();
+  const { isHuddling } = usePresence();
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  const huddleActive = mounted && isHuddling(user.id);
   const statusTooltip = user.status?.trim();
 
   function handleLogout() {
@@ -50,7 +61,12 @@ export function NavUser({ user }: { user: UserType }) {
           className="shrink-0"
         />
         <div className="grid flex-1 text-left text-sm leading-tight min-w-0">
-          <span className="truncate font-semibold">{user.username}</span>
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="truncate font-semibold">{user.username}</span>
+            {huddleActive && (
+              <FaHeadphones className="size-3 text-indigo-400 animate-pulse shrink-0" />
+            )}
+          </div>
           <span className="truncate text-xs text-muted-foreground">
             {user.email}
           </span>
@@ -95,7 +111,12 @@ export function NavUser({ user }: { user: UserType }) {
                 className="shrink-0"
               />
               <div className="flex flex-col min-w-0">
-                <span className="text-sm font-semibold truncate">{user.username}</span>
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <span className="text-sm font-semibold truncate">{user.username}</span>
+                  {huddleActive && (
+                    <FaHeadphones className="size-3 text-indigo-400 animate-pulse shrink-0" />
+                  )}
+                </div>
                 <span className="text-xs truncate">
                   {user.email}
                 </span>

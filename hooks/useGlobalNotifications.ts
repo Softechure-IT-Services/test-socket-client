@@ -200,24 +200,21 @@ const handleReceive = (msg: any) => {
       startedBy?: number | string;
       started_by?: number | string;
     }) => {
-      // Try to auto-open the channel huddle in a new tab/window.
-      // Note: some browsers may block popups not triggered by direct user interaction.
       const starterId = payload?.startedBy ?? payload?.started_by;
       if (starterId != null && String(starterId) === String(userId)) return;
 
       const cid = payload?.channelId ?? payload?.channel_id;
       if (cid === null || cid === undefined) return;
-      const url = `/huddle?channel_id=${cid}`;
-      const w = window.open(url, "_blank");
-      if (!w) {
-        // Fallback: at least show a push notification so user can click.
-        showNotification({
-          title: "Huddle started",
-          body: "A huddle started in a channel you’re in. Tap to join.",
-          channelId: String(cid),
-          force: true,
-        });
-      }
+
+      // Always show a push notification so the user is informed.
+      // Do NOT auto-open a tab — let the user click the notification to join.
+      showNotification({
+        title: "Huddle started",
+        body: "A huddle started in a channel you're in. Tap to join.",
+        channelId: String(cid),
+        url: `/huddle?channel_id=${cid}`,
+        force: true,
+      });
     };
     socket.on("huddleStarted", handleHuddleStarted);
 

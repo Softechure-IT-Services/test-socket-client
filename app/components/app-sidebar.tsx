@@ -768,6 +768,16 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         return;
       }
 
+      // Trigger a browser push notification if preferences allow
+      showNotification({
+        title: "Huddle started",
+        body: `${data.started_by_username || "Someone"} started a huddle in ${isDm ? "your DM" : `#${data.channel_name || chId}`}. Tap to join.`,
+        channelId: chId,
+        url: `/huddle?channel_id=${chId}`,
+        force: true,
+        playSound: notificationPreferences.sound,
+      });
+
       setHuddleInvites((prev) => {
         // Avoid duplicate invites for same channel
         if (prev.some((inv) => String(inv.channel_id) === chId)) return prev;

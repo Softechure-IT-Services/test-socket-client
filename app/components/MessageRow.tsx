@@ -329,7 +329,7 @@ export const MessageRow = memo(function MessageRow({
 
       {showHeader ? (
         <div className="py-1 w-full min-w-0">
-          <div className="grid grid-cols-[max-content_minmax(0,1fr)] gap-x-2 min-w-0">
+          <div className="grid grid-cols-[max-content_minmax(0,1fr)] gap-x-2 min-w-0 items-start">
             {/* Avatar — spans both name row and content row */}
             <UserProfileTrigger
               userId={msg.sender_id}

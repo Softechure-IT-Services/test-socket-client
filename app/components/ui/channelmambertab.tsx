@@ -117,7 +117,8 @@ export default function Channelmambers({
                         {member.name}
                       </span>
                       {memberPresenceHidden ? (
-                        <span className="text-[10px] text-muted-foreground font-medium">Status hidden</span>
+                        // <span className="text-[10px] text-muted-foreground font-medium">Status hidden</span> 
+                        null
                       ) : memberOnline && (
                         <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">Online</span>
                       )}

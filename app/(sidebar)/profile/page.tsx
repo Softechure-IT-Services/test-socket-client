@@ -759,7 +759,7 @@ export default function ProfilePage() {
                     <p className="text-sm text-neutral-500 dark:text-neutral-400 mt-1">Keep your account secure by updating your password regularly.</p>
                   </div>
 
-                  <div className="space-y-5 max-w-md relative z-10">
+                  <div className="space-y-5 relative z-10">
                     <Field label="Current Password">
                       <StyledInput
                         type={showCurrent ? "text" : "password"}

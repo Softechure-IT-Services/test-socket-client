@@ -406,7 +406,7 @@ function MembersPanel({
                     </div>
                     <p className="text-[11px] truncate text-[var(--accent-foreground)]">
                       {memberPresenceHidden ? (
-                        "Online status hidden"
+                        ""
                       ) : memberOnline ? (
                         <span className="text-emerald-600 dark:text-emerald-400 font-medium">Active now</span>
                       ) : memberLastSeen ? (
@@ -473,7 +473,7 @@ export default function MainHeader({
       ? null
       : (dmUserId ? getLastSeen(dmUserId) : null) ?? localDmUser?.last_seen ?? null;
   const dmPresenceSubtitle = dmPresenceHidden
-    ? "Online status hidden"
+    ? ""
     : dmPresenceOnline
     ? ""
     : dmPresenceLastSeen
@@ -682,7 +682,7 @@ export default function MainHeader({
                     <span
                       className={`text-[10px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-full ${
                         dmPresenceHidden
-                          ? "bg-muted text-muted-foreground"
+                          ? "bg-muted text-muted-foreground hidden"
                           : dmPresenceOnline
                           ? "bg-emerald-100 text-emerald-700"
                           : "bg-muted text-black"

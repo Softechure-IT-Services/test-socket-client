@@ -277,7 +277,7 @@ export function NavMain({ items }: { items: NavItem[] }) {
                         //   : "Offline"
 
                           const statusLabel = presenceHidden
-                          ? "Status hidden"
+                          ? ""
                           : online
                           ? ""
                           : relativeLastSeen

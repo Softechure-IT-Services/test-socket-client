@@ -542,11 +542,12 @@ sweetToast({
       };
 
       setMessages((prev) => {
+        const sanitize = (c: string) => c.replace(/<[^>]*>/g, "").trim();
         const tempIdx = prev.findIndex(
           (m) =>
             m.self &&
             m.id?.toString().startsWith("temp-") &&
-            m.content === chatMsg.content
+            sanitize(m.content) === sanitize(chatMsg.content)
         );
 
         if (tempIdx !== -1) {
@@ -617,11 +618,12 @@ sweetToast({
         is_edited: false,
       };
       setMessages((prev) => {
+        const sanitize = (c: string) => c.replace(/<[^>]*>/g, "").trim();
         const tempIdx = prev.findIndex(
           (m) =>
             m.self &&
             m.id?.toString().startsWith("temp-") &&
-            m.content === chatMsg.content
+            sanitize(m.content) === sanitize(chatMsg.content)
         );
         if (tempIdx !== -1) {
           const next = [...prev];
@@ -1321,7 +1323,7 @@ sweetToast({
       }
     }
 
-    const tempId = `temp-${Date.now()}`;
+    const tempId = `temp-${crypto.randomUUID()}`;
     const newMsg: ChatMessage = {
       id: tempId,
       sender_id: userId!,

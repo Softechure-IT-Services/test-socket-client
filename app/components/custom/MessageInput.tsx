@@ -225,6 +225,7 @@ export default function MessageInput({
 
   const editorWrapperRef = useRef<HTMLDivElement>(null);
   const [, forceUpdate] = useState(0);
+  const [isCooldown, setIsCooldown] = useState(false);
 
   // Keep abort controllers to cancel uploads while in-flight
   const uploadControllers = useRef(new Map<string, AbortController>());
@@ -819,7 +820,7 @@ export default function MessageInput({
   // ─── Send ──────────────────────────────────────────────────────────────────
 
   const handleSend = () => {
-    if (!editor) return;
+    if (!editor || isCooldown) return;
     const html = editor.getHTML();
 
     // Strip tags and check for blank-only content
@@ -839,6 +840,10 @@ export default function MessageInput({
 
     editor.commands.clearContent();
     setUploadedFiles([]);
+
+    // Prevent rapid-fire duplicates
+    setIsCooldown(true);
+    setTimeout(() => setIsCooldown(false), 500);
   };
 
   // ─── Emoji ─────────────────────────────────────────────────────────────────
@@ -1263,7 +1268,13 @@ export default function MessageInput({
                 </Button>
               </div>
             ) : (
-              <Button size="xl" variant="isactive" onClick={handleSend}>
+              <Button 
+                size="xl" 
+                variant="isactive" 
+                onClick={handleSend}
+                disabled={isCooldown}
+                className={isCooldown ? "opacity-50 cursor-not-allowed" : ""}
+              >
                 <IoMdSend />
               </Button>
             )}

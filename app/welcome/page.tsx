@@ -5,13 +5,13 @@ import Link from "next/link"
 
 export default async function Welcome() {
   const cookieStore = await cookies() // ✅ await required
-  const token = cookieStore.get("accessToken")?.value
+  const token = cookieStore.get("access_token")?.value
 
   if (token) {
     try {
       await jwtVerify(
         token,
-        new TextEncoder().encode(process.env.JWT_SECRET)
+        new TextEncoder().encode(process.env.JWT_ACCESS_SECRET as string)
       )
       redirect("/") // already logged in
     } catch {

@@ -75,16 +75,14 @@ export default function ChannelLayout({
 
   return (
     <div className="flex flex-col h-full dm_container">
-      {layoutReady && (
-        <div ref={headerRef} className="sticky top-0 z-1">
-          <MainHeader
-            id={channelId}
-            type={isDm ? "dm" : "channel"}
-            dmUser={dmUser}
-            isPrivate={channel?.is_private ?? false}
-          />
-        </div>
-      )}
+      <div ref={headerRef} className="sticky top-0 z-1">
+        <MainHeader
+          id={channelId}
+          type={isDm ? "dm" : "channel"}
+          dmUser={dmUser}
+          isPrivate={channel?.is_private ?? false}
+        />
+      </div>
 
       {/* Page content (messages / files / pins) */}
       <div className="flex-1 min-h-0">{children}</div>

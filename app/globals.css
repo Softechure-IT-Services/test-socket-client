@@ -476,7 +476,3 @@ button[data-slot="sidebar-menu-button"]:hover{
 .top_most_message{
   grid-template-rows: auto 1fr;
 }
-
-.dm_container .mainheader{
-  top:0 !important;
-}

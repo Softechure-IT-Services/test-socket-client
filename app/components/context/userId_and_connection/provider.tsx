@@ -3,7 +3,7 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import { io, Socket } from "socket.io-client";
 import api from "@/lib/axios";
-import { clearStoredAuth, refreshAccessToken } from "@/lib/auth-session";
+import { clearStoredAuth } from "@/lib/auth-session";
 
 export type UserType = {
   id: string;
@@ -20,7 +20,7 @@ type AuthContextType = {
   socket: Socket | null;
   authReady: boolean;
   hasToken: boolean;
-  login: (token: string) => void;
+  login: (userData?: UserType | null) => void;
   logout: () => void;
   updateUser: (partial: Partial<UserType>) => void;
 };
@@ -31,79 +31,21 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [user, setUser] = useState<UserType | null>(null);
   const [isOnline, setIsOnline] = useState(false);
   const [socket, setSocket] = useState<Socket | null>(null);
-  const [token, setToken] = useState<string | null>(null);
+  const [socketKey, setSocketKey] = useState(0);
+  const [hasToken, setHasToken] = useState(false);
   const [authReady, setAuthReady] = useState(false);
 
-  const getTokenExpiryMs = (value: string) => {
-    try {
-      const [, payload] = value.split(".");
-      if (!payload) return null;
-
-      const normalized = payload.replace(/-/g, "+").replace(/_/g, "/");
-      const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=");
-      const decoded = JSON.parse(atob(padded));
-
-      return typeof decoded?.exp === "number" ? decoded.exp * 1000 : null;
-    } catch {
-      return null;
+  const login = (userData?: UserType | null) => {
+    // Socket.IO auth middleware should read HttpOnly cookies,
+    // so we must reconnect after a successful login/refresh.
+    socket?.disconnect();
+    setSocket(null);
+    setSocketKey((prev) => prev + 1);
+    if (userData) {
+      setUser(userData);
+      setHasToken(true);
     }
-  };
-
-  const isTokenFresh = (value: string, minTtlMs = 60_000) => {
-    const expiryMs = getTokenExpiryMs(value);
-    if (!expiryMs) return true;
-    return expiryMs - Date.now() > minTtlMs;
-  };
-
-  useEffect(() => {
-    let cancelled = false;
-
-    const bootstrapAuth = async () => {
-      const storedToken = localStorage.getItem("access_token");
-
-      if (!storedToken) {
-        if (!cancelled) {
-          setToken(null);
-          setAuthReady(true);
-        }
-        return;
-      }
-
-      if (isTokenFresh(storedToken)) {
-        if (!cancelled) {
-          setToken(storedToken);
-          setAuthReady(true);
-        }
-        return;
-      }
-
-      try {
-        const refreshedToken = await refreshAccessToken();
-        if (!cancelled) {
-          setToken(refreshedToken);
-          setAuthReady(true);
-        }
-      } catch {
-        clearStoredAuth();
-        if (!cancelled) {
-          setToken(null);
-          setUser(null);
-          setAuthReady(true);
-        }
-      }
-    };
-
-    void bootstrapAuth();
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const login = (newToken: string) => {
-    localStorage.setItem("access_token", newToken);
-    setToken(newToken);
-    setAuthReady(true);
+    setAuthReady(false);
   };
 
   const updateUser = (partial: Partial<UserType>) => {
@@ -120,11 +62,13 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       // Ignore cleanup error
     }
     clearStoredAuth();
-    setToken(null);
+    document.cookie = "app_session=; Path=/; Max-Age=0; SameSite=Lax";
+    setHasToken(false);
     setUser(null);
     socket?.disconnect();
     setSocket(null);
-    setAuthReady(true);
+    setSocketKey((prev) => prev + 1);
+    setAuthReady(false);
   };
 
   useEffect(() => {
@@ -136,49 +80,51 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   }, [socket]);
 
   useEffect(() => {
-    if (!authReady) return;
-    if (!token) return;
-    if (socket) return; 
-
+    // Always allow unauthenticated sockets (guest). The backend will upgrade
+    // to an authenticated socket if the HttpOnly `access_token` cookie exists.
     const s = io(process.env.NEXT_PUBLIC_SERVER_URL!, {
       transports: ["websocket"],
-      auth: (cb) => {
-        cb({ token: localStorage.getItem("access_token") });
-      },
+      auth: { guest: true },
+      withCredentials: true,
     });
 
     setSocket(s);
 
     s.on("connect", () => {
       setIsOnline(true);
+      setAuthReady(true);
     });
 
     s.on("auth-success", ({ user }) => {
       setUser(user);
+      setHasToken(true);
       s.emit("refreshUserProfile");
     });
 
     s.on("disconnect", () => {
       setIsOnline(false);
       setUser(null);
+      setHasToken(false);
+      setAuthReady(false);
     });
 
     s.on("userProfileRefreshed", (fresh: Partial<UserType>) => {
-      setUser((prev) => prev ? { ...prev, ...fresh } : prev);
+      setUser((prev) => (prev ? { ...prev, ...fresh } : prev));
     });
 
     s.on("connect_error", (err) => {
       console.error("Socket error:", err.message);
       setIsOnline(false);
+      setHasToken(false);
+      setAuthReady(true);
       // Removed the immediate logout() tripwire here!
       // The Axios interceptor now exclusively handles authoritative logouts via 'auth:logout' events when refresh completely fails.
     });
 
     return () => {
       s.disconnect();
-      setSocket(null);
     };
-  }, [authReady, token]);
+  }, [socketKey]);
 
   return (
     <AuthContext.Provider
@@ -187,7 +133,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         isOnline,
         socket,
         authReady,
-        hasToken: !!token,
+        hasToken,
         login,
         logout,
         updateUser,

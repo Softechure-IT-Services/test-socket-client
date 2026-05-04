@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useEffect, useState, useCallback } from "react";
-import { useRouter } from "next/navigation";
 import { Headphones, X, PhoneOff } from "lucide-react";
 
 type HuddleInvite = {
@@ -26,7 +25,6 @@ function HuddleToastCard({
   invite: HuddleInvite;
   onDecline: () => void;
 }) {
-  const router = useRouter();
   const [exiting, setExiting] = useState(false);
 
   const dismiss = useCallback(() => {
@@ -40,8 +38,15 @@ function HuddleToastCard({
   // }, [dismiss]);
 
   const handleJoin = () => {
-    router.push(
-      `/huddle?meeting_id=${invite.meeting_id}&channel_id=${invite.channel_id}`
+    const width = 980;
+    const height = 720;
+    const left = window.screenX + Math.max(0, Math.round((window.outerWidth - width) / 2));
+    const top = window.screenY + Math.max(0, Math.round((window.outerHeight - height) / 2));
+    const features = `toolbar=no,location=no,status=no,menubar=no,scrollbars=yes,resizable=yes,width=${width},height=${height},left=${left},top=${top}`;
+    window.open(
+      `/huddle?meeting_id=${invite.meeting_id}&channel_id=${invite.channel_id}`,
+      "huddle_popup",
+      features
     );
     dismiss();
   };

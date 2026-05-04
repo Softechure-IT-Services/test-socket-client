@@ -76,7 +76,9 @@ const MainPage: React.FC = () => {
   const [pendingAdmissions, setPendingAdmissions] = useState<RoomMember[]>([]);
   const [chatMessages, setChatMessages] = useState<HuddleChatMessage[]>([]);
   const [chatDraft, setChatDraft] = useState("");
+  const [unreadPendingCount, setUnreadPendingCount] = useState(0);
   const [openSidebarView, setOpenSidebarView] = useState<HuddleSidebarView | null>(null);
+  const [guestName, setGuestName] = useState("");
   const chatScrollRef = useRef<HTMLDivElement | null>(null);
   const scrollHuddleChatToBottom = React.useCallback(
     (behavior: "auto" | "smooth" = "auto") => {
@@ -92,6 +94,15 @@ const MainPage: React.FC = () => {
     },
     []
   );
+
+  // Request notification permissions
+  useEffect(() => {
+    if (typeof window !== "undefined" && "Notification" in window) {
+      if (Notification.permission === "default") {
+        Notification.requestPermission();
+      }
+    }
+  }, []);
 
   useEffect(() => {
     if (openSidebarView === "messages") {
@@ -240,7 +251,7 @@ const MainPage: React.FC = () => {
     });
 
     guest.on("connect_error", (err) => {
-      console.error("Guest huddle socket error:", err.message);
+      // console.error("Guest huddle socket error:", err.message);
     });
 
     setGuestSocket(guest);
@@ -292,6 +303,9 @@ const MainPage: React.FC = () => {
     if (openSidebarView === "messages") {
       setUnreadChatCount(0);
     }
+    if (openSidebarView === "people") {
+      setUnreadPendingCount(0);
+    }
   }, [openSidebarView]);
 
   useEffect(() => {
@@ -333,7 +347,7 @@ const MainPage: React.FC = () => {
       })
       .catch((err) => {
         if (cancelled) return;
-        console.error("Failed to resolve channel membership for huddle:", err);
+        // console.error("Failed to resolve channel membership for huddle:", err);
         resolvedChannelNameRef.current = null;
         isDmChannelRef.current = false;
         setIsChannelMember(false);
@@ -362,7 +376,7 @@ const MainPage: React.FC = () => {
     }
 
     if (!channelId) return;
-    if (typeof window !== "undefined" && !localStorage.getItem("access_token")) {
+    if (!hasToken) {
       if (meetingId) return;
       updateLobbyState({
         mode: "invite_required",
@@ -403,7 +417,7 @@ const MainPage: React.FC = () => {
           primaryDisabled: true,
         });
       });
-  }, [channelId, meetingId]);
+  }, [channelId, meetingId, hasToken]);
 
   // ─── FIX 5 (part A): DOM event wiring runs exactly once ──────────────────
   useEffect(() => {
@@ -440,7 +454,7 @@ const MainPage: React.FC = () => {
     if (!socket) return;
 
     // ---------- STATE / REFS ----------
-    const peers: Record<string, any> = {};
+    const peers: Record<string, { pc: RTCPeerConnection; username: string; candidates: RTCIceCandidate[] }> = {};
     const remoteMediaStreams: Record<string, MediaStream> = {};
     let localStream: MediaStream | null = null;
     let screenStream: MediaStream | null = null;
@@ -531,19 +545,6 @@ const MainPage: React.FC = () => {
     // ─── FIX 3: Use name/username — NOT email ────────────────────────────────
     if (user?.name || user?.username) {
       applyUsernameAndStart(user.name || user.username);
-    } else if (!hasToken && usernameInput && continueBtn) {
-      usernameInput.addEventListener("input", () => {
-        continueBtn.disabled = usernameInput.value.trim().length === 0;
-      });
-      usernameInput.addEventListener("keypress", (e) => {
-        if (e.key === "Enter" && usernameInput.value.trim()) {
-          applyUsernameAndStart(usernameInput.value.trim());
-        }
-      });
-      continueBtn.addEventListener("click", () => {
-        const name = usernameInput.value.trim();
-        if (name) applyUsernameAndStart(name);
-      });
     }
 
     const normalizeMembers = (members: any[] = []) =>
@@ -911,7 +912,7 @@ const MainPage: React.FC = () => {
         updateControlButton(button, {
           available: hasMicrophone,
           enabled: micEnabled,
-          iconMarkup: getMicIconMarkup(micEnabled),
+          iconElement: getMicIconElement(micEnabled),
         });
       });
 
@@ -919,7 +920,7 @@ const MainPage: React.FC = () => {
         updateControlButton(button, {
           available: hasCamera,
           enabled: camEnabled,
-          iconMarkup: getCamIconMarkup(camEnabled),
+          iconElement: getCamIconElement(camEnabled),
         });
       });
 
@@ -982,45 +983,48 @@ const MainPage: React.FC = () => {
       ].filter(Boolean) as HTMLButtonElement[];
     }
 
-    const iconMarkupCache = new Map<IconType, Map<string, string>>();
+    const iconHtmlCache = new Map<string, string>();
 
-    function renderIconMarkup(Icon: IconType, className: string) {
-      let cachedByClassName = iconMarkupCache.get(Icon);
-      if (!cachedByClassName) {
-        cachedByClassName = new Map<string, string>();
-        iconMarkupCache.set(Icon, cachedByClassName);
+    function renderIconElement(Icon: IconType, className: string) {
+      const cacheKey = `${(Icon as any).displayName || (Icon as any).name}-${className}`;
+      
+      let cachedHtml = iconHtmlCache.get(cacheKey);
+      if (cachedHtml) {
+        const span = document.createElement("span");
+        span.innerHTML = cachedHtml;
+        return span;
       }
 
-      const cachedMarkup = cachedByClassName.get(className);
-      if (cachedMarkup) return cachedMarkup;
-
-      const host = document.createElement("div");
-      const root = createRoot(host);
+      const tempSpan = document.createElement("span");
+      const root = createRoot(tempSpan);
 
       flushSync(() => {
         root.render(<Icon className={className} aria-hidden="true" focusable="false" />);
       });
 
-      const markup = host.innerHTML;
+      cachedHtml = tempSpan.innerHTML;
+      iconHtmlCache.set(cacheKey, cachedHtml);
       root.unmount();
-      cachedByClassName.set(className, markup);
-      return markup;
+
+      const resultSpan = document.createElement("span");
+      resultSpan.innerHTML = cachedHtml;
+      return resultSpan;
     }
 
-    function getMicIconMarkup(enabled: boolean) {
-      return renderIconMarkup(enabled ? BsMicFill : BsMicMuteFill, "w-5 h-5");
+    function getMicIconElement(enabled: boolean) {
+      return renderIconElement(enabled ? BsMicFill : BsMicMuteFill, "w-5 h-5 text-white");
     }
 
-    function getCamIconMarkup(enabled: boolean) {
-      return renderIconMarkup(
+    function getCamIconElement(enabled: boolean) {
+      return renderIconElement(
         enabled ? BsCameraVideoFill : BsCameraVideoOffFill,
-        "w-5 h-5"
+        "w-5 h-5 text-white"
       );
     }
 
     function updateControlButton(
       button: HTMLButtonElement,
-      options: { available: boolean; enabled: boolean; iconMarkup: string }
+      options: { available: boolean; enabled: boolean; iconElement: HTMLElement }
     ) {
       const isMeetingButton = button.id.startsWith("meeting");
       button.classList.remove(
@@ -1044,7 +1048,7 @@ const MainPage: React.FC = () => {
         button.classList.add("bg-transparent", "hover:bg-white/15");
       }
 
-      button.innerHTML = options.iconMarkup;
+      button.replaceChildren(options.iconElement);
       button.setAttribute("aria-pressed", String(options.enabled));
     }
 
@@ -1140,7 +1144,9 @@ const MainPage: React.FC = () => {
 
     function joinRoom(roomId: string, displayName = "Room") {
       // ✅ Update DB status when joining
-      api.post("/huddle/join").catch(err => console.error("Failed to update huddle join status:", err));
+      if (hasToken) {
+        api.post("/huddle/join").catch(err => console.error("Failed to update huddle join status:", err));
+      }
 
       socket?.emit("join-room", { roomId }, (response: any) => {
         if (!response?.ok) {
@@ -1214,7 +1220,25 @@ const MainPage: React.FC = () => {
       }
     };
     const handleRoomPendingUpdated = ({ roomId, pending }: any) => {
-      setPendingAdmissions(normalizeMembers(pending));
+      setPendingAdmissions((prevPending) => {
+        const newPending = normalizeMembers(pending);
+        if (newPending.length > prevPending.length && isHuddleAdminRef.current) {
+          if (typeof window !== "undefined" && "Notification" in window && Notification.permission === "granted") {
+            new Notification("New Huddle Request", {
+              body: "Someone is waiting to join the huddle.",
+            });
+          }
+        }
+        
+        // Sync indicator count with current pending list
+        if (openSidebarViewRef.current !== "people") {
+          setUnreadPendingCount(newPending.length);
+        } else {
+          setUnreadPendingCount(0);
+        }
+        
+        return newPending;
+      });
       if (!isInCallRef.current && roomId && resolvedRoomIdRef.current === roomId) {
         void inspectRoomRef.current?.();
       }
@@ -1250,6 +1274,11 @@ const MainPage: React.FC = () => {
       setChatMessages((prev) => [...prev, normalized]);
       if (normalized.socketId !== socket?.id && openSidebarViewRef.current !== "messages") {
         setUnreadChatCount((prev) => prev + 1);
+        if (typeof window !== "undefined" && "Notification" in window && Notification.permission === "granted") {
+          new Notification("Huddle Message", {
+            body: `${normalized.username}: ${normalized.text}`,
+          });
+        }
       }
     };
     const handleKickedFromRoom = ({ roomId, byUsername }: any) => {
@@ -1376,17 +1405,39 @@ const MainPage: React.FC = () => {
 
     const handleOffer = async ({ from, offer, username: peerUsername }: any) => {
       const pc = createPeer(from, peerUsername, false);
-      await pc.setRemoteDescription(offer);
-      const answer = await pc.createAnswer();
-      await pc.setLocalDescription(answer);
-      socket?.emit("answer", { to: from, answer });
+      try {
+        await pc.setRemoteDescription(new RTCSessionDescription(offer));
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+        socket?.emit("answer", { to: from, answer });
+
+        // Process queued candidates
+        const peer = peers[from];
+        if (peer) {
+          while (peer.candidates.length > 0) {
+            const cand = peer.candidates.shift();
+            if (cand) await pc.addIceCandidate(cand).catch(e => console.error("Error adding queued candidate in handleOffer:", e));
+          }
+        }
+      } catch (err) {
+        console.error(`❌ Failed to handle offer from peer ${from}:`, err);
+      }
     };
 
     // ─── FIX 4: Null guard ────────────────────────────────────────────────────
     const handleAnswer = async ({ from, answer }: any) => {
-      if (!peers[from]?.pc) { console.warn(`Got answer from unknown peer ${from}, ignoring`); return; }
-      await peers[from].pc.setRemoteDescription(answer);
-      console.log(`✅ Set answer from peer ${from}`);
+      const peer = peers[from];
+      if (!peer?.pc) { console.warn(`Got answer from unknown peer ${from}, ignoring`); return; }
+      try {
+        await peer.pc.setRemoteDescription(new RTCSessionDescription(answer));
+        console.log(`✅ Set answer from peer ${from}`);
+        while (peer.candidates.length > 0) {
+          const cand = peer.candidates.shift();
+          if (cand) await peer.pc.addIceCandidate(cand).catch(e => console.error("Error adding queued candidate:", e));
+        }
+      } catch (err) {
+        console.error(`❌ Failed to set answer from peer ${from}:`, err);
+      }
     };
 
     const handleRenegotiate = async ({ from, offer }: any) => {
@@ -1414,7 +1465,17 @@ const MainPage: React.FC = () => {
       }
     };
 
-    const handleIceCandidate = ({ from, candidate }: any) => { peers[from]?.pc.addIceCandidate(candidate); };
+    const handleIceCandidate = async ({ from, candidate }: any) => {
+      const peer = peers[from];
+      if (!peer) return;
+      
+      const iceCand = new RTCIceCandidate(candidate);
+      if (peer.pc.remoteDescription) {
+        await peer.pc.addIceCandidate(iceCand).catch(e => console.error("Error adding candidate:", e));
+      } else {
+        peer.candidates.push(iceCand);
+      }
+    };
 
     function registerScreenShareOwner(ownerId: string) {
       activeScreenShareOwners = activeScreenShareOwners.filter((id) => id !== ownerId);
@@ -1473,8 +1534,9 @@ const MainPage: React.FC = () => {
     function createPeer(id: string, peerUsername: string, initiator: boolean) {
       if (peers[id]) return peers[id].pc;
 
+      console.log(`🤝 Creating peer for ${peerUsername} (${id}), initiator: ${initiator}`);
       const pc = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.l.google.com:19302" }] });
-      peers[id] = { pc, username: peerUsername };
+      peers[id] = { pc, username: peerUsername, candidates: [] };
 
       if (localStream) {
         localStream.getAudioTracks().forEach((t) => {
@@ -1539,19 +1601,20 @@ const MainPage: React.FC = () => {
     function createOverflowTile(hiddenCount: number) {
       const overflow = document.createElement("div");
       overflow.className = "video-overflow-card";
-      overflow.innerHTML = `
-        <span class="video-overflow-count">${hiddenCount} more users</span>
-      `;
+      const label = document.createElement("span");
+      label.className = "video-overflow-count";
+      label.textContent = `${hiddenCount} more users`;
+      overflow.appendChild(label);
       return overflow;
     }
 
     function createScreenShareBadge() {
       const badge = document.createElement("div");
       badge.className = "screen-share-badge";
-      badge.innerHTML = `
-        ${renderIconMarkup(BsDisplay, "w-4 h-4")}
-        <span>Screen Sharing</span>
-      `;
+      badge.appendChild(renderIconElement(BsDisplay, "w-4 h-4"));
+      const label = document.createElement("span");
+      label.textContent = "Screen Sharing";
+      badge.appendChild(label);
       return badge;
     }
 
@@ -1606,7 +1669,8 @@ const MainPage: React.FC = () => {
 
     function syncRemotePeerStream(ownerId: string, displayName: string) {
       const stream = remoteMediaStreams[ownerId];
-      if (!stream || stream.getVideoTracks().length === 0) {
+      // Keep tile if there are ANY tracks (audio or video)
+      if (!stream || stream.getTracks().length === 0) {
         document.getElementById(`video-${ownerId}`)?.remove();
         document.getElementById(`video-screen-${ownerId}`)?.remove();
         reorganizeVideoLayout();
@@ -1724,7 +1788,7 @@ const MainPage: React.FC = () => {
     function reorganizeVideoLayout() {
       const containers = Array.from(videos.querySelectorAll(".video-container")) as HTMLDivElement[];
       containers.forEach((container) => container.classList.remove("screen-share-primary"));
-      videos.innerHTML = "";
+      videos.replaceChildren();
       videos.classList.remove("has-screen-share", "screen-share-layout", "grid-layout");
 
       const screenContainers = containers.filter((c) => c.dataset.streamType === "screen");
@@ -1833,7 +1897,7 @@ const MainPage: React.FC = () => {
       if (deviceCheckInterval) { clearInterval(deviceCheckInterval); deviceCheckInterval = null; }
       Object.values(peers).forEach(({ pc }: any) => pc.close());
       Object.keys(peers).forEach((id) => delete peers[id]);
-      videos.innerHTML = "";
+      videos.replaceChildren();
       if (screenStream) { screenStream.getTracks().forEach((t) => t.stop()); isScreenSharing = false; }
       setIsScreenShareActive(false);
       if (audioContext) { audioContext.close(); audioContext = null; }
@@ -1843,7 +1907,9 @@ const MainPage: React.FC = () => {
       isInCallRef.current = false;
 
       // ✅ Update DB status when leaving (reset huddle presence)
-      api.post("/huddle/leave").catch(err => console.error("Failed to update huddle leave status:", err));
+      if (hasToken) {
+        api.post("/huddle/leave").catch(err => console.error("Failed to update huddle leave status:", err));
+      }
       pinnedScreenShareUserId = null;
       activeScreenShareOwners = [];
       setIsMeetingActive(false);
@@ -1853,6 +1919,7 @@ const MainPage: React.FC = () => {
       setChatDraft("");
       setOpenSidebarView(null);
       setUnreadChatCount(0);
+      setUnreadPendingCount(0);
       prejoin.classList.remove("hidden");
       meeting.classList.add("hidden");
       showToast(message, type);
@@ -1863,7 +1930,7 @@ const MainPage: React.FC = () => {
       setOpenSidebarView(null);
 
       // If we are the last participant, end the huddle on the backend so indicators clear for everyone
-      if (roomParticipants.length <= 1 && channelId) {
+      if (roomParticipants.length <= 1 && channelId && hasToken) {
         try {
           await api.post(`/huddle/channel/${channelId}/stop`);
         } catch (err: any) {
@@ -1922,7 +1989,7 @@ const MainPage: React.FC = () => {
       emptyLabel: string
     ) {
       const currentValue = selectElement.value;
-      selectElement.innerHTML = "";
+      selectElement.replaceChildren();
       if (!devices.length) {
         const option = document.createElement("option");
         option.value = "";
@@ -2041,7 +2108,9 @@ const MainPage: React.FC = () => {
       // Direct call to socket emit and API to be as fast as possible on exit
       const roomId = currentRoom || activeRoomRef.current;
       if (roomId) socket?.emit("leave-room", { roomId });
-      void api.post("/huddle/leave");
+      if (hasToken) {
+        void api.post("/huddle/leave");
+      }
     };
     window.addEventListener("pagehide", handlePageHide);
 
@@ -2145,12 +2214,24 @@ const MainPage: React.FC = () => {
                     id="usernameInput"
                     type="text"
                     placeholder="Your name"
+                    value={guestName}
+                    onChange={(e) => setGuestName(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && guestName.trim()) {
+                        applyUsernameAndStartRef.current?.(guestName.trim());
+                      }
+                    }}
                     className="w-full px-4 py-3 bg-transparent border border-[var(--border-color)] rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/40 text-sidebar-foreground placeholder:text-muted-foreground text-sm transition"
                     maxLength={20}
                   />
                   <button
                     id="continueBtn"
-                    disabled
+                    disabled={guestName.trim().length === 0}
+                    onClick={() => {
+                      if (guestName.trim()) {
+                        applyUsernameAndStartRef.current?.(guestName.trim());
+                      }
+                    }}
                     className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-3 rounded-xl transition text-sm disabled:opacity-40 disabled:cursor-not-allowed shadow-md shadow-indigo-900/30"
                   >
                     Continue
@@ -2485,11 +2566,11 @@ const MainPage: React.FC = () => {
                         {/* Mic device panel */}
                         <div className="mic-prejoin-panel device-dropdown device-panel-popover hidden">
                           <p className="text-xs font-medium text-muted-foreground mb-1.5">Microphone</p>
-                          <select id="prejoinMicSelect" className="text-sm">
+                          <select id="prejoinMicSelect" className="text-sm text-black bg-white">
                             <option value="">Select Microphone</option>
                           </select>
                           <p className="mt-3 text-xs font-medium text-muted-foreground mb-1.5">Speaker</p>
-                          <select id="prejoinSpeakerSelect" className="text-sm">
+                          <select id="prejoinSpeakerSelect" className="text-sm text-black bg-white">
                             <option value="">Select Speaker</option>
                           </select>
                         </div>
@@ -2514,7 +2595,7 @@ const MainPage: React.FC = () => {
                         {/* Cam device panel */}
                         <div className="cam-prejoin-panel device-dropdown device-panel-popover hidden">
                           <p className="text-xs font-medium text-muted-foreground mb-1.5">Camera</p>
-                          <select id="prejoinCamSelect" className="text-sm">
+                          <select id="prejoinCamSelect" className="text-sm text-black bg-white">
                             <option value="">Select Camera</option>
                           </select>
                         </div>
@@ -2669,9 +2750,9 @@ const MainPage: React.FC = () => {
                     {/* Mic device select popover */}
                     <div className="mic-meeting-panel device-panel-popover hidden absolute bottom-full mb-3 left-1/2 -translate-x-1/2 bg-sidebar border border-[var(--border-color)] rounded-xl p-3 min-w-[220px] shadow-2xl z-50">
                       <p className="text-xs font-medium text-muted-foreground mb-2">Microphone</p>
-                      <select id="meetingMicSelect" className="w-full bg-transparent border border-[var(--border-color)] rounded-lg px-2 py-1.5 text-sidebar-foreground text-xs focus:outline-none" />
+                      <select id="meetingMicSelect" className="w-full bg-transparent border border-[var(--border-color)] rounded-lg px-2 py-1.5 text-black bg-white text-xs focus:outline-none" />
                       <p className="mt-3 text-xs font-medium text-muted-foreground mb-2">Speaker</p>
-                      <select id="meetingSpeakerSelect" className="w-full bg-transparent border border-[var(--border-color)] rounded-lg px-2 py-1.5 text-sidebar-foreground text-xs focus:outline-none" />
+                      <select id="meetingSpeakerSelect" className="w-full bg-transparent border border-[var(--border-color)] rounded-lg px-2 pr-4 py-1.5 text-black bg-white text-xs focus:outline-none" />
                     </div>
                   </div>
 
@@ -2695,7 +2776,7 @@ const MainPage: React.FC = () => {
                     {/* Camera device select popover */}
                     <div className="cam-meeting-panel device-panel-popover hidden absolute bottom-full mb-3 left-1/2 -translate-x-1/2 bg-sidebar border border-[var(--border-color)] rounded-xl p-3 min-w-[220px] shadow-2xl z-50">
                       <p className="text-xs font-medium text-muted-foreground mb-2">Camera</p>
-                      <select id="meetingCamSelect" className="w-full bg-transparent border border-[var(--border-color)] rounded-lg px-2 py-1.5 text-sidebar-foreground text-xs focus:outline-none" />
+                      <select id="meetingCamSelect" className="w-full bg-transparent border border-[var(--border-color)] rounded-lg px-2 py-1.5 text-black bg-white text-xs focus:outline-none"/>
                     </div>
                   </div>
 
@@ -2751,13 +2832,18 @@ const MainPage: React.FC = () => {
                     aria-pressed={isPeopleSidebarOpen}
                     onClick={() => toggleSidebarView("people")}
                     title="People"
-                    className={`w-10 h-10 rounded-full border transition-all duration-150 flex items-center justify-center ${
+                    className={`relative w-10 h-10 rounded-full border transition-all duration-150 flex items-center justify-center ${
                       isPeopleSidebarOpen
                         ? "bg-accent border-[var(--border-color)] text-sidebar-foreground"
                         : "bg-transparent hover:bg-accent border-[var(--border-color)] text-muted-foreground hover:text-sidebar-foreground"
                     }`}
                   >
                     <BsPeopleFill className="w-4 h-4" />
+                    {unreadPendingCount > 0 && (
+                      <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] rounded-full bg-red-600 px-1 text-[10px] font-semibold text-white flex items-center justify-center">
+                        {unreadPendingCount}
+                      </span>
+                    )}
                   </button>
                 </div>
               </div>
@@ -2908,7 +2994,9 @@ const MainPage: React.FC = () => {
           min-width: 0;
         }
         .device-dropdown select {
-          width: 100%; background: transparent; color: var(--sidebar-foreground);
+          width: 100%;
+          //  background: transparent; 
+          // color: var(--sidebar-foreground);
           border: 1px solid var(--border-color); border-radius: 8px;
           padding: 7px 10px; font-size: 13px;
         }

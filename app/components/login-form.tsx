@@ -20,7 +20,6 @@ import { Input } from "@/app/components/ui/input";
 import Link from "next/link";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
-import Cookies from "js-cookie";
 import { Eye, EyeOff } from "lucide-react";
 import api from "@/lib/axios";
 import { useAuth } from "@/app/components/context/userId_and_connection/provider";
@@ -37,6 +36,12 @@ export function LoginForm({ className, ...props }: React.ComponentProps<"div">) 
 
   const stripSpaces = (value: string) => value.replace(/\s/g, "");
 
+  const updatePassword = (value: string) => {
+    const cleaned = stripSpaces(value);
+    if (cleaned !== password) {
+      setPassword(cleaned);
+    }
+  };
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -62,42 +67,29 @@ export function LoginForm({ className, ...props }: React.ComponentProps<"div">) 
       const res = await api.post(`/auth/login`, { email: trimmedEmail, password: trimmedPassword });
       const data = res.data;
 
-    // ✅ Show server response in console
-    console.log("Server response:", data);
+      // console.log("Server response:", data);
 
-    // ✅ Set auth_token cookie client-side for middleware
-    if (data.user?.access_token) {
-      Cookies.set("access_token", data.user.access_token, {
-        path: "/", // middleware will read this
-        sameSite: process.env.NODE_ENV === "production" ? "Lax" : "Strict",
-        secure: process.env.NODE_ENV === "production",
-      });
+      // Backend is responsible for setting auth cookies (HttpOnly/Secure/SameSite=None).
+      // We only refresh in-memory auth state and navigate after a successful response.
+      login(data.user ?? null);
+      document.cookie = "app_session=1; Path=/; Max-Age=86400; SameSite=Lax";
 
-      // ✅ Store access_token in localStorage for API calls
-      localStorage.setItem("access_token", data.user.access_token);
-      login(data.user.access_token);      
+      toast.success(data.message || "Login successful!", { duration: 2000 });
+      setTimeout(() => {
+        router.replace("/");
+      }, 500);
+    } catch (err: any) {
+      // ✅ Axios error object contains response from server
+      if (err.response) {
+        console.error("Login error response:", err.response.data);
+        toast.error(err.response.data.error || "Login failed. Please try again.");
+      } else {
+        toast.error(err.message || "Login failed. Please try again.");
+      }
+    } finally {
+      setLoading(false);
     }
-
-    // ✅ Show success toast
-    toast.success(data.message || "Login successful!", { duration: 2000 });
-
-    // ✅ Redirect AFTER cookie is set
-    setTimeout(() => {
-      router.replace("/"); // middleware will now allow access
-    }, 500);
-
-  } catch (err: any) {
-    // ✅ Axios error object contains response from server
-    if (err.response) {
-      console.error("Login error response:", err.response.data);
-      toast.error(err.response.data.error || "Login failed. Please try again.");
-    } else {
-      toast.error(err.message || "Login failed. Please try again.");
-    }
-  } finally {
-    setLoading(false);
   }
-}
 
   return (
     <div className={cn("flex flex-col gap-6", className)} {...props}>
@@ -137,7 +129,7 @@ export function LoginForm({ className, ...props }: React.ComponentProps<"div">) 
                     type={showPassword ? "text" : "password"}
                     required
                     value={password}
-                    onChange={(e) => setPassword(stripSpaces(e.target.value))}
+                    onChange={(e) => updatePassword(e.target.value)}
                     onKeyDown={(e) => {
                       if (e.key === " " || e.code === "Space") {
                         e.preventDefault();
@@ -147,7 +139,7 @@ export function LoginForm({ className, ...props }: React.ComponentProps<"div">) 
                       const pasted = e.clipboardData.getData("text");
                       const cleaned = stripSpaces(pasted);
                       e.preventDefault();
-                      setPassword(cleaned);
+                      updatePassword(cleaned);
                     }}
                     className="pr-10"
                   />

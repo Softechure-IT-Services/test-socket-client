@@ -107,8 +107,8 @@ export default function PinnedMessages() {
       const threadParentId = resolveThreadParentId(msg);
       const base = `/dm/${dmId}`;
       const url = threadParentId
-        ? `${base}?threadId=${threadParentId}&scrollTo=${msg.message_id}`
-        : `${base}?scrollTo=${msg.message_id}`;
+        ? `${base}?threadId=${threadParentId}&scrollTo=${msg.message_id}&v=${Date.now()}`
+        : `${base}?scrollTo=${msg.message_id}&v=${Date.now()}`;
       router.push(url);
     },
     [dmId, router]

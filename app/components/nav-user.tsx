@@ -39,12 +39,16 @@ export function NavUser({ user }: { user: UserType }) {
     setMounted(true);
   }, []);
 
-  const huddleActive = mounted && isHuddling(user.id);
+  if (!mounted) {
+    return null;
+  }
+
+  const huddleActive = isHuddling(user.id);
   const statusTooltip = user.status?.trim();
 
-  function handleLogout() {
-    logout();
-    router.push("/login");
+  async function handleLogout() {
+    await logout();
+    router.replace("/login");
   }
 
   const trigger = (

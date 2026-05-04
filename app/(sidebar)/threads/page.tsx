@@ -10,6 +10,7 @@ import type { MsgFile } from "@/app/components/MessageRow";
 import CreateNew from "@/app/components/modals/CreateNew";
 import FileBg from "@/app/components/ui/file-bg";
 import { sweetConfirm } from "@/lib/sweetalert";
+import { getUnreadThreadIds, clearUnreadThreadIds } from "@/hooks/useLastRead";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -77,10 +78,12 @@ function ThreadCard({
   thread,
   currentUser,
   socket,
+  isUnread,
 }: {
   thread: Thread;
   currentUser: { id: string | number; name: string; avatar_url?: string | null } | null;
   socket: any;
+  isUnread?: boolean;
 }) {
   const [replies, setReplies] = useState<Reply[]>(thread.replies ?? []);
   const [expanded, setExpanded] = useState(false);
@@ -514,7 +517,11 @@ function ThreadCard({
 
   return (
     <div
-      className="bg-white dark:bg-zinc-900 rounded-2xl border border-gray-100 dark:border-zinc-800 shadow-sm overflow-hidden relative"
+      className={`bg-white dark:bg-zinc-900 rounded-2xl border ${isUnread} ${
+        isUnread
+          ? "border-red-500 shadow-md"
+          : "border-gray-100 dark:border-zinc-800 shadow-sm"
+      } overflow-hidden relative`}
       onDragEnter={handleDragEnter}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
@@ -630,6 +637,8 @@ function ThreadCard({
           <div className="mt-3 pt-3 border-t border-gray-100 dark:border-zinc-800">
             <MessageInput
               onSend={handleSend}
+              channelId={thread.channel_id}
+              userId={currentUser?.id}
               key={`reply-${thread.thread_id}`}
               editingMessageId={editMessageId}
               editingInitialContent={editContent}
@@ -662,12 +671,34 @@ export default function ThreadsPage() {
   const [threads, setThreads] = useState<Thread[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [unreadIds, setUnreadIds] = useState<Set<number>>(() => {
+    if (typeof window !== "undefined") {
+      return new Set(getUnreadThreadIds());
+    }
+    return new Set();
+  });
+
+  useEffect(() => {
+    if (unreadIds.size > 0) {
+      clearUnreadThreadIds();
+    }
+  }, [unreadIds]);
 
   useEffect(() => {
     (async () => {
       try {
         const res = await api.get("/threads");
-        setThreads(res.data);
+        let fetchedThreads: Thread[] = res.data;
+
+        fetchedThreads.sort((a, b) => {
+          const aUnread = unreadIds.has(a.parent_message?.id || 0);
+          const bUnread = unreadIds.has(b.parent_message?.id || 0);
+          if (aUnread && !bUnread) return -1;
+          if (!aUnread && bUnread) return 1;
+          return 0; // maintain original created_at descending order from backend
+        });
+
+        setThreads(fetchedThreads);
       } catch {
         setError("Failed to load threads.");
       } finally {
@@ -762,6 +793,7 @@ export default function ThreadsPage() {
                 thread={thread}
                 currentUser={user}
                 socket={socket}
+                isUnread={unreadIds.has(thread.parent_message?.id || 0)}
               />
             ))}
           </div>

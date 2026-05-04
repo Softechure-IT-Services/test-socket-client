@@ -12,6 +12,8 @@ import CreateNew from "@/app/components/modals/CreateNew";
 import FileBg from "@/app/components/ui/file-bg";
 import { sweetConfirm } from "@/lib/sweetalert";
 import { getLastRead, setLastRead } from "@/hooks/useLastRead";
+import { useIsMobile } from "@/hooks/use-mobile";
+import { cn } from "@/lib/utils";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -83,6 +85,7 @@ export default function ThreadPanel({
   channelId,
   onReplyCountChange,
 }: ThreadPanelProps) {
+  const isMobile = useIsMobile();
   const { user, socket } = useAuth();
   const userId = user?.id;
 
@@ -110,6 +113,7 @@ export default function ThreadPanel({
 
   const searchParams = useSearchParams();
   const highlightedScrollIds = useRef(new Set<string>());
+  const prevDedupeKeyRef = useRef<string | null>(null);
 
   const [liveParent, setLiveParent] = useState<ParentMessage | null>(parentMessage);
 
@@ -125,6 +129,14 @@ export default function ThreadPanel({
 
   useEffect(() => {
     const scrollToId = searchParams?.get("scrollTo");
+    const version = searchParams?.get("v") || "";
+    const dedupeKey = scrollToId ? `${scrollToId}:${version}` : null;
+
+    if (dedupeKey && dedupeKey !== prevDedupeKeyRef.current) {
+      if (scrollToId) highlightedScrollIds.current.delete(scrollToId);
+      prevDedupeKeyRef.current = dedupeKey;
+    }
+
     if (!scrollToId || replies.length === 0) return;
 
     if (highlightedScrollIds.current.has(scrollToId)) return;
@@ -697,7 +709,10 @@ return () => {
   return (
     <div
       ref={panelRef}
-      className="flex flex-col h-full bg-white dark:bg-zinc-900 border-l border-gray-200 dark:border-zinc-700 overflow-hidden relative"
+      className={cn(
+        "flex flex-col h-full bg-white dark:bg-zinc-900 overflow-hidden relative",
+        !isMobile && "border-l border-gray-200 dark:border-zinc-700"
+      )}
       onDragEnter={handleThreadDragEnter}
       onDragOver={handleThreadDragOver}
       onDragLeave={handleThreadDragLeave}
@@ -867,6 +882,10 @@ return () => {
       <div className="shrink-0 px-3 pb-3 pt-2 dark:border-zinc-700">
         <MessageInput
           onSend={handleSendReply}
+          channelId={channelId}
+          entityType="thread"
+          entityId={parentMessage.id}
+          userId={userId}
           key={String(parentMessage.id)}
           in_thread={true}
           dropFiles={droppedFiles}

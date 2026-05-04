@@ -37,6 +37,7 @@ import { UserProfileTrigger } from "@/app/components/user-profile-dialog";
 import { usePresence } from "@/app/components/context/PresenceContext";
 import { formatRelativeTime } from "@/lib/utils";
 import { useHuddleCalls } from "@/hooks/useHuddleCalls";
+import { sweetToast } from "@/lib/sweetalert";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 interface MainHeaderProps {
@@ -504,18 +505,42 @@ export default function MainHeader({
   const { ongoingCalls } = useHuddleCalls();
   const huddleActive = id ? ongoingCalls.some((call) => String(call.channelId) === String(id)) : false;
 
+  const openHuddleWindow = (url = "about:blank") => {
+    const width = 980;
+    const height = 720;
+    const left = window.screenX + Math.max(0, Math.round((window.outerWidth - width) / 2));
+    const top = window.screenY + Math.max(0, Math.round((window.outerHeight - height) / 2));
+    const features = `toolbar=no,location=no,status=no,menubar=no,scrollbars=yes,resizable=yes,width=${width},height=${height},left=${left},top=${top}`;
+    return window.open(url, "huddle_popup", features);
+  };
+
   const handleHuddleClick = async () => {
     if (!id) return;
+
+    const popup = openHuddleWindow();
+    let url = `/huddle?channel_id=${id}`;
+
     try {
-      // Always start-or-resume on the backend so everyone joins the same active room.
       const res = await api.post(`/huddle/channel/${id}/start`);
       const roomId = res.data?.room_id ?? res.data?.session?.meeting_id;
-      const url = `/huddle?channel_id=${id}${roomId ? `&meeting_id=${encodeURIComponent(roomId)}` : ""}`;
-      window.open(url, "_blank");
-    } catch (err) {
-      console.error("Failed to start huddle:", err);
-      // Fallback: still open the channel-based huddle page
-      const url = `/huddle?channel_id=${id}`;
+      url = `/huddle?channel_id=${id}${roomId ? `&meeting_id=${encodeURIComponent(roomId)}` : ""}`;
+    } catch (err: any) {
+      const status = err?.response?.status;
+      if (status === 403) {
+        await sweetToast({
+          icon: "warning",
+          text: "You do not have permission to start this huddle.",
+          timer: 2500,
+        });
+      } else {
+        console.error("Failed to start huddle:", err);
+      }
+    }
+
+    if (popup) {
+      popup.location.href = url;
+      popup.focus();
+    } else {
       window.open(url, "_blank");
     }
   };
@@ -563,9 +588,14 @@ export default function MainHeader({
         const res = await api.get(`/channels/${id}`);
         setChannel(res.data.channel);
         setIsMember(res.data.is_member ?? true);
-      } catch (err) {
-        console.error(err);
-        setIsMember(true);
+      } catch (err: any) {
+        const status = err?.response?.status;
+        if (status === 404 || status === 403) {
+          setIsMember(false);
+        } else {
+          console.error(err);
+          setIsMember(true);
+        }
       } finally {
         setLoading(false);
       }

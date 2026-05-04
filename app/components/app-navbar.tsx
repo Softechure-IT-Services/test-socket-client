@@ -13,7 +13,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/app/components/ui/dropdown-menu";
-import { useSidebar } from "@/app/components/ui/sidebar";
+import { useSidebar, SidebarTrigger } from "@/app/components/ui/sidebar";
 import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/app/components/context/userId_and_connection/provider";
@@ -353,9 +353,9 @@ export default function AppNavbar() {
     router.push(history.stack[targetIndex]);
   }
 
-  function handleLogout() {
-    logout();
-    router.push("/login");
+  async function handleLogout() {
+    await logout();
+    router.replace("/login");
   }
 
   const [query, setQuery] = useState("");
@@ -364,6 +364,7 @@ export default function AppNavbar() {
   const [open, setOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(-1);
   const [searchScope, setSearchScope] = useState<SearchScope | null>(null);
+  const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
 
   const inputRef = useRef<HTMLInputElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -476,6 +477,10 @@ export default function AppNavbar() {
         setQuery(detail.prefill ?? "");
       }
 
+      if (isMobile) {
+        setMobileSearchOpen(true);
+      }
+
       // Small delay so state flushes before focus
       setTimeout(() => {
         inputRef.current?.focus();
@@ -487,7 +492,7 @@ export default function AppNavbar() {
     }
     window.addEventListener("focusNavSearch", onFocusNavSearch);
     return () => window.removeEventListener("focusNavSearch", onFocusNavSearch);
-  }, []);
+  }, [isMobile]);
 
   // ── Navigate ─────────────────────────────────────────────────────────────────
   const navigate = useCallback(
@@ -523,7 +528,7 @@ export default function AppNavbar() {
         } else {
           url += `scrollTo=${result.id}&v=${Date.now()}`;
         }
-        console.log('[SearchNav] Navigating to message result:', result, 'threadParentId:', threadParentId, 'url:', url, 'current location:', window.location.href);
+        // console.log('[SearchNav] Navigating to message result:', result, 'threadParentId:', threadParentId, 'url:', url, 'current location:', window.location.href);
         router.push(url);
         // if (threadParentId) {
         //   // Force a refresh so ChannelChat re-runs its thread auto-open effect even if we're already on this channel.
@@ -559,7 +564,7 @@ export default function AppNavbar() {
       <div className="mx-auto max-w-8xl px-3 sm:px-6">
         <div className="flex items-center h-10 sm:h-14 justify-between">
 
-          {/* LEFT */}
+          {/* LEFT - Desktop */}
           <div className="hidden sm:grid grid-cols-12 items-center gap-3 flex-1 justify-start">
             <div className="flex items-center gap-3 flex-1 justify-between col-span-4">
 
@@ -572,8 +577,8 @@ export default function AppNavbar() {
                 </DropdownMenuTrigger>
                 <DropdownMenuContent
                   className="w-48 rounded-lg"
-                  side={isMobile ? "bottom" : "right"}
-                  align={isMobile ? "end" : "start"}
+                  side="bottom"
+                  align="start"
                 >
                 
                   <DropdownMenuItem asChild>
@@ -802,15 +807,160 @@ export default function AppNavbar() {
             </div>
           </div>
 
-          {/* MOBILE */}
-          <button className="sm:hidden p-2 rounded-md" aria-label="search">
+          {/* LEFT - Mobile Trigger */}
+          <div className="flex sm:hidden items-center gap-2">
+            <SidebarTrigger className="text-white hover:bg-accent/20" />
+            
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button className="p-1.5 rounded-md hover:bg-accent/20 text-white">
+                  <FiMenu size={20} />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent className="w-48" side="bottom" align="start">
+                <DropdownMenuItem asChild>
+                  <Link href="/profile">Profile & Settings</Link>
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={handleLogout} className="text-red-400">
+                  Log Out
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+
+          {/* MOBILE SEARCH TOGGLE */}
+          <button 
+            className="sm:hidden p-2 rounded-md text-white hover:bg-accent/20" 
+            aria-label="search"
+            onClick={() => setMobileSearchOpen(true)}
+          >
             <CiSearch size={22} />
           </button>
 
           {/* LOGO */}
-          <div className="flex items-center sm:gap-2">
-            <img src="/images/logo.png" alt="Logo" className="h-8 w-auto py-[6px] px-[10px] bg-white rounded-2xl" />
+          <div className="hidden md:flex items-center sm:gap-2">
+            <img src="/images/logo.png" alt="Logo" className="h-7 sm:h-8 w-auto py-[4px] px-[8px] sm:py-[6px] sm:px-[10px] bg-white rounded-2xl" />
           </div>
+
+          {/* MOBILE SEARCH OVERLAY */}
+          {mobileSearchOpen && (
+            <div className="fixed inset-0 z-[201] bg-[var(--sidebar)] flex flex-col sm:hidden">
+              <div className="flex items-center h-12 px-4 border-b border-[var(--border-color)]">
+                <CiSearch size={20} className="text-muted-foreground mr-2" />
+                <input
+                  autoFocus
+                  type="text"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  placeholder="Search..."
+                  className="flex-1 bg-transparent outline-none text-sm"
+                />
+                <button onClick={() => { setMobileSearchOpen(false); setQuery(""); }} className="p-1">
+                  <X size={20} />
+                </button>
+              </div>
+              
+              <div className="flex-1 overflow-y-auto pb-10">
+                {loading && (
+                  <div className="p-8 flex justify-center">
+                    <span className="w-6 h-6 rounded-full border-2 border-muted-foreground border-t-transparent animate-spin" />
+                  </div>
+                )}
+                
+                {!loading && query && !hasResults && (
+                   <div className="px-6 py-10 text-center text-sm text-muted-foreground">
+                    No results found for "{query}"
+                   </div>
+                )}
+
+                {hasResults && (
+                  <div className="divide-y divide-[var(--border-color)]">
+                     {data.channels.length > 0 && (
+                        <section>
+                          <SectionHeader label="Channels" />
+                          {data.channels.map((c) => {
+                            const idx = flat.indexOf(c);
+                            return (
+                              <ResultRow
+                                key={`m-ch-${c.id}`}
+                                active={activeIndex === idx}
+                                onClick={() => { navigate(c); setMobileSearchOpen(false); }}
+                                onMouseEnter={() => setActiveIndex(idx)}
+                              >
+                                <span className="w-6 h-6 rounded-md bg-blue-500/15 flex items-center justify-center flex-shrink-0">
+                                  {c.is_private ? <FaLock size={9} className="text-blue-400" /> : <FaHashtag size={10} className="text-blue-400" />}
+                                </span>
+                                <span className="flex-1 truncate font-medium text-sm text-white">
+                                  {highlight(c.name, searchTerm)}
+                                </span>
+                              </ResultRow>
+                            );
+                          })}
+                        </section>
+                      )}
+
+                      {data.people.length > 0 && (
+                        <section>
+                          <SectionHeader label="People" />
+                          {data.people.map((p) => {
+                            const idx = flat.indexOf(p);
+                            return (
+                              <ResultRow
+                                key={`m-p-${p.id}`}
+                                active={activeIndex === idx}
+                                onClick={() => { navigate(p); setMobileSearchOpen(false); }}
+                                onMouseEnter={() => setActiveIndex(idx)}
+                              >
+                                <Avatar src={p.avatar_url} name={p.name} size={6} />
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-sm font-medium truncate text-white">
+                                    {highlight(p.name, searchTerm)}
+                                  </p>
+                                </div>
+                              </ResultRow>
+                            );
+                          })}
+                        </section>
+                      )}
+
+                      {data.messages.length > 0 && (
+                        <section>
+                          <SectionHeader label="Messages" />
+                          {data.messages.map((m) => {
+                            const idx = flat.indexOf(m);
+                            return (
+                              <ResultRow
+                                key={`m-msg-${m.id}`}
+                                active={activeIndex === idx}
+                                onClick={() => { navigate(m); setMobileSearchOpen(false); }}
+                                onMouseEnter={() => setActiveIndex(idx)}
+                              >
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-1.5 mb-0.5">
+                                    <span className="text-xs font-semibold text-white truncate">
+                                      {m.sender_name ?? "Unknown"}
+                                    </span>
+                                    <span className="text-[10px] text-muted-foreground">in</span>
+                                    <span className="text-[10px] font-medium text-blue-400 truncate">
+                                      {m.channel_name ?? `channel ${m.channel_id}`}
+                                    </span>
+                                  </div>
+                                  <p className="text-xs text-muted-foreground line-clamp-1 leading-relaxed">
+                                      {highlight(stripHtml(m.content), searchTerm)}
+                                  </p>
+                                </div>
+                              </ResultRow>
+                            );
+                          })}
+                        </section>
+                      )}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </header>

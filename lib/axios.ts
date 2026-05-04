@@ -6,27 +6,15 @@ const axiosInstance = axios.create({
   withCredentials: true,
 });
 
-axiosInstance.interceptors.request.use((config) => {
-  try {
-    if (typeof window !== "undefined") {
-      const token = localStorage.getItem("access_token");
-      if (token && config.headers) {
-        config.headers["Authorization"] = `Bearer ${token}`;
-      }
-    }
-  } catch (e) {}
-  return config;
-});
-
 let isRefreshing = false;
-let failedQueue: Array<{ resolve: (token: string) => void; reject: (err: any) => void }> = [];
+let failedQueue: Array<{ resolve: () => void; reject: (err: unknown) => void }> = [];
 
-const processQueue = (error: any, token: string | null = null) => {
+const processQueue = (error: unknown | null) => {
   failedQueue.forEach((prom) => {
     if (error) {
       prom.reject(error);
     } else {
-      prom.resolve(token!);
+      prom.resolve();
     }
   });
   failedQueue = [];
@@ -40,11 +28,11 @@ axiosInstance.interceptors.response.use(
     // If 401 and not already retrying
     if (error.response?.status === 401 && !originalRequest._retry) {
       if (isRefreshing) {
-        return new Promise(function (resolve, reject) {
-          failedQueue.push({ resolve, reject });
+        return new Promise<void>(function (resolve, reject) {
+          // Wrap `resolve` so it matches our queue signature (no args).
+          failedQueue.push({ resolve: () => resolve(), reject });
         })
-          .then((token) => {
-            originalRequest.headers["Authorization"] = `Bearer ${token}`;
+          .then(() => {
             return axiosInstance(originalRequest);
           })
           .catch((err) => {
@@ -56,21 +44,19 @@ axiosInstance.interceptors.response.use(
       isRefreshing = true;
 
       try {
-        const newAccessToken = await refreshAccessToken();
-        if (newAccessToken) {
-          localStorage.setItem("access_token", newAccessToken);
-          axiosInstance.defaults.headers.common["Authorization"] = `Bearer ${newAccessToken}`;
-          
-          processQueue(null, newAccessToken);
-          
-          // Retry original request
-          if (originalRequest.headers) {
-            originalRequest.headers["Authorization"] = `Bearer ${newAccessToken}`;
-          }
-          return axiosInstance(originalRequest);
+        await refreshAccessToken();
+        processQueue(null);
+
+        // Ensure we don't accidentally re-attach a stale localStorage token.
+        if (originalRequest.headers && typeof originalRequest.headers === "object") {
+          const headers = originalRequest.headers as Record<string, unknown>;
+          delete headers["Authorization"];
         }
+
+        // Retry original request with refreshed HttpOnly cookies.
+        return axiosInstance(originalRequest);
       } catch (refreshError) {
-        processQueue(refreshError, null);
+        processQueue(refreshError);
         
         // Dispatch global event so provider.tsx knows to fully log the user out
         if (typeof window !== "undefined") {

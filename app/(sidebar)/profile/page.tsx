@@ -527,8 +527,8 @@ export default function ProfilePage() {
     setDeletingAccount(true);
     try {
       await api.delete("/users/me");
-      logout();
-      router.push("/login");
+      await logout();
+      router.replace("/login");
     } catch (err) {
       console.error("Failed to delete account:", err);
       setDeletingAccount(false);
@@ -536,9 +536,9 @@ export default function ProfilePage() {
     }
   }
 
-  function handleLogout() {
-    logout();
-    router.push("/login");
+  async function handleLogout() {
+    await logout();
+    router.replace("/login");
   }
 
   return (

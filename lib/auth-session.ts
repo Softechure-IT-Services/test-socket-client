@@ -1,15 +1,11 @@
 import axios from "axios";
 
-let refreshPromise: Promise<string> | null = null;
+let refreshPromise: Promise<void> | null = null;
 
 export const clearStoredAuth = () => {
-  if (typeof window === "undefined") return;
-
-  localStorage.removeItem("access_token");
-  document.cookie = "access_token=; Max-Age=0; path=/";
-  document.cookie = "refresh_token=; Max-Age=0; path=/";
-  document.cookie = "user_id=; Max-Age=0; path=/";
-  document.cookie = "username=; Max-Age=0; path=/";
+  // Access/refresh tokens are stored in HttpOnly cookies by the backend.
+  // Client-side JS cannot and should not mutate them directly.
+  return;
 };
 
 export const refreshAccessToken = async () => {
@@ -21,16 +17,11 @@ export const refreshAccessToken = async () => {
         { withCredentials: true }
       )
       .then((response) => {
-        const refreshedToken = response.data?.accessToken;
-        if (!refreshedToken) {
-          throw new Error("Refresh response did not include an access token");
+        // Backend refresh endpoint sets HttpOnly cookies.
+        // We intentionally do not persist tokens in localStorage.
+        if (response.status < 200 || response.status >= 300) {
+          throw new Error("Refresh failed");
         }
-
-        if (typeof window !== "undefined") {
-          localStorage.setItem("access_token", refreshedToken);
-        }
-
-        return refreshedToken;
       })
       .finally(() => {
         refreshPromise = null;

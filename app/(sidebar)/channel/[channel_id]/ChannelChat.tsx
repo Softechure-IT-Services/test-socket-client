@@ -16,7 +16,9 @@ import { MessageRow, MessageSkeleton } from "@/app/components/MessageRow";
 import DOMPurify from "dompurify";
 import { sweetConfirm, sweetToast } from "@/lib/sweetalert";
 import { UserAvatar } from "@/app/components/MessageMeta";
-import { formatRelativeTime } from "@/lib/utils";
+import { formatRelativeTime, cn } from "@/lib/utils";
+import { useChatCache } from "@/app/components/context/ChatCacheContext";
+import { useIsMobile } from "@/hooks/use-mobile";
 // At the top with your other hook imports
 type User = {
   name: string;
@@ -118,6 +120,7 @@ function SystemMessage({
 }
 
 export default function ChannelChat({ channelId }: ChannelChatProps) {
+  const isMobile = useIsMobile();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isDm, setIsDm] = useState(false);
   const [dmOtherUser, setDmOtherUser] = useState<DmUser | null>(null);
@@ -142,7 +145,7 @@ export default function ChannelChat({ channelId }: ChannelChatProps) {
   const scrollToParam = searchParams?.get("scrollTo");
   const scrollTargetId = threadIdParam || scrollToParam;
 
-  console.log('[ChannelChat] Render - searchParams:', searchParams?.toString(), 'threadIdParam:', threadIdParam, 'scrollToParam:', scrollToParam);
+  // console.log('[ChannelChat] Render - searchParams:', searchParams?.toString(), 'threadIdParam:', threadIdParam, 'scrollToParam:', scrollToParam);
 
 
   // Inside the ChannelChat component, alongside your other hooks
@@ -196,6 +199,8 @@ const canSendMessages = isMember;
   const highlightedScrollIds = useRef<Set<string>>(new Set());
   const prevScrollToRef = useRef<string | null>(null);
   const isJumpingToPinnedRef = useRef(false);
+  const shouldAutoScrollRef = useRef(true);
+  const isRestoringScrollRef = useRef(false);
 
   const [hasNewMessages, setHasNewMessages] = useState(false);
   const [newMessageCount, setNewMessageCount] = useState(0);
@@ -204,6 +209,7 @@ const canSendMessages = isMember;
   const lastReadAtOpenRef = useRef<number | null>(null);
 
   const { incrementUnread, clearUnread } = useUnread();
+  const { cache, setChatCache } = useChatCache();
 
   // ─── Thread panel state ──────────────────────────────────────────────────────
   const [threadMessage, setThreadMessage] = useState<{
@@ -254,6 +260,52 @@ const canSendMessages = isMember;
     if (!files.length) return;
     setDroppedFiles(files);
   };
+
+  const mapMsg = useCallback(
+    (msg: any): ChatMessage => {
+      let files: ChatFile[] = [];
+      if (Array.isArray(msg.files)) {
+        files = msg.files;
+      } else if (typeof msg.files === "string" && msg.files) {
+        try {
+          files = JSON.parse(msg.files);
+        } catch {
+          files = [];
+        }
+      }
+
+      let reactions: Reaction[] = [];
+      if (Array.isArray(msg.reactions)) {
+        reactions = msg.reactions;
+      } else if (typeof msg.reactions === "string" && msg.reactions) {
+        try {
+          reactions = JSON.parse(msg.reactions);
+        } catch {
+          reactions = [];
+        }
+      }
+
+      return {
+        id: msg.id,
+        sender_id: String(msg.sender_id),
+        sender_name: msg.sender_name,
+        content: msg.content,
+        files,
+        self: String(msg.sender_id) === String(userId),
+        created_at: msg.created_at,
+        updated_at: msg.updated_at,
+        reactions,
+        avatar_url: msg.avatar_url ?? null,
+        pinned: msg.pinned === true,
+        is_forwarded: msg.is_forwarded ?? false,
+        forwarded_from: msg.forwarded_from ?? null,
+        is_edited: msg.is_edited ?? false,
+        is_system: msg.is_system ?? false,
+        thread_count: msg.thread_count ?? 0,
+      };
+    },
+    [userId]
+  );
 
   // ─── Fetch channel info + membership status ────────────────────────────────
   useEffect(() => {
@@ -389,9 +441,6 @@ sweetToast({
       // Delay releasing the scroll guard to allow for layout stabilization after the jump
       setTimeout(() => {
         isJumpingToPinnedRef.current = false;
-        // Also remove from the dedup set so that clicking the same search result/pin
-        // (which now includes a timestamp in the URL) can re-trigger the highlight.
-        highlightedScrollIds.current.delete(scrollToId);
       }, 500);
     }, 100);
   }, [scrollTargetId, messages, initialLoading, searchParams]);
@@ -407,7 +456,7 @@ sweetToast({
 
   useEffect(() => {
     const threadId = threadIdParam;
-    console.log('[ThreadEffect] threadIdParam changed:', threadId, 'threadMessage:', threadMessage?.id, 'closing:', closingRef.current);
+    // console.log('[ThreadEffect] threadIdParam changed:', threadId, 'threadMessage:', threadMessage?.id, 'closing:', closingRef.current);
 
     if (!threadId) {
       setThreadMessage(null);
@@ -416,24 +465,24 @@ sweetToast({
 
     // If we're in the middle of closing, don't re-open
     if (closingRef.current) {
-      console.log('[ThreadEffect] Currently closing, skipping');
+      // console.log('[ThreadEffect] Currently closing, skipping');
       return;
     }
 
     // If already open, skip
     const alreadyOpen = threadMessage && String(threadMessage.id) === threadId;
-    console.log('[ThreadEffect] alreadyOpen:', alreadyOpen);
+    // console.log('[ThreadEffect] alreadyOpen:', alreadyOpen);
     if (alreadyOpen) {
-      console.log('[ThreadEffect] Thread already open, skipping');
+      // console.log('[ThreadEffect] Thread already open, skipping');
       return;
     }
 
-    console.log('[ThreadEffect] Proceeding to open thread:', threadId);
+    // console.log('[ThreadEffect] Proceeding to open thread:', threadId);
 
     // Check messages already in state first (avoids unnecessary API round-trip)
     const parentMsgInView = messages.find((m) => String(m.id) === threadId);
     if (parentMsgInView) {
-      console.log('[ThreadEffect] Found parent message in view, setting threadMessage');
+      // console.log('[ThreadEffect] Found parent message in view, setting threadMessage');
       setThreadMessage({
         id: parentMsgInView.id!,
         content: parentMsgInView.content,
@@ -446,18 +495,18 @@ sweetToast({
 
     // Not in view yet — call API directly. This is the reliable path for when
     // ChannelChat just mounted (messages array is empty on initial render).
-    console.log('[ThreadEffect] Calling API for thread:', threadId);
+    // console.log('[ThreadEffect] Calling API for thread:', threadId);
     api
       .get(`/threads/${threadId}`)
       .then((res) => {
-        console.log('[ThreadEffect] API response:', res.data);
+        // console.log('[ThreadEffect] API response:', res.data);
         if (res.data.parent_message) {
           setThreadMessage(res.data.parent_message);
         } else {
           // If no parent_message, check if the message exists locally (for search results)
           const localMessage = messages.find((m) => String(m.id) === threadId);
           if (localMessage) {
-            console.log('[ThreadEffect] Using local message as thread parent');
+            // console.log('[ThreadEffect] Using local message as thread parent');
             setThreadMessage({
               id: localMessage.id!,
               content: localMessage.content,
@@ -466,7 +515,7 @@ sweetToast({
               created_at: localMessage.created_at,
             });
           } else {
-            console.log('[ThreadEffect] No parent message found, not opening thread');
+            // console.log('[ThreadEffect] No parent message found, not opening thread');
           }
         }
       })
@@ -786,43 +835,7 @@ sweetToast({
 
         const data = res.data;
 
-        const mapped: ChatMessage[] = res.data.messages.map((msg: any) => {
-          // The API now returns files and reactions as already-parsed arrays.
-          // Guard against both shapes (array = new backend, string = old backend)
-          // so the client is robust regardless of which version is deployed.
-          let files: ChatFile[] = [];
-          if (Array.isArray(msg.files)) {
-            files = msg.files;
-          } else if (typeof msg.files === "string" && msg.files) {
-            try { files = JSON.parse(msg.files); } catch { files = []; }
-          }
-
-          let reactions: Reaction[] = [];
-          if (Array.isArray(msg.reactions)) {
-            reactions = msg.reactions;
-          } else if (typeof msg.reactions === "string" && msg.reactions) {
-            try { reactions = JSON.parse(msg.reactions); } catch { reactions = []; }
-          }
-
-          return {
-            id: msg.id,
-            sender_id: String(msg.sender_id),
-            sender_name: msg.sender_name,
-            content: msg.content,
-            files,
-            self: String(msg.sender_id) === String(userId),
-            created_at: msg.created_at,
-            updated_at: msg.updated_at,
-            reactions,
-            avatar_url: msg.avatar_url ?? null,
-            pinned: msg.pinned === true,
-            is_forwarded: msg.is_forwarded ?? false,
-            forwarded_from: msg.forwarded_from ?? null,
-            is_edited: msg.is_edited ?? false,
-            is_system: msg.is_system ?? false,
-            thread_count: msg.thread_count ?? 0,
-          };
-        });
+        const mapped: ChatMessage[] = res.data.messages.map(mapMsg);
 
         setMessages((prev) => {
           const combined = initial ? mapped : [...mapped, ...prev];
@@ -855,9 +868,14 @@ sweetToast({
           });
         }
       } catch (err: any) {
-        console.error("Failed to load messages:", err);
-        if (err.response?.status === 403) {
-          setIsMember(false);
+        const status = err?.response?.status;
+        if (status === 404) {
+          setHasMore(false);
+          if (initial) {
+            setMessages([]);
+          }
+        } else {
+          console.error("Failed to load messages:", err);
         }
       } finally {
         if (initial) {
@@ -889,37 +907,6 @@ sweetToast({
           }),
         ]);
 
-        const mapMsg = (msg: any): ChatMessage => {
-          let files: ChatFile[] = [];
-          if (Array.isArray(msg.files)) files = msg.files;
-          else if (typeof msg.files === "string" && msg.files) {
-            try { files = JSON.parse(msg.files); } catch { files = []; }
-          }
-          let reactions: Reaction[] = [];
-          if (Array.isArray(msg.reactions)) reactions = msg.reactions;
-          else if (typeof msg.reactions === "string" && msg.reactions) {
-            try { reactions = JSON.parse(msg.reactions); } catch { reactions = []; }
-          }
-          return {
-            id: msg.id,
-            sender_id: String(msg.sender_id),
-            sender_name: msg.sender_name,
-            content: msg.content,
-            files,
-            self: String(msg.sender_id) === String(userId),
-            created_at: msg.created_at,
-            updated_at: msg.updated_at,
-            reactions,
-            avatar_url: msg.avatar_url ?? null,
-            pinned: msg.pinned === true,
-            is_forwarded: msg.is_forwarded ?? false,
-            forwarded_from: msg.forwarded_from ?? null,
-            is_system: msg.is_system ?? false,
-            is_edited: msg.is_edited ?? false,
-            thread_count: msg.thread_count ?? 0,
-          };
-        };
-
         const beforeMsgs: ChatMessage[] = (beforeRes.data.messages ?? []).map(mapMsg);
         const afterMsgs: ChatMessage[] = (afterRes.data.messages ?? [])
           .map(mapMsg)
@@ -948,9 +935,15 @@ sweetToast({
           setHasMoreNewer(false);
           setNextAfterCursor(null);
         }
-      } catch (err) {
-        console.error("Failed to load messages around id:", err);
-        loadMessages(true);
+      } catch (err: any) {
+        const status = err?.response?.status;
+        if (status === 404) {
+          setMessages([]);
+          setHasMore(false);
+        } else {
+          console.error("Failed to load messages around id:", err);
+          loadMessages(true);
+        }
       } finally {
         setInitialLoading(false);
       }
@@ -968,9 +961,11 @@ sweetToast({
 
     // When both threadId and scrollTo are present (pinned thread reply), use
     // a compound key so clicking a different reply in the same thread is handled.
+    // Include searchParams.get("v") to allow clicking the same pin again to re-trigger.
+    const version = searchParams?.get("v") || "";
     const dedupeKey = threadId && paramScrollTo
-      ? `${threadId}:${paramScrollTo}`
-      : threadId || paramScrollTo;
+      ? `${threadId}:${paramScrollTo}:${version}`
+      : (threadId || paramScrollTo) + (version ? `:${version}` : "");
 
     if (!dedupeKey) {
       prevScrollToRef.current = null;
@@ -996,7 +991,7 @@ sweetToast({
     // Target not in DOM — load the message bundle that contains it
     shouldAutoScrollRef.current = false;
     loadMessagesAroundId(channelScrollTarget);
-  }, [threadIdParam, scrollToParam, loadMessagesAroundId]);
+  }, [threadIdParam, scrollToParam, loadMessagesAroundId, searchParams]);
 
   useEffect(() => {
     if (!channelId || !userId) return;
@@ -1009,11 +1004,81 @@ sweetToast({
     // Clear unread badge for this channel now that user has opened it
     clearUnread(channelId);
 
-    setMessages([]);
-    setNextCursor(null);
-    setHasMore(true);
-    setHasMoreNewer(false);
-    setNextAfterCursor(null);
+    // Check cache first
+    const cached = cache[channelId];
+    if (cached && cached.messages.length > 0) {
+      setMessages(cached.messages);
+      setNextCursor(cached.nextCursor);
+      setHasMore(cached.hasMore);
+      setNextAfterCursor(cached.nextAfterCursor);
+      setHasMoreNewer(cached.hasMoreNewer);
+      setInitialLoading(false);
+      hasCompletedInitialLoadRef.current = true;
+
+      // Restore scroll position
+      if (cached.scrollPos !== undefined) {
+        shouldAutoScrollRef.current = false; // Disable auto-scroll while restoring
+        isRestoringScrollRef.current = true;
+        didInitialScrollRef.current = true; // Mark as done so post-load doesn't scroll to bottom
+        requestAnimationFrame(() => {
+          // Double RAF to ensure layout is done
+          requestAnimationFrame(() => {
+            if (containerRef.current) {
+              containerRef.current.scrollTop = cached.scrollPos!;
+              // Brief timeout to let any stray scroll events fire before we resume caching
+              setTimeout(() => {
+                isRestoringScrollRef.current = false;
+              }, 150);
+            } else {
+              isRestoringScrollRef.current = false;
+            }
+          });
+        });
+      }
+
+      // Background refresh for newer messages
+      const newestId = Math.max(
+        ...cached.messages
+          .map((m) => Number(m.id))
+          .filter((id) => !isNaN(id))
+      );
+      if (newestId > 0) {
+        api
+          .get(`/channels/${channelId}/messages`, {
+            params: { limit: 50, after: newestId },
+          })
+          .then((res) => {
+            const newMsgs: ChatMessage[] = (res.data.messages ?? []).map(mapMsg);
+            if (newMsgs.length > 0) {
+              setMessages((prev) => {
+                const combined = [...prev, ...newMsgs];
+                const seen = new Set();
+                return combined
+                  .filter((m) => {
+                    const k = String(m.id);
+                    if (seen.has(k)) return false;
+                    seen.add(k);
+                    return true;
+                  })
+                  .sort(
+                    (a, b) =>
+                      new Date(a.created_at!).getTime() -
+                      new Date(b.created_at!).getTime()
+                  );
+              });
+            }
+          })
+          .catch((err) => console.error("Background refresh failed:", err));
+      }
+    } else {
+      setMessages([]);
+      setNextCursor(null);
+      setHasMore(true);
+      setHasMoreNewer(false);
+      setNextAfterCursor(null);
+      setInitialLoading(true);
+    }
+
     setHasNewMessages(false);
     setNewMessageCount(0);
     setNewMessageSeparatorId(null);
@@ -1026,19 +1091,56 @@ sweetToast({
     if (scrollToId) {
       shouldAutoScrollRef.current = false;
       loadMessagesAroundId(scrollToId);
-    } else {
+    } else if (!cached || cached.messages.length === 0) {
       loadMessages(true);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [channelId, userId]);
+
+  // ─── Scroll position caching effect ─────────────────────────────────────────
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el || !channelId) return;
+
+    const handleScroll = () => {
+      if (isRestoringScrollRef.current) return;
+      // Small debounce or throttling would be better, but simple for now
+      setChatCache(channelId, { scrollPos: el.scrollTop });
+    };
+
+    el.addEventListener("scroll", handleScroll);
+    return () => el.removeEventListener("scroll", handleScroll);
+  }, [channelId, setChatCache]);
+
+  // ─── Update cache when messages or pagination state changes ─────────────────
+  useEffect(() => {
+    if (channelId && !initialLoading) {
+      setChatCache(channelId, {
+        messages,
+        nextCursor,
+        hasMore,
+        nextAfterCursor,
+        hasMoreNewer,
+      });
+    }
+  }, [
+    channelId,
+    messages,
+    nextCursor,
+    hasMore,
+    nextAfterCursor,
+    hasMoreNewer,
+    setChatCache,
+    initialLoading,
+  ]);
 
   useEffect(() => {
     if (!initialLoading) return;
-
-    if (scrollTargetId) return;
-
-    scrollChatToBottom("auto");
-    didInitialScrollRef.current = true;
-  }, [initialLoading, scrollTargetId, scrollChatToBottom]);
+    if (scrollTargetId) {
+       didInitialScrollRef.current = true;
+       return;
+    }
+  }, [initialLoading, scrollTargetId]);
 
   // ─── After initial load: place NEW divider + save lastRead ────────────────────
   // Uses a ref to detect the true→false transition of initialLoading.
@@ -1058,8 +1160,11 @@ sweetToast({
       return;
     }
 
-    // Scroll to bottom instantly (no animation) now that the first batch is ready
-    scrollChatToBottom("auto");
+    // Scroll to bottom instantly only if we haven't already scrolled (e.g. from cache or target)
+    if (!didInitialScrollRef.current && !scrollTargetId) {
+       scrollChatToBottom("auto");
+       didInitialScrollRef.current = true;
+    }
     hasCompletedInitialLoadRef.current = true;
 
     const lastReadId = lastReadAtOpenRef.current;
@@ -1109,19 +1214,18 @@ sweetToast({
     };
   }, [socket]);
 
-  const shouldAutoScrollRef = useRef(true);
 
   const lastMessageId = messages[messages.length - 1]?.id;
 
   useEffect(() => {
-    if (isLoadingMore) return;
+    if (initialLoading || isLoadingMore || isRestoringScrollRef.current) return;
     // Don't auto-scroll when we're paginating newer messages (jump-to-pinned mode)
     // or when there are still older-than-latest messages to load below
     if (isLoadingNewer || hasMoreNewer) return;
     if (!shouldAutoScrollRef.current) return;
 
     scrollChatToBottom(hasCompletedInitialLoadRef.current ? "smooth" : "auto");
-  }, [lastMessageId, isLoadingMore, isLoadingNewer, hasMoreNewer, scrollChatToBottom]);
+  }, [lastMessageId, isLoadingMore, isLoadingNewer, hasMoreNewer, initialLoading, scrollChatToBottom]);
 
   const handleDownload = async (file: any) => {
     try {
@@ -1148,7 +1252,7 @@ sweetToast({
           url: file.url,
         });
       } catch (err) {
-        console.log("Share cancelled");
+        // console.log("Share cancelled");
       }
     } else {
       await navigator.clipboard.writeText(file.url);
@@ -1316,6 +1420,10 @@ sweetToast({
       } else {
         const formData = new FormData();
         files.forEach((f: File) => formData.append("files", f));
+        formData.append("channelId", String(channelId));
+        if (userId != null) {
+          formData.append("userId", String(userId));
+        }
         const res = await api.post(`${SERVER_URL}/upload`, formData);
         fileMetadata = Array.isArray(res.data.files)
           ? res.data.files
@@ -1695,7 +1803,14 @@ sweetToast({
     >
       {/* Thread panel — 1/3 width, slides in from the right */}
       {threadMessage && (
-        <div className="hidden md:flex md:w-[33vw]  shrink-0 flex-col max-h-[calc(100vh-var(--main-header-height)-var(--chat-header-height)+28px)] sticky top-0 order-2 animate-in slide-in-from-right duration-200">
+        <div
+          className={cn(
+            "shrink-0 flex-col sticky top-0 order-2 animate-in duration-200",
+            isMobile
+              ? "fixed inset-0 z-[100] w-full h-full bg-white dark:bg-black slide-in-from-right"
+              : "hidden md:flex md:w-[33vw] max-h-[calc(100vh-var(--main-header-height)-56px)] slide-in-from-right"
+          )}
+        >
           <ThreadPanel
             parentMessage={threadMessage}
             channelId={channelId}
@@ -1704,8 +1819,8 @@ sweetToast({
           />
         </div>
       )}
-      <div
-        className="relative flex flex-col flex-1 min-h-0 overflow-hidden max-h-[calc(100vh-var(--main-header-height)-var(--chat-header-height)+28px)] order-1"
+        <div
+          className="relative flex flex-col flex-1 min-h-0 overflow-hidden max-h-[calc(100vh-var(--main-header-height)-56px)] order-1"
         onDragEnter={handleDragEnter}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
@@ -1876,6 +1991,10 @@ sweetToast({
               </div>
               <MessageInput
                 onSend={handleSendMessage}
+                channelId={channelId}
+                entityType="channel"
+                entityId={channelId}
+                userId={userId}
                 editingMessageId={editMessageId}
                 editingInitialContent={editContent}
                 onSaveEdit={handleSaveEdit}

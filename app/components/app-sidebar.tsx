@@ -23,7 +23,7 @@ import {
 
 import CreateModal from "@/app/components/modals/CreateNew";
 import { useAuth } from "@/app/components/context/userId_and_connection/provider";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { UserType } from "@/app/components/context/userId_and_connection/provider";
 import { useUnread } from "@/app/components/context/UnreadContext";
 import { usePushNotifications } from "@/hooks/usePushNotifications";
@@ -33,10 +33,10 @@ import {
   incrementStoredMentionCount,
   clearStoredMentionCount,
   getStoredMentionCount,
-  // Reuse the generic unread helpers with the special key "threads"
   getStoredUnread,
   incrementStoredUnread,
   clearStoredUnread,
+  addUnreadThreadId,
 } from "@/hooks/useLastRead";
 import {
   DEFAULT_NOTIFICATION_PREFERENCES,
@@ -76,9 +76,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const pathname = usePathname();
   const router = useRouter();
 
-  // ─── Active huddle tracking (current user's huddle via URL) ─────────────
-  const searchParams = useSearchParams();
-  const activeHuddleChannelId = pathname === "/huddle" ? searchParams.get("channel_id") : null;
+  // ─── (Removed unused active huddle tracking via URL to prevent suspension/hydration issues) ───
 
   // ─── Huddle invite toasts ────────────────────────────────────────────────
   type HuddleInvite = { id: string; channel_id: number; channel_name: string | null; meeting_id: string; started_by: number; isDm?: boolean };
@@ -413,6 +411,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       if (typeof window !== "undefined" && window.location.pathname !== "/threads") {
         const next = incrementStoredUnread(THREAD_UNREAD_KEY);
         setThreadUnreadCount(next);
+        addUnreadThreadId(Number(notification.parent_message_id));
       }
 
       const channelLabel = notification.is_dm
@@ -818,7 +817,12 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       // Manage the huddle ID ourselves using the backend API
       const res = await api.post(`/huddle/instant`);
       if (res.data?.room_id) {
-        router.push(`/huddle?meeting_id=${res.data.room_id}`);
+        const width = 980;
+        const height = 720;
+        const left = window.screenX + Math.max(0, Math.round((window.outerWidth - width) / 2));
+        const top = window.screenY + Math.max(0, Math.round((window.outerHeight - height) / 2));
+        const features = `toolbar=no,location=no,status=no,menubar=no,scrollbars=yes,resizable=yes,width=${width},height=${height},left=${left},top=${top}`;
+        window.open(`/huddle?meeting_id=${res.data.room_id}`, "huddle_popup", features);
       }
     } catch (err) {
       console.error("Failed to start instant huddle:", err);

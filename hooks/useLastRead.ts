@@ -82,3 +82,35 @@ export function incrementStoredMentionCount(channelId: string | number): number 
 export function clearStoredMentionCount(channelId: string | number): void {
   setStoredMentionCount(channelId, 0);
 }
+
+// ─── Unread Thread IDs ─────────────────────────────────────────────────────
+
+export function getUnreadThreadIds(): number[] {
+  try {
+    const val = localStorage.getItem("unreadThreadIds");
+    if (!val) return [];
+    return JSON.parse(val);
+  } catch { return []; }
+}
+
+export function addUnreadThreadId(parentMessageId: number): void {
+  try {
+    const ids = new Set(getUnreadThreadIds());
+    ids.add(parentMessageId);
+    localStorage.setItem("unreadThreadIds", JSON.stringify([...ids]));
+  } catch {}
+}
+
+export function removeUnreadThreadId(parentMessageId: number): void {
+  try {
+    const ids = new Set(getUnreadThreadIds());
+    ids.delete(parentMessageId);
+    localStorage.setItem("unreadThreadIds", JSON.stringify([...ids]));
+  } catch {}
+}
+
+export function clearUnreadThreadIds(): void {
+  try {
+    localStorage.removeItem("unreadThreadIds");
+  } catch {}
+}

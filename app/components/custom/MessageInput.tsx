@@ -50,6 +50,7 @@ const MAX_FILE_SIZE_LABEL = "25MB";
 
 type UploadedPreview = {
   uploading: false;
+  id: string;
   name: string;
   url: string;
   type: string;
@@ -94,6 +95,8 @@ const getFileKind = (type: string, name: string) => {
 
 interface MessageInputProps {
   onSend: (content: string, files?: File[]) => void;
+  channelId?: string | number;
+  userId?: string | number;
   editingMessageId?: string | null;
   editingInitialContent?: string;
   onSaveEdit?: (messageId: string, content: string, files?: File[]) => void;
@@ -104,6 +107,8 @@ interface MessageInputProps {
 
   in_thread?: boolean; // Whether this MessageInput is rendered inside a ThreadPanel (affects styling)
   onDropFilesConsumed?: () => void;
+  entityType?: "channel" | "thread" | "dm";
+  entityId?: string | number;
 }
 
 // ─── Mention chip node ───────────────────────────────────────────────────────
@@ -205,6 +210,8 @@ const DeletableImage = Image.extend({
 
 export default function MessageInput({
   onSend,
+  channelId,
+  userId,
   editingMessageId = null,
   editingInitialContent = "",
   onSaveEdit,
@@ -212,6 +219,8 @@ export default function MessageInput({
   dropFiles,
   in_thread = false,
   onDropFilesConsumed,
+  entityType,
+  entityId,
 }: MessageInputProps) {
   const [showEmoji, setShowEmoji] = useState(false);
   const [showGifPicker, setShowGifPicker] = useState(false);
@@ -234,6 +243,10 @@ export default function MessageInput({
   const [uploading, setUploading] = useState<UploadingPreview[]>([]);
   // uploadedFiles: server-confirmed metadata
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
+
+  // Draft Management
+  const [draftLoaded, setDraftLoaded] = useState(false);
+  const saveDraftTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const SERVER_URL =
     process.env.NEXT_PUBLIC_SERVER_URL ?? "http://192.168.0.113:5000";
@@ -345,6 +358,10 @@ export default function MessageInput({
 
   const insertImageFile = async (file: File) => {
     if (!editor) return;
+    if (!channelId) {
+      setFileError("Upload failed: channel context is missing.");
+      return;
+    }
     if (!isAllowedType(file)) {
       setFileError(`File type not allowed. Allowed: ${ALLOWED_LABEL}`);
       return;
@@ -356,6 +373,10 @@ export default function MessageInput({
 
     const formData = new FormData();
     formData.append("files", file);
+    formData.append("channelId", String(channelId));
+    if (userId != null) {
+      formData.append("userId", String(userId));
+    }
     try {
       const res = await api.post(`${SERVER_URL}/upload`, formData);
       const data = res.data;
@@ -387,6 +408,12 @@ export default function MessageInput({
   };
 
   const uploadFile = async (file: File, id: string, preview: string) => {
+    if (!channelId) {
+      setFileError("Upload failed: channel context is missing.");
+      URL.revokeObjectURL(preview);
+      return;
+    }
+
     setUploading((prev) => [
       ...prev,
       { uploading: true as const, id, name: file.name, preview, progress: 0 },
@@ -397,6 +424,10 @@ export default function MessageInput({
 
     const formData = new FormData();
     formData.append("files", file);
+    formData.append("channelId", String(channelId));
+    if (userId != null) {
+      formData.append("userId", String(userId));
+    }
 
     try {
       const res = await api.post(`${SERVER_URL}/upload`, formData, {
@@ -519,8 +550,19 @@ export default function MessageInput({
   const deleteUploadedFile = async (id: string) => {
     const file = uploadedFiles.find((f) => f.id === id);
     if (!file) return;
+    if (!channelId) {
+      setFileError("Delete failed: channel context is missing.");
+      return;
+    }
     try {
-      const res = await api.post(`${SERVER_URL}/upload/delete`, { path: file.path });
+      const payload: Record<string, string> = {
+        path: file.path,
+        channelId: String(channelId),
+      };
+      if (userId != null) {
+        payload.userId = String(userId);
+      }
+      const res = await api.post(`${SERVER_URL}/upload/delete`, payload);
       if (res.data.success) {
         setUploadedFiles((prev) => prev.filter((f) => f.id !== id));
         if (file.url) removeImageFromEditor(file.url);
@@ -570,7 +612,11 @@ export default function MessageInput({
   const editor = useEditor({
     extensions: [
       StarterKit.configure({
-        // Allow shift+enter to create new list items by NOT intercepting enter in lists
+        // Disable extensions that are manually added to avoid duplicates
+        // @ts-ignore
+        link: false,
+        // @ts-ignore
+        underline: false,
       }),
       Underline,
       Link.configure({ openOnClick: false }),
@@ -817,6 +863,96 @@ export default function MessageInput({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editor, editingMessageId, editingInitialContent]);
 
+  // ─── Load Draft on Mount ──────────────────────────────────────────────────
+  useEffect(() => {
+    if (!channelId && !entityId) {
+      setDraftLoaded(true);
+      return;
+    }
+    if (editingMessageId) {
+      setDraftLoaded(true);
+      return; // Do not load drafts when editing an existing message
+    }
+
+    const type = entityType || "channel";
+    const id = entityId || channelId;
+
+    const fetchDraft = async () => {
+      try {
+        const res = await api.get(`${SERVER_URL}/drafts/${type}/${id}`);
+        if (res.data?.draft) {
+          const draft = res.data.draft;
+          if (editor && !editor.isDestroyed && draft.content) {
+            editor.commands.setContent(draft.content, { emitUpdate: false });
+          }
+          if (draft.files) {
+            try {
+              const filesArr = JSON.parse(draft.files);
+              if (Array.isArray(filesArr)) {
+                setUploadedFiles(filesArr);
+              }
+            } catch (e) { }
+          }
+        }
+      } catch (err) {
+        console.error("Failed to load draft:", err);
+      } finally {
+        setDraftLoaded(true);
+      }
+    };
+    
+    if (editor) {
+      fetchDraft();
+    }
+  }, [entityType, entityId, channelId, editingMessageId, editor, SERVER_URL]);
+
+  // ─── Save Draft ───────────────────────────────────────────────────────────
+  const editorHtml = editor ? editor.getHTML() : "";
+  useEffect(() => {
+    if (!draftLoaded || editingMessageId || (!entityId && !channelId) || !editor) return;
+
+    const saveDraft = async () => {
+      const type = entityType || "channel";
+      const id = entityId || channelId;
+      const html = editor.getHTML();
+      
+      const textContent = html.replace(/<[^>]*>/g, "").trim();
+      const isEmpty = textContent === "" && !html.includes("<img") && uploadedFiles.length === 0;
+
+      if (isEmpty) {
+         try {
+           await api.delete(`${SERVER_URL}/drafts/${type}/${id}`);
+         } catch (e) {}
+         return;
+      }
+
+      try {
+        await api.post(`${SERVER_URL}/drafts`, {
+          entityType: type,
+          entityId: id,
+          content: html,
+          files: uploadedFiles
+        });
+      } catch (err) {
+        console.error("Failed to save draft:", err);
+      }
+    };
+
+    if (saveDraftTimeoutRef.current) {
+      clearTimeout(saveDraftTimeoutRef.current);
+    }
+    
+    saveDraftTimeoutRef.current = setTimeout(() => {
+      saveDraft();
+    }, 1000);
+
+    return () => {
+      if (saveDraftTimeoutRef.current) {
+        clearTimeout(saveDraftTimeoutRef.current);
+      }
+    };
+  }, [editorHtml, uploadedFiles, draftLoaded, editingMessageId, entityType, entityId, channelId, editor, SERVER_URL]);
+
   // ─── Send ──────────────────────────────────────────────────────────────────
 
   const handleSend = () => {
@@ -844,6 +980,13 @@ export default function MessageInput({
     // Prevent rapid-fire duplicates
     setIsCooldown(true);
     setTimeout(() => setIsCooldown(false), 500);
+
+    // Delete draft
+    if (!editingMessageId && draftLoaded && (entityId || channelId)) {
+      const type = entityType || "channel";
+      const id = entityId || channelId;
+      api.delete(`${SERVER_URL}/drafts/${type}/${id}`).catch(() => {});
+    }
   };
 
   // ─── Emoji ─────────────────────────────────────────────────────────────────
@@ -1002,7 +1145,7 @@ export default function MessageInput({
                     <button
                       type="button"
                       onClick={() =>
-                        file.uploading ? cancelUpload(file.id) : deleteUploadedFile(entryId)
+                        file.uploading ? cancelUpload(file.id) : deleteUploadedFile(file.id)
                       }
                       className="absolute top-0 right-0 bg-gray-600 hover:bg-black hover:scale-[1.15] w-5 h-5 rounded-full text-white flex items-center justify-center text-xs cursor-pointer transition-all duration-300 z-10"
                       title={file.uploading ? "Cancel upload" : "Remove file"}

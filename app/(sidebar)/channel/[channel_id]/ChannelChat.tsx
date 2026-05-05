@@ -10,7 +10,7 @@ import api from "@/lib/axios";
 import CreateNew from "@/app/components/modals/CreateNew";
 import { useSearchParams, useRouter } from "next/navigation";
 import ThreadPanel from "@/app/components/custom/ThreadPanel";
-import { getLastRead, setLastRead } from "@/hooks/useLastRead";
+import { getLastRead, setLastRead, getStoredUnread } from "@/hooks/useLastRead";
 import { useUnread } from "@/app/components/context/UnreadContext";
 import { MessageRow, MessageSkeleton } from "@/app/components/MessageRow";
 import DOMPurify from "dompurify";
@@ -127,6 +127,7 @@ export default function ChannelChat({ channelId }: ChannelChatProps) {
   const [channel, setChannel] = useState<Channel | null>(null);
 
   const [initialLoading, setInitialLoading] = useState(false);
+  const [isBackgroundRefreshing, setIsBackgroundRefreshing] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [nextCursor, setNextCursor] = useState<number | null>(null);
   const [hasMore, setHasMore] = useState(true);
@@ -205,8 +206,10 @@ const canSendMessages = isMember;
   const [hasNewMessages, setHasNewMessages] = useState(false);
   const [newMessageCount, setNewMessageCount] = useState(0);
   const [newMessageSeparatorId, setNewMessageSeparatorId] = useState<string | null>(null);
-  // lastRead ID captured at channel-open time, used to place the NEW divider
+  // lastRead ID and unread count captured at channel-open time, used to place the NEW divider
   const lastReadAtOpenRef = useRef<number | null>(null);
+  const unreadCountAtOpenRef = useRef<number>(0);
+  const channelNeedsDividerRef = useRef<string | null>(null);
 
   const { incrementUnread, clearUnread } = useUnread();
   const { cache, setChatCache } = useChatCache();
@@ -624,19 +627,27 @@ sweetToast({
         audio.play().catch(() => {});
       }
 
-      if (!shouldAutoScrollRef.current && !chatMsg.self) {
-        // User is scrolled up — show the floating banner + NEW divider
-        setHasNewMessages(true);
-        setNewMessageCount((c) => c + 1);
-        setNewMessageSeparatorId((prev) => prev ?? String(chatMsg.id));
-        setHighlightedIds((prevSet) => {
-          const copy = new Set(prevSet);
-          copy.add(String(chatMsg.id));
-          return copy;
-        });
-      } else if (!chatMsg.self && chatMsg.id != null) {
-        // User is at the bottom reading — mark as read right away
-        setLastRead(channelId, chatMsg.id);
+      const isVisible = document.visibilityState === "visible";
+      const isAtBottom = shouldAutoScrollRef.current;
+
+      if (!chatMsg.self) {
+        // treated as unread ONLY if hidden (background tab) OR scrolled up
+        const shouldTreatAsUnread = !isVisible || !isAtBottom;
+
+        if (shouldTreatAsUnread) {
+          // User is scrolled up or window is blurred — show the floating banner + NEW divider
+          setHasNewMessages(true);
+          setNewMessageCount((c) => c + 1);
+          setNewMessageSeparatorId((prev) => prev ?? String(chatMsg.id));
+          setHighlightedIds((prevSet) => {
+            const copy = new Set(prevSet);
+            copy.add(String(chatMsg.id));
+            return copy;
+          });
+        } else if (chatMsg.id != null) {
+          // User is at the bottom reading and window is focused (or first message) — mark as read right away
+          setLastRead(channelId, chatMsg.id);
+        }
       }
     };
 
@@ -1000,6 +1011,8 @@ sweetToast({
 
     // Capture lastRead BEFORE resetting — used by after-load effect for NEW divider
     lastReadAtOpenRef.current = getLastRead(channelId);
+    unreadCountAtOpenRef.current = getStoredUnread(channelId);
+    channelNeedsDividerRef.current = channelId;
 
     // Clear unread badge for this channel now that user has opened it
     clearUnread(channelId);
@@ -1043,6 +1056,7 @@ sweetToast({
           .filter((id) => !isNaN(id))
       );
       if (newestId > 0) {
+        setIsBackgroundRefreshing(true);
         api
           .get(`/channels/${channelId}/messages`, {
             params: { limit: 50, after: newestId },
@@ -1068,7 +1082,8 @@ sweetToast({
               });
             }
           })
-          .catch((err) => console.error("Background refresh failed:", err));
+          .catch((err) => console.error("Background refresh failed:", err))
+          .finally(() => setIsBackgroundRefreshing(false));
       }
     } else {
       setMessages([]);
@@ -1142,17 +1157,24 @@ sweetToast({
     }
   }, [initialLoading, scrollTargetId]);
 
-  // ─── After initial load: place NEW divider + save lastRead ────────────────────
-  // Uses a ref to detect the true→false transition of initialLoading.
-  const prevInitialLoadingRef = useRef(false);
+  // Clear "New Messages" banner when window gains focus if at bottom
   useEffect(() => {
-    if (initialLoading) {
-      prevInitialLoadingRef.current = true;
-      return;
-    }
-    if (!prevInitialLoadingRef.current) return; // wasn't loading — skip
-    prevInitialLoadingRef.current = false;
-    if (messages.length === 0) return;
+    const handleFocus = () => {
+      if (document.hasFocus() && shouldAutoScrollRef.current) {
+        setHasNewMessages(false);
+        setNewMessageCount(0);
+      }
+    };
+    window.addEventListener("focus", handleFocus);
+    return () => window.removeEventListener("focus", handleFocus);
+  }, []);
+
+  // ─── After initial load: place NEW divider + save lastRead ────────────────────
+  useEffect(() => {
+    if (initialLoading || isBackgroundRefreshing || messages.length === 0) return;
+    if (channelNeedsDividerRef.current !== channelId) return;
+
+    channelNeedsDividerRef.current = null; // Mark as done for this channel
 
     if (scrollTargetId) {
       // Jump-to-pinned flow: let the highlight logic control scroll position.
@@ -1160,24 +1182,59 @@ sweetToast({
       return;
     }
 
-    // Scroll to bottom instantly only if we haven't already scrolled (e.g. from cache or target)
-    if (!didInitialScrollRef.current && !scrollTargetId) {
-       scrollChatToBottom("auto");
-       didInitialScrollRef.current = true;
-    }
-    hasCompletedInitialLoadRef.current = true;
-
     const lastReadId = lastReadAtOpenRef.current;
+    const unreadCount = unreadCountAtOpenRef.current;
 
-    // Place the NEW divider at the first unread message (newer than lastRead)
+    let firstUnreadMsg: ChatMessage | null = null;
+    let computedUnreadCount = 0;
+
+    // Place the NEW divider at the first unread message
     if (lastReadId !== null) {
-      const firstUnread = messages.find(
+      const firstUnreadIndex = messages.findIndex(
         (m) => !m.self && m.id != null && Number(m.id) > lastReadId
       );
-      if (firstUnread) {
-        setNewMessageSeparatorId(String(firstUnread.id));
+      if (firstUnreadIndex !== -1) {
+        firstUnreadMsg = messages[firstUnreadIndex];
+        computedUnreadCount = messages.length - firstUnreadIndex;
+      }
+    } else if (unreadCount > 0) {
+      // Fallback: if we have an unread count but no lastReadId, count backwards
+      const unreadMsgs = messages.filter((m) => !m.self);
+      if (unreadMsgs.length > 0) {
+        const index = Math.max(0, unreadMsgs.length - unreadCount);
+        firstUnreadMsg = unreadMsgs[index];
+        const originalIndex = messages.findIndex((m) => m.id === firstUnreadMsg?.id);
+        computedUnreadCount = originalIndex !== -1 ? messages.length - originalIndex : unreadCount;
       }
     }
+
+    if (firstUnreadMsg) {
+      setNewMessageSeparatorId(String(firstUnreadMsg.id));
+      setHasNewMessages(true);
+      setNewMessageCount(computedUnreadCount);
+    }
+
+    // Scroll to bottom instantly only if we haven't already scrolled (e.g. from cache or target)
+    if (!didInitialScrollRef.current && !scrollTargetId) {
+      if (firstUnreadMsg) {
+        shouldAutoScrollRef.current = false;
+        requestAnimationFrame(() => {
+          const targetId = firstUnreadMsg?.id;
+          if (targetId) {
+            const el = document.getElementById(`msg-${targetId}`);
+            if (el) {
+              el.scrollIntoView({ behavior: "auto", block: "center" });
+              return;
+            }
+          }
+          scrollChatToBottom("auto");
+        });
+      } else {
+        scrollChatToBottom("auto");
+      }
+      didInitialScrollRef.current = true;
+    }
+    hasCompletedInitialLoadRef.current = true;
 
     // Save the newest message as lastRead — but ONLY for messages that are
     // at/before the current last message. New socket messages will update this
@@ -1190,7 +1247,7 @@ sweetToast({
     if (newestId > 0) {
       setLastRead(channelId, newestId);
     }
-  }, [initialLoading, scrollChatToBottom]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [initialLoading, isBackgroundRefreshing, messages, channelId, scrollChatToBottom]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!socket) return;
@@ -1856,7 +1913,7 @@ sweetToast({
             </div>
           </div>
         )} */}
-        {hasNewMessages && isMember && (
+        {hasNewMessages && isMember && !shouldAutoScrollRef.current && (
           <div className="sticky top-2 z-50 flex justify-center">
             <button
               className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-1.5 rounded-full shadow-lg text-sm flex items-center gap-2 transition-colors"

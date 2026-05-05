@@ -16,9 +16,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <UnreadProvider>
         <Toaster />
         <SidebarProvider defaultOpen={true}>
-          <Suspense fallback={null}>
-            <AppSidebar />
-          </Suspense>
+          <AppSidebar />
           <AppNavbar />
           <SidebarInset>
             <div className="flex flex-1 flex-col gap-4 p-0 pt-0">

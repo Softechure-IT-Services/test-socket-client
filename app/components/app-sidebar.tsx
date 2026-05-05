@@ -162,6 +162,11 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
     setNotificationPreferences(readStoredUserPreferences().notificationPreferences);
   }, [user?.id]);
 
+  const [mounted, setMounted] = React.useState(false);
+  React.useEffect(() => {
+    setMounted(true);
+  }, []);
+
   const publicChannelIds = React.useMemo(
     () =>
       channels
@@ -873,6 +878,15 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const projects = [
     { name: "Threads", url: "/threads", icon: Frame, unread: threadUnreadCount },
   ];
+
+  if (!mounted) {
+    return (
+      <Sidebar collapsible="icon" {...props}>
+        <SidebarContent />
+        <SidebarRail />
+      </Sidebar>
+    );
+  }
 
   return (
     <Sidebar collapsible="icon" {...props}>

@@ -251,12 +251,13 @@ export function useHuddleCalls() {
         isDm: false,
         startedByUserId: entry.startedByUserId ?? null,
         startedByUsername: entry.startedByUsername ?? null,
+        startedByName: null,
         firstJoinedAt: entry.firstJoinedAt,
         lastJoinedAt: entry.lastJoinedAt,
         lastLeftAt: entry.lastLeftAt,
         startedAt: null,
         participantUserIds: [],
-      })));
+      } satisfies HuddleCallListItem)));
     } finally {
       setLoading(false);
     }

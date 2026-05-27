@@ -20,17 +20,28 @@ self.addEventListener("notificationclick", (event) => {
     self.clients
       .matchAll({ type: "window", includeUncontrolled: true })
       .then((clientList) => {
-        // If a tab with this URL is already open, focus it
+        const targetUrl = new URL(url, self.location.origin);
+
         for (const client of clientList) {
           const clientUrl = new URL(client.url);
-          const targetUrl = new URL(url, self.location.origin);
-          if (clientUrl.pathname === targetUrl.pathname && "focus" in client) {
+
+          // If the exact URL is already open, just focus it.
+          if (clientUrl.href === targetUrl.href && "focus" in client) {
             return client.focus();
           }
+
+          // If the same page is open but with a different query, navigate it.
+          if (clientUrl.pathname === targetUrl.pathname && "navigate" in client) {
+            return client.navigate(targetUrl.href).then(() => {
+              if ("focus" in client) {
+                return client.focus();
+              }
+            });
+          }
         }
-        // Otherwise open a new tab
+
         if (self.clients.openWindow) {
-          return self.clients.openWindow(url);
+          return self.clients.openWindow(targetUrl.href);
         }
       })
   );

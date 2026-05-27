@@ -112,13 +112,26 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       setUser((prev) => (prev ? { ...prev, ...fresh } : prev));
     });
 
-    s.on("connect_error", (err) => {
+    s.on("connect_error", async (err) => {
       console.error("Socket error:", err.message);
       setIsOnline(false);
       setHasToken(false);
       setAuthReady(true);
-      // Removed the immediate logout() tripwire here!
-      // The Axios interceptor now exclusively handles authoritative logouts via 'auth:logout' events when refresh completely fails.
+
+      if (err.message === "Unauthorized") {
+        try {
+          const { refreshAccessToken } = await import("@/lib/auth-session");
+          await refreshAccessToken();
+          console.log("🔄 Socket token refreshed successfully. Reconnecting socket...");
+          setSocketKey((prev) => prev + 1);
+        } catch (refreshErr) {
+          console.warn("⚠️ Socket refresh failed. Clearing expired cookies to allow guest connection.");
+          document.cookie = "access_token=; Path=/; Max-Age=0; SameSite=Lax";
+          document.cookie = "refresh_token=; Path=/; Max-Age=0; SameSite=Lax";
+          document.cookie = "app_session=; Path=/; Max-Age=0; SameSite=Lax";
+          logout();
+        }
+      }
     });
 
     return () => {

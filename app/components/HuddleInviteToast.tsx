@@ -10,6 +10,7 @@ type HuddleInvite = {
   meeting_id: string;
   started_by: number;
   isDm?: boolean;
+  started_by_name?: string | null;
   started_by_username?: string | null;
 };
 
@@ -52,11 +53,13 @@ function HuddleToastCard({
   };
 
   const label = invite.isDm
-    ? invite.started_by_username 
-    ? `${invite.started_by_username} started a Huddle`
-    : "a DM"
+    ? invite.started_by_name
+      ? `${invite.started_by_name} started a Huddle`
+      : invite.started_by_username
+      ? `${invite.started_by_username} started a Huddle`
+      : "a DM"
     : invite.channel_name
-    ? `${invite.started_by_username} started a Huddle in channel ${invite.channel_name}`
+    ? `${invite.started_by_name ?? invite.started_by_username ?? "Someone"} started a Huddle in channel ${invite.channel_name}`
     : "a channel";
 
   return (

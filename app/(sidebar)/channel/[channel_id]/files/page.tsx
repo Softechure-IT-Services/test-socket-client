@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import { File as FileIcon2 } from "lucide-react";
 import { FileAttachmentList, type AttachmentFile } from "@/app/components/FileAttachment";
 import CreateNew from "@/app/components/modals/CreateNew";
+import { sweetToast } from "@/lib/sweetalert";
 import axios from "@/lib/axios";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -75,9 +76,9 @@ export default function FileTab() {
   const [files, setFiles] = useState<FileItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [forwardFile, setForwardFile] = useState<AttachmentFile | null>(null);
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
-  const [forwardMessageId, setForwardMessageId] = useState<string | null>(null);
 
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   const observerRef = useRef<IntersectionObserver | null>(null);
@@ -130,7 +131,7 @@ export default function FileTab() {
     return () => observerRef.current?.disconnect();
   }, [hasMore, loadingMore, loading, fetchFiles]);
 
-  // ── Action handlers — identical pattern to ChannelChat ───────────────────────
+  // ── Action handlers — share file link or use native system share if available ───
 
   const handleDownload = async (file: AttachmentFile) => {
     try {
@@ -150,11 +151,9 @@ export default function FileTab() {
   };
 
   // onShare receives the full file object from FileAttachmentList.
-  // We open the forward modal using the message_id stored on the file.
+  // Share the individual file URL using native sharing or clipboard fallback.
   const handleShare = (file: AttachmentFile) => {
-    if (file.message_id != null) {
-      setForwardMessageId(String(file.message_id));
-    }
+    setForwardFile(file);
   };
 
   // ── Render ───────────────────────────────────────────────────────────────────
@@ -186,6 +185,14 @@ export default function FileTab() {
         tabView
       />
 
+      <CreateNew
+        open={!!forwardFile}
+        onClose={() => setForwardFile(null)}
+        type="forward"
+        forwardMessageId={forwardFile?.message_id ? String(forwardFile.message_id) : undefined}
+        forwardFile={forwardFile}
+      />
+
       {/* Infinite scroll sentinel */}
       <div ref={sentinelRef} className="h-1 mt-4" />
 
@@ -210,13 +217,6 @@ export default function FileTab() {
         </p>
       )}
 
-      {/* Forward modal — same as ChannelChat */}
-      <CreateNew
-        open={!!forwardMessageId}
-        onClose={() => setForwardMessageId(null)}
-        type="forward"
-        forwardMessageId={forwardMessageId}
-      />
     </div>
   );
 }

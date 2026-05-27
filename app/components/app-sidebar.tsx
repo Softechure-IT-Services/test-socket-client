@@ -79,7 +79,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   // ─── (Removed unused active huddle tracking via URL to prevent suspension/hydration issues) ───
 
   // ─── Huddle invite toasts ────────────────────────────────────────────────
-  type HuddleInvite = { id: string; channel_id: number; channel_name: string | null; meeting_id: string; started_by: number; isDm?: boolean };
+  type HuddleInvite = { id: string; channel_id: number; channel_name: string | null; meeting_id: string; started_by: number; isDm?: boolean; started_by_name?: string | null; started_by_username?: string | null };
   const [huddleInvites, setHuddleInvites] = React.useState<HuddleInvite[]>([]);
 
   const dismissInvite = React.useCallback((id: string) => {
@@ -772,10 +772,15 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         return;
       }
 
+      const starterName =
+        data.started_by_name ?? data.startedByName ??
+        data.started_by_username ?? data.startedByUsername ??
+        null;
+
       // Trigger a browser push notification if preferences allow
       showNotification({
         title: "Huddle started",
-        body: `${data.started_by_username || "Someone"} started a huddle in ${isDm ? "your DM" : `#${data.channel_name || chId}`}. Tap to join.`,
+        body: `${starterName || "Someone"} started a huddle in ${isDm ? "your DM" : `#${data.channel_name || chId}`}. Tap to join.`,
         channelId: chId,
         url: `/huddle?channel_id=${chId}`,
         force: true,
@@ -794,7 +799,8 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
             meeting_id: data.meeting_id ?? data.roomId,
             started_by: starterId != null ? Number(starterId) : 0,
             isDm: !!isDm,
-            started_by_username: data.started_by_username ?? null,
+            started_by_name: starterName,
+            started_by_username: data.started_by_username ?? data.startedByUsername ?? null,
           },
         ];
       });

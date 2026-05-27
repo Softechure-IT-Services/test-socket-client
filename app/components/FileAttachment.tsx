@@ -17,7 +17,8 @@ export type AttachmentFile = {
   size?: number;
   path?: string;
   // Extended fields used in the Files tab view
-  message_id?: number;
+  message_id?: number | string;
+  messageId?: number | string;
   sender?: { id: number; name: string; avatar_url?: string };
   created_at?: string;
 };
@@ -40,6 +41,7 @@ type FileAttachmentListProps = {
   onDownload?: (file: AttachmentFile) => void;
   onShare?: (file: AttachmentFile) => void;
   readOnly?: boolean;
+  in_thread?: boolean;
   /**
    * When true, renders the rich tab layout:
    *  - images/videos → square grid with hover overlay + lightbox
@@ -383,7 +385,7 @@ function TabMediaCard({ file, onDownload, onShare, readOnly, allMedia, mediaInde
                 <ActionBtn icon={<Eye size={13} />} label="Preview" onClick={() => setLightboxOpen(true)} />
               )}
               <ActionBtn icon={<Download size={13} />} label="Download" onClick={() => onDownload?.(file)} />
-              {onShare && <ActionBtn icon={<Share2 size={13} />} label="Forward" onClick={() => onShare(file)} />}
+              {onShare && <ActionBtn icon={<Share2 size={13} />} label="Share" onClick={() => onShare(file)} />}
             </div>
           )}
           <div className="opacity-0 group-hover/media:opacity-100 transition-opacity duration-200">
@@ -443,7 +445,7 @@ function TabFileRow({ file, onDownload, onShare, readOnly }: FileAttachmentProps
       {!readOnly && (
         <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover/fileRow:opacity-100 transition-opacity duration-150">
           <ActionBtn icon={<Download size={14} />} label="Download" onClick={() => onDownload?.(file)} variant="compact" />
-          {onShare && <ActionBtn icon={<Share2 size={14} />} label="Forward" onClick={() => onShare(file)} variant="compact" />}
+          {onShare && <ActionBtn icon={<Share2 size={14} />} label="Share" onClick={() => onShare(file)} variant="compact" />}
         </div>
       )}
     </div>
@@ -481,6 +483,7 @@ export function FileAttachmentList({
   onShare,
   readOnly,
   tabView = false,
+  in_thread = false,
 }: FileAttachmentListProps) {
   if (!Array.isArray(files) || !files.length) return null;
 

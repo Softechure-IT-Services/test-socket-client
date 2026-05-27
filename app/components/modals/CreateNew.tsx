@@ -7,6 +7,7 @@ import { Input } from "@/app/components/ui/input";
 import { Switch } from "@/app/components/ui/switch";
 import { Label } from "@/app/components/ui/label";
 import { UserAvatar } from "@/app/components/MessageMeta";
+import type { AttachmentFile } from "@/app/components/FileAttachment";
 import { useEffect, useState } from "react";
 import { useAuth } from "@/app/components/context/userId_and_connection/provider";
 import { useDebounce } from "@/hooks/useDebounce";
@@ -24,9 +25,10 @@ type Props = {
   onClose: () => void;
   type: "channel" | "dm" | "forward";
   forwardMessageId?: string | null;
+  forwardFile?: AttachmentFile | null;
 };
 
-export default function CreateModal({ open, onClose, type, forwardMessageId }: Props) {
+export default function CreateModal({ open, onClose, type, forwardMessageId, forwardFile }: Props) {
   const [channelName, setChannelName] = useState("");
   const [isPrivate, setIsPrivate] = useState(false);
   const [search, setSearch] = useState("");
@@ -34,7 +36,8 @@ export default function CreateModal({ open, onClose, type, forwardMessageId }: P
   const [selectedUsers, setSelectedUsers] = useState<User[]>([]);
   const { user } = useAuth();
   const router = useRouter();
-  const [nameStatus, setNameStatus] = useState<"idle" | "checking" | "available" | "taken">("idle");
+  const [nameStatus, setNameStatus] = useState<"idle" | "checking" | "available" | "taken"|"invalid">("idle");
+  const [nameMessage, setNameMessage] = useState<string>("");
   const [channels, setChannels] = useState<any[]>([]);
   const [selectedForward, setSelectedForward] = useState<any[]>([]);
   const [forwarding, setForwarding] = useState(false);
@@ -105,6 +108,7 @@ export default function CreateModal({ open, onClose, type, forwardMessageId }: P
 
     if (!debouncedChannelName.trim()) {
       setNameStatus("idle");
+      setNameMessage("");
       return;
     }
 
@@ -113,16 +117,32 @@ export default function CreateModal({ open, onClose, type, forwardMessageId }: P
     const checkName = async () => {
       try {
         setNameStatus("checking");
+        setNameMessage("");
+
         const res = await api.post(
           "/channels",
           { name: debouncedChannelName.trim(), create: false },
           { signal: controller.signal }
         );
-        setNameStatus(res.data.data.available ? "available" : "taken");
+
+        const available = res.data?.data?.available;
+        const error = res.data?.error;
+
+        if (available) {
+          setNameStatus("available");
+          setNameMessage("");
+        } else if (error?.includes("already")) {
+          setNameStatus("taken");
+          setNameMessage(error);
+        } else {
+          setNameStatus("invalid");
+          setNameMessage(error || "Channel name is not available.");
+        }
       } catch (err: any) {
         if (err.name !== "AbortError") {
           console.error("Name check failed", err);
           setNameStatus("idle");
+          setNameMessage("Unable to verify channel name. Please try again.");
         }
       }
     };
@@ -169,8 +189,13 @@ export default function CreateModal({ open, onClose, type, forwardMessageId }: P
         router.push(`/dm/${res.data.dm_id}`);
         resetAndClose();
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error("Create failed", err);
+      if (type === "channel") {
+        const message = err?.response?.data?.error || "Failed to create channel.";
+        setNameStatus(err?.response?.status === 409 ? "taken" : "invalid");
+        setNameMessage(message);
+      }
     }
   };
 
@@ -184,6 +209,7 @@ export default function CreateModal({ open, onClose, type, forwardMessageId }: P
     setSelectedForward([]);
     setForwarding(false);
     setNameStatus("idle");
+    setNameMessage("");
     onClose();
   };
 
@@ -194,8 +220,18 @@ export default function CreateModal({ open, onClose, type, forwardMessageId }: P
           <DialogTitle>
             {type === "channel" && "Create New Channel"}
             {type === "dm" && "New Direct Message"}
-            {type === "forward" && "Forward Message"}
+            {type === "forward" && (forwardFile ? "Forward File" : "Forward Message")}
           </DialogTitle>
+          {type === "forward" && forwardFile && (
+            <>
+              <p className="text-sm text-muted-foreground mt-2">
+                Sharing <span className="font-semibold">{forwardFile.name}</span>
+              </p>
+              <p className="text-xs text-muted-foreground/80 mt-1">
+                Only the selected file will be shared, not the full original message.
+              </p>
+            </>
+          )}
         </DialogHeader>
 
         {/* ── Channel name ───────────────────────────────────────────────── */}
@@ -204,7 +240,7 @@ export default function CreateModal({ open, onClose, type, forwardMessageId }: P
             <Input
               placeholder="Channel name*"
               value={channelName}
-              onChange={(e) => setChannelName(e.target.value)}
+              onChange={(e) => setChannelName(e.target.value.replace(/\s/g, ""))}
             />
             {nameStatus === "checking" && (
               <p className="text-xs text-muted-foreground">Checking availability...</p>
@@ -212,8 +248,8 @@ export default function CreateModal({ open, onClose, type, forwardMessageId }: P
             {nameStatus === "available" && (
               <p className="text-xs text-green-600">Channel name is available</p>
             )}
-            {nameStatus === "taken" && (
-              <p className="text-xs text-red-600">Channel name already exists</p>
+            {(nameStatus === "taken" || nameStatus === "invalid") && (
+              <p className="text-xs text-red-600">{nameMessage || "Channel name already exists"}</p>
             )}
           </div>
         )}
@@ -371,7 +407,11 @@ export default function CreateModal({ open, onClose, type, forwardMessageId }: P
 
             <Button
               onClick={async () => {
-                if (!forwardMessageId || selectedForward.length === 0) return;
+                const effectiveForwardMessageId = forwardFile?.message_id
+                  ? String(forwardFile.message_id)
+                  : forwardMessageId;
+                if (!effectiveForwardMessageId || selectedForward.length === 0) return;
+
                 setForwarding(true);
                 try {
                   const results = await Promise.all(
@@ -381,8 +421,24 @@ export default function CreateModal({ open, onClose, type, forwardMessageId }: P
                         const dmRes = await api.post(`/dm/with/${item.userId || item.id}`);
                         targetId = dmRes.data.dm_id;
                       }
+                      const payload = forwardFile
+                        ? {
+                            fileId: forwardFile.id ?? forwardFile.message_id,
+                            file_id: forwardFile.id ?? forwardFile.message_id,
+                            fileUrl: forwardFile.url,
+                            file_url: forwardFile.url,
+                            fileName: forwardFile.name,
+                            file_name: forwardFile.name,
+                            fileType: forwardFile.type,
+                            file_type: forwardFile.type,
+                            messageId: effectiveForwardMessageId,
+                            message_id: effectiveForwardMessageId,
+                          }
+                        : undefined;
+
                       const res = await api.post(
-                        `/channels/messages/${forwardMessageId}/forward/${targetId}`
+                        `/channels/messages/${effectiveForwardMessageId}/forward/${targetId}`,
+                        payload
                       );
                       return { item, targetId, res: res.data };
                     })
@@ -418,6 +474,8 @@ export default function CreateModal({ open, onClose, type, forwardMessageId }: P
                 ? "Forwarding..."
                 : selectedForward.length > 1
                 ? `Forward to ${selectedForward.length}`
+                : forwardFile
+                ? "Share"
                 : "Forward"}
             </Button>
           </>

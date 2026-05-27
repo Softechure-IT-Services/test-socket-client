@@ -63,7 +63,7 @@ export type MessageRowProps = {
 
   onToggleReaction?: (messageId: string | number, emoji: string) => void;
   onDownloadFile?: (file: AttachmentFile) => void;
-  onShareFile?: (messageId: string | number) => void;
+  onShareFile?: (file: AttachmentFile) => void;
 
   isHovered?: boolean;
   isLocked?: boolean;
@@ -76,6 +76,7 @@ export type MessageRowProps = {
 
   className?: string;
   in_thread?: boolean;
+  suppressGifImage?: boolean;
 
   onMouseEnter?: () => void;
   onMouseLeave?: () => void;
@@ -85,7 +86,7 @@ export type MessageRowProps = {
 // GIF header injection
 // ─────────────────────────────────────────────────────────────
 
-function injectGifHeaders(html: string): string {
+function injectGifHeaders(html: string,in_thread?: boolean,suppressGifImage?: boolean): string {
   return html.replace(
     /<img([^>]*?)title="via GIPHY"([^>]*?)>/gi,
     (match, before, after) => {
@@ -97,7 +98,10 @@ function injectGifHeaders(html: string): string {
         `<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:200px;display:inline-block;">${title}</span>` +
         `<span style="margin-left:auto;flex-shrink:0;opacity:0.6;font-size:10px;padding-left:6px;">via GIPHY</span>` +
         `</div>`;
-      return `<div style="display:inline-flex;flex-direction:column;max-width:100%;">${header}${match}</div>`;
+      const content = suppressGifImage ? "" : match;
+      return in_thread ?
+      `<div style="display:inline-flex;flex-direction:column;max-width:100%;">${header}${content}</div>`:
+      `<div style="display:inline-flex;flex-direction:column;max-width:fit-content;">${header}${content}</div>`;
     }
   );
 }
@@ -107,15 +111,23 @@ function injectGifHeaders(html: string): string {
 // ─────────────────────────────────────────────────────────────
 
 const MessageContent = memo(
-  ({ html, className }: { html: string | null | undefined; className?: string }) => (
-    <div
-      className={className}
-      dangerouslySetInnerHTML={{
-        __html: DOMPurify.sanitize(injectGifHeaders(html ?? ""), { ADD_ATTR: ["style"] }),
-      }}
-    />
-  ),
-  (prev, next) => prev.html === next.html && prev.className === next.className
+  ({ html, className, in_thread, suppressGifImage }: { html: string | null | undefined; className?: string; in_thread?: boolean; suppressGifImage?: boolean }) => {
+    const sanitizedHtml = injectGifHeaders(html ?? "", in_thread, suppressGifImage);
+
+    return (
+      <div
+        className={className}
+        dangerouslySetInnerHTML={{
+          __html: DOMPurify.sanitize(sanitizedHtml, { ADD_ATTR: ["style"] }),
+        }}
+      />
+    );
+  },
+  (prev, next) =>
+    prev.html === next.html &&
+    prev.className === next.className &&
+    prev.in_thread === next.in_thread &&
+    prev.suppressGifImage === next.suppressGifImage
 );
 MessageContent.displayName = "MessageContent";
 
@@ -127,10 +139,14 @@ function ForwardedCard({
   forwarded_from,
   content,
   currentUserId,
+  in_thread,
+  suppressGifImage,
 }: {
   forwarded_from?: MsgForwardedFrom | null;
   content: string;
   currentUserId?: string | number;
+  in_thread?: boolean;
+  suppressGifImage?: boolean;
 }) {
   const senderLabel =
     forwarded_from?.id && String(forwarded_from.id) === String(currentUserId)
@@ -176,6 +192,8 @@ function ForwardedCard({
 
       <MessageContent
         html={content}
+        in_thread={in_thread}
+        suppressGifImage={suppressGifImage}
         className="leading-relaxed max-w-full whitespace-pre-wrap [overflow-wrap:anywhere] text-[0.95em] opacity-90"
       />
     </div>
@@ -276,6 +294,7 @@ export const MessageRow = memo(function MessageRow({
   className = "",
   onMouseEnter,
   in_thread,
+  suppressGifImage = false,
   onMouseLeave,
 }: MessageRowProps) {
   const msgId = String(msg.id);
@@ -283,9 +302,20 @@ export const MessageRow = memo(function MessageRow({
   const showChatHover = isMember && (isLocked ? isLocked : isHovered);
 
   const contentNode = msg.is_forwarded ? (
-    <ForwardedCard forwarded_from={msg.forwarded_from} content={msg.content} currentUserId={currentUserId} />
+    <ForwardedCard
+      forwarded_from={msg.forwarded_from}
+      content={msg.content}
+      currentUserId={currentUserId}
+      in_thread={in_thread}
+      suppressGifImage={suppressGifImage}
+    />
   ) : (
-    <MessageContent html={msg.content} className="leading-relaxed max-w-full whitespace-pre-wrap [overflow-wrap:anywhere] message" />
+    <MessageContent
+      html={msg.content}
+      in_thread={in_thread}
+      suppressGifImage={suppressGifImage}
+      className="leading-relaxed max-w-full whitespace-pre-wrap [overflow-wrap:anywhere] message"
+    />
   );
 
   const subContent = (
@@ -293,10 +323,17 @@ export const MessageRow = memo(function MessageRow({
       <FileAttachmentList
         files={msg.files ?? []}
         onDownload={(file) => onDownloadFile?.(file)}
-        // FileAttachmentList typically calls onShare(file). The app-level onShareFile accepts message id,
-        // so map the call to pass the message id (keep behavior simple). Adjust if your FileAttachmentList expects different.
-        onShare={(file) => onShareFile?.(msg.id)}
+        // FileAttachmentList calls onShare(file), so forward the specific attachment to the app-level handler.
+        // Include the parent message id so a single-file forward can be resolved by the caller.
+        onShare={(file) =>
+          onShareFile?.({
+            ...file,
+            message_id: msg.id,
+            messageId: msg.id,
+          })
+        }
         readOnly={!isMember}
+        in_thread={in_thread}
       />
 
       <ReactionsStrip
@@ -315,7 +352,7 @@ export const MessageRow = memo(function MessageRow({
       id={`msg-${msgId}`}
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
-      className={`relative flex justify-start group/message !px-[25px] items-center gap-3
+      className={`relative flex justify-start group/message ${in_thread ? "" : "!px-[25px]"} items-center gap-3
         ${msg.pinned ? "pinned bg-amber-100 dark:bg-amber-900/20" : "hover:bg-[var(--sidebar-accent)]"}
         ${isHighlighted ? "bg-amber-100 dark:bg-amber-900/40 animate-pulse" : ""}
         ${className}`}

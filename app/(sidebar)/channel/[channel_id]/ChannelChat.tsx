@@ -8,6 +8,7 @@ import FileUploadToggle from "@/app/components/ui/file-upload";
 import Dateseparator from "@/app/components/ui/date";
 import api from "@/lib/axios";
 import CreateNew from "@/app/components/modals/CreateNew";
+import type { AttachmentFile } from "@/app/components/FileAttachment";
 import { useSearchParams, useRouter } from "next/navigation";
 import ThreadPanel from "@/app/components/custom/ThreadPanel";
 import { getLastRead, setLastRead, getStoredUnread } from "@/hooks/useLastRead";
@@ -98,8 +99,8 @@ function SystemMessage({
   created_at?: string | null;
 }) {
   return (
-    <div className="flex justify-center py-2 px-4">
-      <div className="flex items-center gap-2 text-xs text-primary bg-muted/50 dark:bg-zinc-800/50 px-3 py-1.5 rounded-full">
+    <div className="flex justify-center py-4 px-4">
+      <div className="flex items-center gap-2 text-xs text-primary bg-muted/50 dark:bg-zinc-800/50 px-3 py-2.5 rounded-full">
         <div
           dangerouslySetInnerHTML={{
             __html: DOMPurify.sanitize(content),
@@ -140,6 +141,7 @@ export default function ChannelChat({ channelId }: ChannelChatProps) {
   const [forwardMessageId, setForwardMessageId] = useState<string | null>(
     null
   );
+  const [forwardFile, setForwardFile] = useState<AttachmentFile | null>(null);
   const searchParams = useSearchParams();
   const router = useRouter();
   const threadIdParam = searchParams?.get("threadId");
@@ -1999,7 +2001,7 @@ sweetToast({
                   isMember={isMember}
                   onToggleReaction={toggleReaction}
                   onDownloadFile={handleDownload}
-                  onShareFile={(id) => setForwardMessageId(String(id))}
+                  onShareFile={(file) => setForwardFile(file)}
                   isHovered={hoveredId === msgId}
                   isLocked={lockedId === msgId}
                   onChatAction={handleChatAction}
@@ -2038,7 +2040,7 @@ sweetToast({
 
         {/* ─── Message input area ─────────────────────────────────── */}
         <div
-          className="shrink-0 pb-2 px-[25px] pt-0 relative bottom-0 right-0 bg-[var(--chat_bg)] dark:bg-zinc-900 z-4"
+          className="shrink-0 pb-2 px-[10px] pt-0 relative bottom-0 right-0 bg-[var(--chat_bg)] dark:bg-zinc-900 z-4"
           ref={messageBoxRef}
         >
           {canSendMessages ? (
@@ -2092,10 +2094,14 @@ sweetToast({
           )}
         </div>
         <CreateNew
-          open={!!forwardMessageId}
-          onClose={() => setForwardMessageId(null)}
+          open={!!forwardMessageId || !!forwardFile}
+          onClose={() => {
+            setForwardMessageId(null);
+            setForwardFile(null);
+          }}
           type="forward"
           forwardMessageId={forwardMessageId}
+          forwardFile={forwardFile}
         />
       </div>
     </div>

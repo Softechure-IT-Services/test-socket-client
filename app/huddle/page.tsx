@@ -113,7 +113,9 @@ const MainPage: React.FC = () => {
   const [isMeetingActive, setIsMeetingActive] = useState(false);
   const [isScreenShareActive, setIsScreenShareActive] = useState(false);
   const [huddleAdminUserId, setHuddleAdminUserId] = useState<string | null>(null);
+  const [huddleAdminName, setHuddleAdminName] = useState<string | null>(null);
   const [huddleAdminUsername, setHuddleAdminUsername] = useState<string | null>(null);
+  const huddleAdminNameRef = useRef<string | null>(null);
   const [isChannelMember, setIsChannelMember] = useState(false);
   const [channelAccessReady, setChannelAccessReady] = useState(!channelId || !currentUserId);
   const [lobbyState, setLobbyState] = useState<LobbyState>({
@@ -172,6 +174,13 @@ const MainPage: React.FC = () => {
     return normalizedUserId;
   };
 
+  const updateHuddleAdminName = (name: string | null | undefined) => {
+    const normalizedName = typeof name === "string" && name.trim() ? name.trim() : null;
+    huddleAdminNameRef.current = normalizedName;
+    setHuddleAdminName(normalizedName);
+    return normalizedName;
+  };
+
   const updateHuddleAdminUsername = (username: string | null | undefined) => {
     const normalizedUsername =
       typeof username === "string" && username.trim() ? username.trim() : null;
@@ -182,6 +191,7 @@ const MainPage: React.FC = () => {
 
   const resolveHuddleDisplayName = (
     fallbackTitle?: string | null,
+    startedByName?: string | null,
     startedByUsername?: string | null
   ) => {
     const normalizedFallback =
@@ -191,6 +201,7 @@ const MainPage: React.FC = () => {
 
     if (channelId) {
       if (isDmChannelRef.current) {
+        if (startedByName) return `Started by ${startedByName}`;
         if (startedByUsername) return `Started by ${startedByUsername}`;
         if (normalizedFallback && normalizedFallback !== `Channel ${channelId}`) {
           return normalizedFallback;
@@ -214,6 +225,10 @@ const MainPage: React.FC = () => {
   const applyResolvedHuddleSession = (payload: any) => {
     const roomId = payload?.room_id ?? payload?.session?.meeting_id ?? null;
     const adminUserId = payload?.session?.started_by ?? payload?.started_by ?? null;
+    const adminName =
+      payload?.session?.started_by_name ??
+      payload?.started_by_name ??
+      null;
     const adminUsername =
       payload?.session?.started_by_username ??
       payload?.started_by_username ??
@@ -225,6 +240,7 @@ const MainPage: React.FC = () => {
     }
 
     updateHuddleAdminUserId(adminUserId);
+    updateHuddleAdminName(adminName);
     updateHuddleAdminUsername(adminUsername);
   };
 
@@ -493,6 +509,40 @@ const MainPage: React.FC = () => {
       return remoteMediaStreams[peerId];
     }
 
+    function createDummyVideoTrack(name: string): MediaStreamTrack {
+      const canvas = document.createElement("canvas");
+      canvas.width = 640; canvas.height = 480;
+      const ctx = canvas.getContext("2d")!;
+      let isDrawing = true;
+
+      const draw = () => {
+        if (!isDrawing) return;
+        ctx.fillStyle = "#1f2937";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = "#ffffff";
+        ctx.font = "bold 120px Arial";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText((name || "?")[0].toUpperCase(), canvas.width / 2, canvas.height / 2);
+        
+        // Force dirty buffer for WebRTC encoding
+        ctx.fillStyle = Date.now() % 2000 < 1000 ? "#1f2937" : "#1f2938";
+        ctx.fillRect(0, 0, 1, 1);
+        
+        setTimeout(draw, 500);
+      };
+      draw();
+      
+      const dummyStream = canvas.captureStream(5);
+      const track = dummyStream.getVideoTracks()[0];
+      const originalStop = track.stop.bind(track);
+      track.stop = () => {
+        isDrawing = false;
+        originalStop();
+      };
+      return track;
+    }
+
     // ---------- DOM ELEMENTS ----------
     const usernameScreen = document.getElementById("usernameScreen")!;
     const mainApp = document.getElementById("mainApp")!;
@@ -749,30 +799,16 @@ const MainPage: React.FC = () => {
           console.log("No video available, trying audio only...");
           try {
             localStream = await navigator.mediaDevices.getUserMedia({ video: false, audio: true });
-            const canvas = document.createElement("canvas");
-            canvas.width = 640; canvas.height = 480;
-            const ctx = canvas.getContext("2d")!;
-            ctx.fillStyle = "#1f2937"; ctx.fillRect(0, 0, canvas.width, canvas.height);
-            ctx.fillStyle = "#ffffff"; ctx.font = "bold 120px Arial";
-            ctx.textAlign = "center"; ctx.textBaseline = "middle";
-            ctx.fillText((username || "?")[0].toUpperCase(), canvas.width / 2, canvas.height / 2);
-            const dummyStream = canvas.captureStream(1);
-            const videoTrack = dummyStream.getVideoTracks()[0];
+            const videoTrack = createDummyVideoTrack(username);
             localStream.addTrack(videoTrack);
             preview.srcObject = localStream;
             hasCamera = false; hasMicrophone = true;
             updateDeviceButtons();
-            showToast("Camera not available, continuing with audio only", "warning");
+            showToast("Microphone only, continuing with audio", "warning");
           } catch (audioErr) {
             console.log("No audio/video available, creating dummy stream...");
-            const canvas = document.createElement("canvas");
-            canvas.width = 640; canvas.height = 480;
-            const ctx = canvas.getContext("2d")!;
-            ctx.fillStyle = "#1f2937"; ctx.fillRect(0, 0, canvas.width, canvas.height);
-            ctx.fillStyle = "#ffffff"; ctx.font = "bold 120px Arial";
-            ctx.textAlign = "center"; ctx.textBaseline = "middle";
-            ctx.fillText(username ? username[0].toUpperCase() : "?", canvas.width / 2, canvas.height / 2);
-            localStream = canvas.captureStream(1);
+            const videoTrack = createDummyVideoTrack(username);
+            localStream = new MediaStream([videoTrack]);
             audioContext = new AudioContext();
             const oscillator = audioContext.createOscillator();
             const dst = audioContext.createMediaStreamDestination();
@@ -1184,11 +1220,19 @@ const MainPage: React.FC = () => {
           response?.adminUserId != null
             ? updateHuddleAdminUserId(response.adminUserId)
             : huddleAdminUserIdRef.current;
+        const adminName =
+          response?.adminName != null
+            ? updateHuddleAdminName(response.adminName)
+            : huddleAdminNameRef.current;
         const adminUsername =
           response?.adminUsername != null
             ? updateHuddleAdminUsername(response.adminUsername)
             : huddleAdminUsernameRef.current;
-        const resolvedDisplayName = resolveHuddleDisplayName(displayName, adminUsername);
+        const resolvedDisplayName = resolveHuddleDisplayName(
+          displayName,
+          adminName,
+          adminUsername
+        );
 
         roomNameEls.forEach((element) => {
           element.textContent = resolvedDisplayName;
@@ -1198,7 +1242,7 @@ const MainPage: React.FC = () => {
           channelId,
           title: resolvedDisplayName,
           startedByUserId: adminUserId,
-          startedByUsername: adminUsername,
+          startedByUsername: adminName ?? adminUsername,
         });
         setRoomParticipants(normalizeMembers(response?.participants));
         setPendingAdmissions(normalizeMembers(response?.pending));
@@ -1866,15 +1910,7 @@ const MainPage: React.FC = () => {
       if (screenStream) screenStream.getTracks().forEach((t) => t.stop());
       let trackToRestore = originalVideoTrack;
       if (!trackToRestore || trackToRestore.readyState === "ended") {
-        const canvas = document.createElement("canvas");
-        canvas.width = 640; canvas.height = 480;
-        const ctx = canvas.getContext("2d")!;
-        ctx.fillStyle = "#1f2937"; ctx.fillRect(0, 0, canvas.width, canvas.height);
-        ctx.fillStyle = "#ffffff"; ctx.font = "bold 120px Arial";
-        ctx.textAlign = "center"; ctx.textBaseline = "middle";
-        ctx.fillText((username || "?")[0].toUpperCase(), canvas.width / 2, canvas.height / 2);
-        const dummyStream = canvas.captureStream(1);
-        trackToRestore = dummyStream.getVideoTracks()[0];
+        trackToRestore = createDummyVideoTrack(username);
       }
       void refreshPeerVideoTrack(trackToRestore, localStream);
       const oldLocal = document.getElementById("video-local");

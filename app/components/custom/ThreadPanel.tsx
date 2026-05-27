@@ -102,6 +102,7 @@ export default function ThreadPanel({
 
   // ─── Forward modal ────────────────────────────────────────────────────────
   const [forwardMessageId, setForwardMessageId] = useState<string | null>(null);
+  const [forwardFile, setForwardFile] = useState<MsgFile | null>(null);
 
   // ─── Edit mode (mirrors ChannelChat) ─────────────────────────────────────
   const [editMessageId, setEditMessageId] = useState<string | null>(null);
@@ -732,7 +733,7 @@ return () => {
       ) : (
         <>
           {/* ── Header ──────────────────────────────────────────────────────────── */}
-          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-zinc-700 shrink-0">
+          <div className="flex items-center justify-between px-4 py-1.5 border-b border-gray-200 dark:border-zinc-700 shrink-0">
             <div className="flex items-center gap-2">
               <MessageSquare size={16} className="text-gray-500 dark:text-gray-400" />
               <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
@@ -749,7 +750,7 @@ return () => {
           </div>
 
           {/* ── Parent message (quoted) — read-only, no interactions ──────────── */}
-          <div className="px-[10px] py-3 border-b border-gray-200 dark:border-zinc-700 bg-gray-50 dark:bg-zinc-800/50 shrink-0">
+          <div className="px-[10px] py-1.5 border-b border-gray-200 dark:border-zinc-700 bg-gray-50 dark:bg-zinc-800/50 shrink-0">
             <MessageRow
               msg={{
                 id: liveParent.id,
@@ -764,11 +765,12 @@ return () => {
               showHeader
               isMember={false}
               in_thread={true}
+              suppressGifImage
               className="[&]:px-0 [&]:hover:bg-transparent"
             />
 
             {replies.length > 0 && (
-              <p className="mt-2 text-xs text-blue-600 dark:text-blue-400 font-medium">
+              <p className="mt-1 text-xs text-blue-600 dark:text-blue-400 font-medium">
                 {replies.length} {replies.length === 1 ? "reply" : "replies"}
               </p>
             )}
@@ -860,7 +862,7 @@ return () => {
                       }}
                       onToggleReaction={handleToggleReaction}
                       onDownloadFile={handleDownload}
-                      onShareFile={(id) => setForwardMessageId(String(id))}
+                      onShareFile={(file) => setForwardFile(file)}
                       onMouseEnter={() => {
                         if (!lockedId) setHoveredId(replyId);
                       }}
@@ -879,7 +881,7 @@ return () => {
       </div>
 
       {/* ── Reply input ───────────────────────────────────────────────────── */}
-      <div className="shrink-0 px-3 pb-3 pt-2 dark:border-zinc-700">
+      <div className="shrink-0 px-3 pb-2 pt-0 dark:border-zinc-700">
         <MessageInput
           onSend={handleSendReply}
           channelId={channelId}
@@ -899,10 +901,14 @@ return () => {
 
       {/* Forward modal */}
       <CreateNew
-        open={!!forwardMessageId}
-        onClose={() => setForwardMessageId(null)}
+        open={!!forwardMessageId || !!forwardFile}
+        onClose={() => {
+          setForwardMessageId(null);
+          setForwardFile(null);
+        }}
         type="forward"
         forwardMessageId={forwardMessageId}
+        forwardFile={forwardFile}
       />
     </div>
   );

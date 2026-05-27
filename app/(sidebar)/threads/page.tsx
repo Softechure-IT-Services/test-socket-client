@@ -98,6 +98,7 @@ function ThreadCard({
 
   // ── Forward modal ───────────────────────────────────────────────────────────
   const [forwardMessageId, setForwardMessageId] = useState<string | null>(null);
+  const [forwardFile, setForwardFile] = useState<MsgFile | null>(null);
 
   // ── Drag-and-drop ────────────────────────────────────────────────────────────
   const [dragging, setDragging] = useState(false);
@@ -519,7 +520,7 @@ function ThreadCard({
     <div
       className={`bg-white dark:bg-zinc-900 rounded-2xl border ${isUnread} ${
         isUnread
-          ? "border-red-500 shadow-md"
+          ? "border-[var(--sidebar)] shadow-md"
           : "border-gray-100 dark:border-zinc-800 shadow-sm"
       } overflow-hidden relative`}
       onDragEnter={handleDragEnter}
@@ -607,7 +608,7 @@ function ThreadCard({
                   }}
                   onToggleReaction={handleToggleReaction}
                   onDownloadFile={handleDownload}
-                  onShareFile={(id) => setForwardMessageId(String(id))}
+                  onShareFile={(file) => setForwardFile(file)}
                   onMouseEnter={() => {
                     if (!lockedId) setHoveredId(replyId);
                   }}
@@ -655,10 +656,14 @@ function ThreadCard({
 
       {/* Forward modal (scoped to this card) */}
       <CreateNew
-        open={!!forwardMessageId}
-        onClose={() => setForwardMessageId(null)}
+        open={!!forwardMessageId || !!forwardFile}
+        onClose={() => {
+          setForwardMessageId(null);
+          setForwardFile(null);
+        }}
         type="forward"
         forwardMessageId={forwardMessageId}
+        forwardFile={forwardFile}
       />
     </div>
   );

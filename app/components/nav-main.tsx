@@ -326,11 +326,11 @@ export function NavMain({ items }: { items: NavItem[] }) {
                                 ) : (
                                   sub.is_dm === false && <ChannelIcon sub={sub} />
                                 )}
-                                <span className="flex flex-col md:flex-row items-start md:items-center min-w-0 gap-0 md:gap-1">
+                                <span className="flex flex-col md:flex-row flex-wrap md:flex-nowrap items-start md:items-center min-w-0 gap-0 md:gap-x-1">
                                   <span
                                     className={`${
                                       hasActivity ? "truncate font-semibold" : "truncate"
-                                    } w-full`}
+                                    } w-full md:w-fit`}
                                   >
                                     {sub.title}
                                   </span>
@@ -338,7 +338,7 @@ export function NavMain({ items }: { items: NavItem[] }) {
                                     <FaHeadphones className="size-3 text-indigo-400 animate-pulse shrink-0 ml-1" />
                                   )}
                                   {item.type === "dm" && (
-                                    <span className="text-[11px] ps-1 truncate">
+                                    <span className="text-[11px] md:ps-1 truncate">
                                       {statusLabel}
                                     </span>
                                   )}

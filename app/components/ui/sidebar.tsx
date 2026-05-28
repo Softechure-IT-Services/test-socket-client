@@ -28,7 +28,7 @@ import {
 const SIDEBAR_COOKIE_NAME = "sidebar_state"
 const SIDEBAR_COOKIE_MAX_AGE = 60 * 60 * 24 * 7
 const SIDEBAR_WIDTH = "25rem"
-const SIDEBAR_WIDTH_MOBILE = "100vw"
+const SIDEBAR_WIDTH_MOBILE = "12rem"
 const SIDEBAR_WIDTH_ICON = "3rem"
 const SIDEBAR_KEYBOARD_SHORTCUT = "b"
 
@@ -588,9 +588,11 @@ function SidebarGroupAction({
         className
       )}
       onClick={(event) => {
-      onClick?.(event)
-      if (isMobile) setOpenMobile(false)  // ← closes sheet on mobile
-    }}
+        onClick?.(event)
+        if (isMobile) {
+          requestAnimationFrame(() => setOpenMobile(false))
+        }
+      }}
       {...props}
     />
   )

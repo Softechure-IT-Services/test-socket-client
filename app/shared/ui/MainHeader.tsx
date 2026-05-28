@@ -753,7 +753,7 @@ export default function MainHeader({
                 </span>
               )}
           </div>
-        <div className="flex flex-row justify-end items-start gap-2 flex-[0_0_calc(50%-6px)] ">
+        <div className="flex flex-row justify-end items-start gap-2 flex-auto sm:flex-[0_0_calc(50%-6px)]  ">
           {type === "channel" && isPrivate && isMember && (
             <IconButton
               onClick={() => setMembersOpen(true)}

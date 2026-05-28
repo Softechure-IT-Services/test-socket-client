@@ -895,34 +895,36 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   }
 
   return (
-    <Sidebar collapsible="icon" {...props}>
-      <SidebarContent>
-        <SidebarGroup>
-          <SidebarMenu>
-            <SidebarMenuItem>
-               <SidebarMenuButton
-                 onClick={handleInstantHuddle}
-                 className="cursor-pointer border border-slate-200 bg-white font-medium text-slate-900 shadow-sm dark:border-slate-200 dark:bg-white dark:text-slate-900"
-               >
-                 <PhoneCall className="h-4 w-4 shrink-0" />
-                 <span>Instant Huddle</span>
-               </SidebarMenuButton>
-            </SidebarMenuItem>
-          </SidebarMenu>
-        </SidebarGroup>
-        <NavProjects projects={projects} />
-        <NavMain items={navMain} />
-      </SidebarContent>
-      <SidebarFooter>
-        {user && <NavUser user={user as UserType} />}
-      </SidebarFooter>
-      <SidebarRail />
+    <>
+      <Sidebar collapsible="icon" {...props}>
+        <SidebarContent>
+          <SidebarGroup>
+            <SidebarMenu>
+              <SidebarMenuItem>
+                 <SidebarMenuButton
+                   onClick={handleInstantHuddle}
+                   className="cursor-pointer border border-slate-200 bg-white font-medium text-slate-900 shadow-sm dark:border-slate-200 dark:bg-white dark:text-slate-900"
+                 >
+                   <PhoneCall className="h-4 w-4 shrink-0" />
+                   <span>Instant Huddle</span>
+                 </SidebarMenuButton>
+              </SidebarMenuItem>
+            </SidebarMenu>
+          </SidebarGroup>
+          <NavProjects projects={projects} />
+          <NavMain items={navMain} />
+        </SidebarContent>
+        <SidebarFooter>
+          {user && <NavUser user={user as UserType} />}
+        </SidebarFooter>
+        <SidebarRail />
+      </Sidebar>
       <CreateModal
         open={modalOpen}
         type={modalType}
         onClose={() => setModalOpen(false)}
       />
       <HuddleInviteToast invites={huddleInvites} onDecline={dismissInvite} />
-    </Sidebar>
+    </>
   );
 }

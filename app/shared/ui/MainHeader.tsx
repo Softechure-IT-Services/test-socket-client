@@ -61,6 +61,7 @@ interface Channel {
   type: string;
   is_private?: boolean;
   created_by?: number;
+  is_dm?: boolean;
 }
 
 interface Member {
@@ -728,22 +729,20 @@ export default function MainHeader({
                 </div>
               </UserProfileTrigger>
             )}
-            {
+            {/* {
               type === "dm" && loading && (
                 <h2 className="mb-1 text-2xl font-semibold">
                   loading...
                   </h2>
               )
-            }
-            {
-              type !== "dm" && (
-            <h2 className="mb-1 text-2xl font-semibold">
-              {loading 
-                ? "Loading..."
-                 : `# ${channel?.name ?? "Unnamed Channel"}`}
-            </h2>
-              )
-            }
+            } */}
+           {type !== "dm" && (
+  <h2 className="mb-1 text-2xl font-semibold">
+    {loading || channel?.is_dm
+      ? "Loading..."
+      : `# ${channel?.name ?? "Unnamed Channel"}`}
+  </h2>
+)}
             {/* Show "removed" badge — only for private channels, only when confirmed non-member */}
             {isMember === false &&
               channel?.is_private === true &&

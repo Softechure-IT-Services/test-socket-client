@@ -587,6 +587,7 @@ export default function MainHeader({
       try {
         const res = await api.get(`/channels/${id}`);
         setChannel(res.data.channel);
+        console.log(res.data.channel);
         setIsMember(res.data.is_member ?? true);
       } catch (err: any) {
         const status = err?.response?.status;
@@ -707,7 +708,7 @@ export default function MainHeader({
                 <div className="flex flex-col min-w-0">
                   <div className="flex items-center gap-2">
                     <span className="text-base font-semibold truncate">
-                      {localDmUser.name}
+                      {localDmUser ? localDmUser.name : "Loading..."}
                     </span>
                     <span
                       className={`text-[10px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded-full ${
@@ -734,7 +735,7 @@ export default function MainHeader({
                   ? 
                   //(localDmUser?.name ?? "Direct Message")
                   ""
-                  : `# ${channel?.name ?? "Unnamed Channel"}`}
+                  : `Loading...`}
             </h2>
             {/* Show "removed" badge — only for private channels, only when confirmed non-member */}
             {isMember === false &&

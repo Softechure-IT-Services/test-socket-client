@@ -728,15 +728,22 @@ export default function MainHeader({
                 </div>
               </UserProfileTrigger>
             )}
+            {
+              type === "dm" && loading && (
+                <h2 className="mb-1 text-2xl font-semibold">
+                  loading...
+                  </h2>
+              )
+            }
+            {
+              type !== "dm" && (
             <h2 className="mb-1 text-2xl font-semibold">
-              {loading && type
+              {loading 
                 ? "Loading..."
-                : type === "dm"
-                  ? 
-                  //(localDmUser?.name ?? "Direct Message")
-                  ""
-                  : `# ${channel?.name ?? "Unnamed Channel"}`}
+                 : `# ${channel?.name ?? "Unnamed Channel"}`}
             </h2>
+              )
+            }
             {/* Show "removed" badge — only for private channels, only when confirmed non-member */}
             {isMember === false &&
               channel?.is_private === true &&

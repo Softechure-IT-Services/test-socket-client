@@ -399,6 +399,7 @@ export default function AppNavbar() {
   function clearSearch() {
     setQuery("");
     setSearchScope(null);
+    setLoading(false);
     setData(EMPTY_SEARCH_DATA);
     setOpen(false);
     setActiveIndex(-1);
@@ -620,7 +621,7 @@ export default function AppNavbar() {
 
               {/* Input */}
               <div className="relative flex items-center">
-                {loading ? (
+                {loading && open ? (
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 rounded-full border-2 border-muted-foreground border-t-transparent animate-spin pointer-events-none" />
                 ) : (
                   <CiSearch size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />

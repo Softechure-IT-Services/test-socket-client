@@ -678,8 +678,8 @@ export default function MainHeader({
         ref={headerRef}
         className="px-4 pt-4 pb-0 border-b border-[var(--border-color)] flex justify-between sticky top-[55px] z-50 bg-[var(--sidebar)] text-[var(--sidebar-foreground)] mainheader"
       >
-        <div>
-          <div className="flex gap-2">
+        <div className="flex flex-row flex-wrap items-between gap-1 w-full">
+          <div className="flex gap-2 flex-[0_0_calc(50%-6px)]">
             {type === "dm" && localDmUser && (
               <UserProfileTrigger
                 userId={localDmUser.id}
@@ -753,10 +753,7 @@ export default function MainHeader({
                 </span>
               )}
           </div>
-          <ButtonGroup items={buttons} />
-        </div>
-
-        <div className="flex flex-row justify-center items-start gap-2">
+        <div className="flex flex-row justify-end items-start gap-2 flex-[0_0_calc(50%-6px)] ">
           {type === "channel" && isPrivate && isMember && (
             <IconButton
               onClick={() => setMembersOpen(true)}
@@ -823,6 +820,12 @@ export default function MainHeader({
             </DropdownMenu>
           )}
         </div>
+          <div className="flex-[0_0_100%] sm:flex-[0_0_auto]">
+          <ButtonGroup items={buttons} />
+          </div>
+          
+        </div>
+
       </div>
 
       {/* Removed banner — only for private channels, only when confirmed non-member */}

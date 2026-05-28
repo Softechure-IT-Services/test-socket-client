@@ -28,7 +28,7 @@ import {
 const SIDEBAR_COOKIE_NAME = "sidebar_state"
 const SIDEBAR_COOKIE_MAX_AGE = 60 * 60 * 24 * 7
 const SIDEBAR_WIDTH = "25rem"
-const SIDEBAR_WIDTH_MOBILE = "18rem"
+const SIDEBAR_WIDTH_MOBILE = "100vw"
 const SIDEBAR_WIDTH_ICON = "3rem"
 const SIDEBAR_KEYBOARD_SHORTCUT = "b"
 
@@ -275,7 +275,7 @@ function Sidebar({
         <div
           data-slot="sidebar"
           className={cn(
-            "bg-sidebar text-sidebar-foreground flex h-full  w-(--sidebar-width) flex-col",
+            "bg-sidebar text-sidebar-foreground flex h-full  w-(--sidebar-width) flex-col ",
             className
           )}
           {...props}
@@ -299,7 +299,7 @@ function Sidebar({
             data-sidebar="sidebar"
             data-slot="sidebar"
             data-mobile="true"
-            className="bg-sidebar text-sidebar-foreground  w-(--sidebar-width) p-0 [&>button]:hidden"
+            className="bg-sidebar text-sidebar-foreground  w-(--sidebar-width) p-0 [&>button]:hidden  max-h-[calc(100vh-40px)] md:max-h-full top-auto"
             style={
               {
                 "--sidebar-width": SIDEBAR_WIDTH_MOBILE,
@@ -524,7 +524,7 @@ function SidebarContent({ className, ...props }: React.ComponentProps<"div">) {
       data-slot="sidebar-content"
       data-sidebar="content"
       className={cn(
-        "flex min-h-0 flex-1 flex-col gap-2 overflow-auto group-data-[collapsible=icon]:overflow-hidden",
+        "flex min-h-0 flex-1 flex-col gap-0 md:gap-2 overflow-auto group-data-[collapsible=icon]:overflow-hidden",
         className
       )}
       {...props}
@@ -568,13 +568,14 @@ function SidebarGroupAction({
   className,
   asChild = false,
   tooltip,
+  onClick,
   ...props
 }: React.ComponentProps<"button"> & {
   asChild?: boolean
   tooltip?: string | React.ComponentProps<typeof TooltipContent>
 }) {
   const Comp = asChild ? Slot : "button"
-  const { isMobile, state } = useSidebar()
+  const { isMobile, state, setOpenMobile } = useSidebar()
 
   const action = (
     <Comp
@@ -586,6 +587,10 @@ function SidebarGroupAction({
         "group-data-[collapsible=icon]:opacity-0 group-data-[collapsible=icon]:pointer-events-auto",
         className
       )}
+      onClick={(event) => {
+      onClick?.(event)
+      if (isMobile) setOpenMobile(false)  // ← closes sheet on mobile
+    }}
       {...props}
     />
   )
@@ -862,7 +867,7 @@ function SidebarMenuSubButton({
       data-active={isActive}
       className={cn(
         "flex w-full h-full items-center gap-2 px-2",
-        "text-sidebar-foreground ring-sidebar-ring [&>svg]:text-sidebar-accent-foreground flex h-7 min-w-0 -translate-x-px items-center gap-2 overflow-hidden rounded-md px-2 outline-hidden focus-visible:ring-2 disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 [&>span:last-child]:truncate [&>svg]:size-4 [&>svg]:shrink-0",
+        "h-fit text-sidebar-foreground ring-sidebar-ring [&>svg]:text-sidebar-accent-foreground flex min-h-7 min-w-0 -translate-x-px items-center gap-2 overflow-hidden rounded-md px-2 outline-hidden focus-visible:ring-2 disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 [&>span:last-child]:truncate [&>svg]:size-4 [&>svg]:shrink-0",
         "hover:bg-accent hover:text-sidebar-accent-foreground",
         "data-[active=true]:bg-sidebar-accent data-[active=true]:text-[var(--sidebar)] data-[active=true]:hover:bg-sidebar-accent",
         size === "sm" && "text-xs",

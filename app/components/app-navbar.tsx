@@ -561,7 +561,7 @@ export default function AppNavbar() {
 
   // ─── Render ──────────────────────────────────────────────────────────────────
   return (
-    <header className="w-full fixed top-0 z-[99] bg-[var(--sidebar)] text-[var(--sidebar-foreground)] border-b border-[var(--border-color)]">
+    <header className="w-full fixed top-0 z-[999] md:z-[99]  bg-[var(--sidebar)] text-[var(--sidebar-foreground)] border-b border-[var(--border-color)]">
       <div className="mx-auto max-w-8xl px-3 sm:px-6">
         <div className="flex items-center h-10 sm:h-14 justify-between">
 

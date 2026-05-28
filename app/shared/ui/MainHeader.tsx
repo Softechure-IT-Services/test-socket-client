@@ -729,13 +729,13 @@ export default function MainHeader({
               </UserProfileTrigger>
             )}
             <h2 className="mb-1 text-2xl font-semibold">
-              {loading
+              {loading && type
                 ? "Loading..."
                 : type === "dm"
                   ? 
                   //(localDmUser?.name ?? "Direct Message")
                   ""
-                  : `Loading...`}
+                  : `# ${channel?.name ?? "Unnamed Channel"}`}
             </h2>
             {/* Show "removed" badge — only for private channels, only when confirmed non-member */}
             {isMember === false &&

@@ -1,4 +1,5 @@
 "use client";
+import {  SidebarTrigger } from "@/app/components/ui/sidebar";
 
 import * as React from "react";
 import api from "@/lib/axios";
@@ -900,6 +901,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         <SidebarContent>
           <SidebarGroup>
             <SidebarMenu>
+              <SidebarTrigger className="text-white hover:bg-accent/20" />
               <SidebarMenuItem>
                  <SidebarMenuButton
                    onClick={handleInstantHuddle}

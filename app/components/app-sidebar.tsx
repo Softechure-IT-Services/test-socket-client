@@ -901,7 +901,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         <SidebarContent>
           <SidebarGroup>
             <SidebarMenu>
-              <SidebarTrigger className="text-white hover:bg-accent/20" />
+              <SidebarTrigger className="text-white hover:bg-accent/20 md:hidden" />
               <SidebarMenuItem>
                  <SidebarMenuButton
                    onClick={handleInstantHuddle}

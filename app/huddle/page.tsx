@@ -5656,7 +5656,10 @@ const MainPage: React.FC = () => {
             </button>
           </div>
 
-          <div className="h-screen flex flex-col">
+          <div
+            className="flex flex-col huddle_screen_wrapper"
+            style={{ height: "100dvh", minHeight: "100dvh" }}
+          >
 
             {/* ── Pre-join Screen (Google Meet style) ──────────────────── */}
             <div id="prejoin" className="flex-1 flex flex-col overflow-hidden">
@@ -5835,7 +5838,11 @@ const MainPage: React.FC = () => {
             </div>
 
             {/* ── Meeting Screen ────────────────────────────────────────── */}
-            <div id="meeting" className="hidden flex-1 flex flex-col h-screen min-h-0">
+            <div
+              id="meeting"
+              className="hidden flex-1 flex flex-col min-h-0"
+              style={{ minHeight: "100dvh" }}
+            >
 
               {/* Video grid */}
               <div className="flex-1 min-h-0 relative overflow-hidden bg-[#111]">
@@ -5846,7 +5853,7 @@ const MainPage: React.FC = () => {
               </div>
 
               {/* ── Google Meet–style bottom control bar ────────────────── */}
-              <div className="bg-sidebar border-t border-[var(--border-color)] px-3 sm:px-4 md:px-6 py-3 flex flex-col sm:flex-row items-center justify-between min-h-[76px] gap-3 shrink-0">
+              <div className="bg-sidebar border-t border-[var(--border-color)] px-3 sm:px-4 md:px-6 py-3 flex flex-col sm:flex-row items-center justify-between min-h-[76px] gap-3 shrink-0 bottom-controls">
 
                 {/* Mobile: time + room name */}
                 <div className="flex sm:hidden items-center gap-2 text-[11px] text-muted-foreground w-full justify-center">

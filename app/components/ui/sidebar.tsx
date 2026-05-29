@@ -683,6 +683,7 @@ function SidebarMenuButton({
   variant = "default",
   size = "default",
   tooltip,
+  onClick,
   className,
   ...props
 }: React.ComponentProps<"button"> & {
@@ -691,7 +692,15 @@ function SidebarMenuButton({
   tooltip?: string | React.ComponentProps<typeof TooltipContent>
 } & VariantProps<typeof sidebarMenuButtonVariants>) {
   const Comp = asChild ? Slot : "button"
-  const { isMobile, state } = useSidebar()
+  const { isMobile, setOpenMobile, state } = useSidebar()
+
+  const handleClick: React.MouseEventHandler<HTMLElement> = (event) => {
+    onClick?.(event as React.MouseEvent<HTMLButtonElement>)
+
+    if (isMobile && !event.defaultPrevented) {
+      requestAnimationFrame(() => setOpenMobile(false))
+    }
+  }
 
   const button = (
     <Comp
@@ -700,6 +709,7 @@ function SidebarMenuButton({
       data-size={size}
       data-active={isActive}
       className={cn(sidebarMenuButtonVariants({ variant, size }), className)}
+      onClick={handleClick}
       {...props}
     />
   )
@@ -731,12 +741,22 @@ function SidebarMenuAction({
   className,
   asChild = false,
   showOnHover = false,
+  onClick,
   ...props
 }: React.ComponentProps<"button"> & {
   asChild?: boolean
   showOnHover?: boolean
 }) {
   const Comp = asChild ? Slot : "button"
+  const { isMobile, setOpenMobile } = useSidebar()
+
+  const handleClick: React.MouseEventHandler<HTMLElement> = (event) => {
+    onClick?.(event as React.MouseEvent<HTMLButtonElement>)
+
+    if (isMobile && !event.defaultPrevented) {
+      requestAnimationFrame(() => setOpenMobile(false))
+    }
+  }
 
   return (
     <Comp
@@ -754,6 +774,7 @@ function SidebarMenuAction({
           "peer-data-[active=true]/menu-button:text-sidebar-accent-foreground group-focus-within/menu-item:opacity-100 group-hover/menu-item:opacity-100 data-[state=open]:opacity-100 md:opacity-0",
         className
       )}
+      onClick={handleClick}
       {...props}
     />
   )
@@ -788,10 +809,7 @@ function SidebarMenuSkeleton({
 }: React.ComponentProps<"div"> & {
   showIcon?: boolean
 }) {
-  // Random width between 50 to 90%.
-  const width = React.useMemo(() => {
-    return `${Math.floor(Math.random() * 40) + 50}%`
-  }, [])
+  const width = "75%"
 
   return (
     <div
@@ -852,6 +870,7 @@ function SidebarMenuSubButton({
   asChild = false,
   size = "md",
   isActive = false,
+  onClick,
   className,
   ...props
 }: React.ComponentProps<"a"> & {
@@ -860,6 +879,15 @@ function SidebarMenuSubButton({
   isActive?: boolean
 }) {
   const Comp = asChild ? Slot : "a"
+  const { isMobile, setOpenMobile } = useSidebar()
+
+  const handleClick: React.MouseEventHandler<HTMLElement> = (event) => {
+    onClick?.(event as React.MouseEvent<HTMLAnchorElement>)
+
+    if (isMobile) {
+      requestAnimationFrame(() => setOpenMobile(false))
+    }
+  }
 
   return (
     <Comp
@@ -877,6 +905,7 @@ function SidebarMenuSubButton({
         "group-data-[collapsible=icon]:hidden",
         className
       )}
+      onClick={handleClick}
       {...props}
     />
   )

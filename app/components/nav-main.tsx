@@ -326,7 +326,7 @@ export function NavMain({ items }: { items: NavItem[] }) {
                                 ) : (
                                   sub.is_dm === false && <ChannelIcon sub={sub} />
                                 )}
-                                <span className="flex flex-col md:flex-row flex-wrap md:flex-nowrap items-center  md:items-center min-w-0 gap-x-2 md:gap-x-1">
+                                <span className="flex flex-row md:flex-row flex-wrap md:flex-nowrap items-center  md:items-center min-w-0 gap-x-2 md:gap-x-1">
                                   <span
                                     className={`${
                                       hasActivity ? "truncate font-semibold" : "truncate"
